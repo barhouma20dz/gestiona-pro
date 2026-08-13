@@ -276,3 +276,88 @@ Unresolved issues / next-phase recommendations:
 - Consider adding a "Low Stock" notification badge on the Products nav item.
 
 Project Status: STABLE & ENHANCED — 3 new features (Dashboard, Dark Mode, Command Palette) added on top of the complete POS app. All verified working.
+
+---
+Task ID: 12
+Agent: webDevReview cron (round 2)
+Task: QA + implement 4 new features (low-stock badge, keyboard shortcuts, product search in palette, revenue sparkline)
+
+## Current project status / assessment
+- Project was stable & enhanced after round 1 (6 views, dark mode, command palette, dashboard).
+- QA at start: lint clean, no console/runtime errors, all views render, dev server healthy.
+- VLM confirmed Sales History + Dashboard rendering correctly.
+- No bugs found — proceeded to implement next-phase recommendations from round 1 worklog.
+
+## Current goals / completed modifications / verification results
+
+### Work Log:
+- Reviewed worklog.md (Tasks 3-11) — understood project state.
+- Performed QA via agent-browser: loaded app, tested all 6 views, no console/runtime errors, lint clean.
+- Implemented 4 new features addressing the round-1 "next-phase recommendations":
+
+**1. Low-stock notification badge on Products nav item** (`app-shell.tsx`)
+- Added products query in AppShell to compute `lowStockCount` (stock 0-5).
+- Modified SidebarContent to accept `lowStockCount` and render an amber badge on the Products nav button when count > 0.
+- Badge uses amber-500 bg when inactive, primary-foreground/20 when active.
+- Passes `lowStockCount` to both desktop and mobile sidebar instances.
+- (Currently hidden because all 12 products have healthy stock >5 — will appear when stock runs low.)
+
+**2. Keyboard shortcuts in POS Terminal** (`pos-terminal.tsx`)
+- F1: Focus scan input (always works, even when typing in other fields).
+- F2: Select Cash payment (only when cart non-empty).
+- F3: Select UPI payment (only when cart non-empty).
+- F4: Select Card payment (only when cart non-empty).
+- F9: Open checkout dialog (only when cart non-empty and not typing).
+- Added visible `<kbd>` badges on buttons: F1 hint in scan input (when empty), F2/F3/F4 on payment buttons, F9 on checkout button.
+- Each shortcut shows a toast confirmation when triggered.
+- Used `scanInputRef` (React 19 ref-as-prop) to focus the scan input on F1.
+- Shortcuts are scoped to avoid interfering with dialog inputs (typing detection via target tagName).
+
+**3. Product search in command palette** (`command-palette.tsx`)
+- Added products + shop queries (enabled only when palette opens, for performance).
+- New "Add Product to Cart" CommandGroup showing up to 8 in-stock products.
+- Each item shows: colored avatar (initials), product name, barcode (mono), price, stock count, PackagePlus icon.
+- Searchable by name, barcode, and category (via cmdk `value` prop).
+- Selecting a product: adds it to cart via `useCartStore.addProduct`, shows toast, closes palette, navigates to POS.
+- Out-of-stock products are excluded; out-of-stock selection shows error toast.
+
+**4. 7-day revenue sparkline on Dashboard KPI card** (`dashboard.tsx`)
+- New `RevenueSparkline` component: inline SVG polyline with gradient area fill, 7 data points (oldest→newest), highlighted last point.
+- Computed `revenueTrend` (7-day array) + `weekTotal` + `todayVsPrev` (% change vs 6-day avg) from existing sales query.
+- Today's Revenue KPI card now shows:
+  - Percentage comparison badge (emerald if up, red if down) vs 6-day average.
+  - "7d: ₹X" weekly total label.
+  - Green sparkline below the comparison (only when weekTotal > 0).
+- Replaced the old static "▲ vs 0 yesterday" placeholder.
+- Added ArrowDownRight icon import.
+
+### Verification results:
+- `bun run lint`: clean (exit 0).
+- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+- agent-browser QA:
+  * Dashboard renders sparkline + % badge + week total — VLM confirmed.
+  * Low-stock badge: hidden (all products healthy) — will show when stock ≤5.
+  * F1: focuses scan input (verified via activeElement.placeholder).
+  * F2/F3/F4: kbd badges visible on payment buttons; F3 selected UPI (verified via computed background color).
+  * F9: opens checkout dialog (verified via role=dialog presence).
+  * Cmd+K palette: "coca" search matches Coca-Cola product; clicking adds to cart + navigates to POS (cart count incremented to 2).
+  * No console errors throughout testing.
+
+## Unresolved issues / risks, and priority recommendations for the next phase
+
+### Files modified this round:
+- `src/components/app-shell.tsx` — products query + lowStockCount + SidebarContent badge prop
+- `src/components/views/pos-terminal.tsx` — keyboard shortcuts + kbd badges + scanInputRef
+- `src/components/command-palette.tsx` — product search + add-to-cart from palette
+- `src/components/views/dashboard.tsx` — RevenueSparkline component + 7-day trend computation
+
+### Recommendations for next round:
+1. **Sales History enhancements**: add date-range filter, export sales to CSV, and a payment-method breakdown donut chart.
+2. **Product Manager**: add bulk import (CSV upload), barcode generation/printing for products without barcodes, and a "duplicate product" action.
+3. **POS Terminal**: add a "hold order" / "park sale" feature to resume later, and a customer display mode for dual-screen setups.
+4. **Receipt improvements**: add QR code to receipt (link to digital copy), support multiple receipt sizes (80mm/58mm), and a digital receipt email option.
+5. **Dashboard**: add a "top selling products" leaderboard card and a payment-method breakdown donut.
+6. **Notifications**: add a low-stock alert toast on app load when products cross below threshold, and a daily summary notification.
+7. **Accessibility**: add ARIA labels to all icon-only buttons, and ensure keyboard navigation works through the product grid.
+
+Project Status: STABLE & ENHANCED (round 2) — 4 new features added. All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.

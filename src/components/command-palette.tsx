@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   CommandDialog,
   CommandEmpty,
@@ -17,14 +18,17 @@ import {
   ReceiptText,
   Store,
   Settings,
-  Search,
   Moon,
   Sun,
   Plus,
   ShoppingCart,
+  PackagePlus,
 } from "lucide-react";
 import type { ViewKey } from "@/lib/types";
 import { useTheme } from "next-themes";
+import { productsApi, shopApi } from "@/lib/api";
+import { useCartStore } from "@/lib/cart-store";
+import { formatMoney, initialsOf, colorFromString } from "@/lib/format";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -89,10 +93,22 @@ export function CommandPalette({
   onNavigate,
 }: CommandPaletteProps) {
   const { theme, setTheme, resolvedTheme } = useTheme();
-  const [productQuery, setProductQuery] = useState("");
 
-  // Cmd+K / Ctrl+K listener is in the parent (app-shell) to avoid duplicate mounts.
-  // But we also allow closing on Escape (handled by CommandDialog automatically).
+  // Products query for product search
+  const { data: products = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: productsApi.list,
+    enabled: open, // only fetch when palette opens
+  });
+
+  const { data: shop } = useQuery({
+    queryKey: ["shop"],
+    queryFn: shopApi.get,
+    enabled: open,
+  });
+
+  const addProduct = useCartStore((s) => s.addProduct);
+  const currency = shop?.currency ?? "₹";
 
   const handleNavigate = (v: ViewKey) => {
     onNavigate(v);
@@ -105,10 +121,24 @@ export function CommandPalette({
     onOpenChange(false);
   };
 
+  const handleAddProduct = (product: (typeof products)[number]) => {
+    if (product.stock <= 0) {
+      toast.error("Out of stock", { description: product.name });
+      return;
+    }
+    addProduct(product);
+    toast.success(`${product.name} added to cart`, { duration: 1500 });
+    onOpenChange(false);
+    onNavigate("pos");
+  };
+
+  // Show only products that are in stock, limited to 6 for performance
+  const availableProducts = products.filter((p) => p.stock > 0).slice(0, 8);
+
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Search actions, pages…" />
-      <CommandList className="max-h-[420px]">
+      <CommandInput placeholder="Search actions, pages, products…" />
+      <CommandList className="max-h-[460px]">
         <CommandEmpty>No results found.</CommandEmpty>
 
         <CommandGroup heading="Quick Actions">
@@ -163,6 +193,48 @@ export function CommandPalette({
             );
           })}
         </CommandGroup>
+
+        {availableProducts.length > 0 && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="Add Product to Cart">
+              {availableProducts.map((product) => (
+                <CommandItem
+                  key={product.id}
+                  value={`${product.name} ${product.barcode} ${product.category}`}
+                  onSelect={() => handleAddProduct(product)}
+                  className="cursor-pointer"
+                >
+                  <span
+                    className="mr-2 grid h-6 w-6 shrink-0 place-items-center rounded-md text-[10px] font-bold text-foreground/70"
+                    style={{ backgroundColor: colorFromString(product.name) }}
+                  >
+                    {initialsOf(product.name)}
+                  </span>
+                  <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-medium truncate">
+                        {product.name}
+                      </span>
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {product.barcode}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-semibold text-primary tabular-nums">
+                        {formatMoney(product.price, currency)}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {product.stock} left
+                      </span>
+                      <PackagePlus className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </>
+        )}
 
         <CommandSeparator />
 

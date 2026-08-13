@@ -1,0 +1,875 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useMemo, useRef, useState } from "react";
+     4→import { useQuery } from "@tanstack/react-query";
+     5→import { motion, AnimatePresence } from "framer-motion";
+     6→import { toast } from "sonner";
+     7→import {
+     8→  ScanLine,
+     9→  Search,
+    10→  Plus,
+    11→  Camera,
+    12→  CameraOff,
+    13→  Trash2,
+    14→  Minus,
+    15→  ShoppingCart,
+    16→  PackageX,
+    17→  X,
+    18→  CheckCircle2,
+    19→  CreditCard,
+    20→  Banknote,
+    21→  QrCode,
+    22→} from "lucide-react";
+    23→
+    24→import { productsApi, shopApi } from "@/lib/api";
+    25→import { useCartStore } from "@/lib/cart-store";
+    26→import { cn } from "@/lib/utils";
+    27→import { colorFromString, formatMoney, initialsOf } from "@/lib/format";
+    28→import type { Product } from "@/lib/types";
+    29→
+    30→import { Button } from "@/components/ui/button";
+    31→import { Card } from "@/components/ui/card";
+    32→import { Input } from "@/components/ui/input";
+    33→import { Badge } from "@/components/ui/badge";
+    34→import { Separator } from "@/components/ui/separator";
+    35→import {
+    36→  Dialog,
+    37→  DialogContent,
+    38→  DialogDescription,
+    39→  DialogFooter,
+    40→  DialogHeader,
+    41→  DialogTitle,
+    42→} from "@/components/ui/dialog";
+    43→import {
+    44→  AlertDialog,
+    45→  AlertDialogAction,
+    46→  AlertDialogCancel,
+    47→  AlertDialogContent,
+    48→  AlertDialogDescription,
+    49→  AlertDialogFooter,
+    50→  AlertDialogHeader,
+    51→  AlertDialogTitle,
+    52→} from "@/components/ui/alert-dialog";
+    53→
+    54→import { CheckoutDialog } from "@/components/checkout-dialog";
+    55→
+    56→const PAYMENT_METHODS = [
+    57→  { key: "Cash", label: "Cash", icon: Banknote },
+    58→  { key: "UPI", label: "UPI", icon: QrCode },
+    59→  { key: "Card", label: "Card", icon: CreditCard },
+    60→] as const;
+    61→
+    62→function stockBadge(stock: number) {
+    63→  if (stock <= 0)
+    64→    return (
+    65→      <Badge
+    66→        variant="secondary"
+    67→        className="bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400"
+    68→      >
+    69→        Out
+    70→      </Badge>
+    71→    );
+    72→  if (stock <= 5)
+    73→    return (
+    74→      <Badge
+    75→        variant="secondary"
+    76→        className="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+    77→      >
+    78→        {stock} left
+    79→      </Badge>
+    80→    );
+    81→  return (
+    82→    <Badge
+    83→      variant="secondary"
+    84→      className="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+    85→    >
+    86→      {stock} in stock
+    87→    </Badge>
+    88→  );
+    89→}
+    90→
+    91→/* -------------------------------------------------------------------------- */
+    92→/* Camera scanner dialog                                                       */
+    93→/* -------------------------------------------------------------------------- */
+    94→
+    95→function CameraScannerDialog({
+    96→  open,
+    97→  onOpenChange,
+    98→  onScan,
+    99→}: {
+   100→  open: boolean;
+   101→  onOpenChange: (o: boolean) => void;
+   102→  onScan: (code: string) => void;
+   103→}) {
+   104→  // The inner body lives inside DialogContent. Radix mounts/unmounts its
+   105→  // children with the dialog lifecycle (after exit animation), so the body
+   106→  // component state (camera, manualCode) is naturally reset on each open.
+   107→  return (
+   108→    <Dialog open={open} onOpenChange={onOpenChange}>
+   109→      <DialogContent className="sm:max-w-md">
+   110→        <CameraScannerBody onScan={onScan} onOpenChange={onOpenChange} />
+   111→      </DialogContent>
+   112→    </Dialog>
+   113→  );
+   114→}
+   115→
+   116→function CameraScannerBody({
+   117→  onScan,
+   118→  onOpenChange,
+   119→}: {
+   120→  onScan: (code: string) => void;
+   121→  onOpenChange: (o: boolean) => void;
+   122→}) {
+   123→  const videoRef = useRef<HTMLVideoElement>(null);
+   124→  const streamRef = useRef<MediaStream | null>(null);
+   125→  const [cameraReady, setCameraReady] = useState(false);
+   126→  const [cameraError, setCameraError] = useState<string | null>(null);
+   127→  const [manualCode, setManualCode] = useState("");
+   128→
+   129→  useEffect(() => {
+   130→    let cancelled = false;
+   131→
+   132→    async function startCamera() {
+   133→      try {
+   134→        if (!navigator.mediaDevices?.getUserMedia) {
+   135→          setCameraError("Camera API not supported in this browser.");
+   136→          return;
+   137→        }
+   138→        const stream = await navigator.mediaDevices.getUserMedia({
+   139→          video: { facingMode: "environment" },
+   140→          audio: false,
+   141→        });
+   142→        if (cancelled) {
+   143→          stream.getTracks().forEach((t) => t.stop());
+   144→          return;
+   145→        }
+   146→        streamRef.current = stream;
+   147→        if (videoRef.current) {
+   148→          videoRef.current.srcObject = stream;
+   149→          await videoRef.current.play().catch(() => {
+   150→            /* autoplay may be blocked — ignore */
+   151→          });
+   152→        }
+   153→        if (!cancelled) setCameraReady(true);
+   154→      } catch (err) {
+   155→        if (cancelled) return;
+   156→        const message =
+   157→          err instanceof Error ? err.message : "Unable to access camera.";
+   158→        setCameraError(message);
+   159→      }
+   160→    }
+   161→
+   162→    startCamera();
+   163→
+   164→    return () => {
+   165→      cancelled = true;
+   166→      if (streamRef.current) {
+   167→        streamRef.current.getTracks().forEach((t) => t.stop());
+   168→        streamRef.current = null;
+   169→      }
+   170→    };
+   171→  }, []);
+   172→
+   173→  const submitManual = () => {
+   174→    const code = manualCode.trim();
+   175→    if (!code) return;
+   176→    onScan(code);
+   177→    setManualCode("");
+   178→    onOpenChange(false);
+   179→  };
+   180→
+   181→  return (
+   182→    <>
+   183→      <DialogHeader>
+   184→        <DialogTitle className="flex items-center gap-2">
+   185→          <ScanLine className="h-5 w-5 text-primary" />
+   186→          Scan Barcode
+   187→        </DialogTitle>
+   188→        <DialogDescription>
+   189→          Point your camera at a product barcode, or enter the code manually
+   190→          below.
+   191→        </DialogDescription>
+   192→      </DialogHeader>
+   193→
+   194→      {/* Camera preview */}
+   195→      <div className="relative aspect-video w-full overflow-hidden rounded-lg border bg-black">
+   196→        {cameraError ? (
+   197→          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
+   198→            <CameraOff className="h-8 w-8 text-muted-foreground" />
+   199→            <p className="text-sm font-medium text-foreground">
+   200→              Camera not available
+   201→            </p>
+   202→            <p className="text-xs text-muted-foreground">
+   203→              Enter the barcode manually below to continue.
+   204→            </p>
+   205→          </div>
+   206→        ) : (
+   207→          <>
+   208→            <video
+   209→              ref={videoRef}
+   210→              autoPlay
+   211→              playsInline
+   212→              muted
+   213→              className="h-full w-full object-cover"
+   214→            />
+   215→            {/* Scan frame overlay */}
+   216→            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+   217→              <div className="relative h-24 w-3/4 max-w-[260px] rounded-md border-2 border-primary/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]">
+   218→                <span className="absolute -left-1 -top-1 h-4 w-4 border-l-4 border-t-4 border-primary" />
+   219→                <span className="absolute -right-1 -top-1 h-4 w-4 border-r-4 border-t-4 border-primary" />
+   220→                <span className="absolute -bottom-1 -left-1 h-4 w-4 border-b-4 border-l-4 border-primary" />
+   221→                <span className="absolute -bottom-1 -right-1 h-4 w-4 border-b-4 border-r-4 border-primary" />
+   222→                <motion.span
+   223→                  className="absolute inset-x-1 top-1/2 h-0.5 bg-primary"
+   224→                  initial={{ y: -40 }}
+   225→                  animate={{ y: 40 }}
+   226→                  transition={{
+   227→                    duration: 1.6,
+   228→                    repeat: Infinity,
+   229→                    repeatType: "reverse",
+   230→                    ease: "easeInOut",
+   231→                  }}
+   232→                />
+   233→              </div>
+   234→            </div>
+   235→            {!cameraReady && !cameraError && (
+   236→              <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
+   237→                Starting camera…
+   238→              </div>
+   239→            )}
+   240→          </>
+   241→        )}
+   242→      </div>
+   243→
+   244→      {/* Manual fallback — primary path */}
+   245→      <div className="space-y-2">
+   246→        <label className="text-xs font-medium text-muted-foreground">
+   247→          Enter barcode manually
+   248→        </label>
+   249→        <div className="flex gap-2">
+   250→          <Input
+   251→            autoFocus
+   252→            value={manualCode}
+   253→            placeholder="e.g. 8901030867531"
+   254→            onChange={(e) => setManualCode(e.target.value)}
+   255→            onKeyDown={(e) => {
+   256→              if (e.key === "Enter") submitManual();
+   257→            }}
+   258→          />
+   259→          <Button type="button" onClick={submitManual} disabled={!manualCode.trim()}>
+   260→            <Plus className="h-4 w-4" />
+   261→            Add
+   262→          </Button>
+   263→        </div>
+   264→      </div>
+   265→
+   266→      <DialogFooter>
+   267→        <Button variant="outline" onClick={() => onOpenChange(false)}>
+   268→          Close
+   269→        </Button>
+   270→      </DialogFooter>
+   271→    </>
+   272→  );
+   273→}
+   274→
+   275→/* -------------------------------------------------------------------------- */
+   276→/* Product tile                                                                */
+   277→/* -------------------------------------------------------------------------- */
+   278→
+   279→function ProductTile({
+   280→  product,
+   281→  currency,
+   282→  onAdd,
+   283→}: {
+   284→  product: Product;
+   285→  currency: string;
+   286→  onAdd: (p: Product) => void;
+   287→}) {
+   288→  const outOfStock = product.stock <= 0;
+   289→  return (
+   290→    <motion.button
+   291→      type="button"
+   292→      whileHover={outOfStock ? undefined : { y: -2 }}
+   293→      whileTap={outOfStock ? undefined : { scale: 0.97 }}
+   294→      disabled={outOfStock}
+   295→      onClick={() => {
+   296→        if (outOfStock) {
+   297→          toast.error("Out of stock", { description: product.name });
+   298→          return;
+   299→        }
+   300→        onAdd(product);
+   301→      }}
+   302→      className={cn(
+   303→        "group text-left",
+   304→        outOfStock && "cursor-not-allowed opacity-50 grayscale"
+   305→      )}
+   306→    >
+   307→      <Card
+   308→        className={cn(
+   309→          "h-full gap-0 overflow-hidden p-0 transition-colors",
+   310→          outOfStock
+   311→            ? "bg-muted/40"
+   312→            : "group-hover:border-primary/40 group-hover:bg-accent/50"
+   313→        )}
+   314→      >
+   315→        <div
+   316→          className="flex h-20 items-center justify-center text-xl font-bold"
+   317→          style={{ backgroundColor: colorFromString(product.name) }}
+   318→        >
+   319→          <span className="grid h-12 w-12 place-items-center rounded-full bg-white/70 text-sm font-bold text-foreground/80 backdrop-blur">
+   320→            {initialsOf(product.name)}
+   321→          </span>
+   322→        </div>
+   323→        <div className="space-y-1.5 p-2.5">
+   324→          <p className="line-clamp-2 text-xs font-medium leading-snug text-foreground min-h-[2rem]">
+   325→            {product.name}
+   326→          </p>
+   327→          <div className="flex items-center justify-between gap-1">
+   328→            <span className="text-sm font-bold text-primary">
+   329→              {formatMoney(product.price, currency)}
+   330→            </span>
+   331→            {stockBadge(product.stock)}
+   332→          </div>
+   333→        </div>
+   334→      </Card>
+   335→    </motion.button>
+   336→  );
+   337→}
+   338→
+   339→/* -------------------------------------------------------------------------- */
+   340→/* Cart item row                                                              */
+   341→/* -------------------------------------------------------------------------- */
+   342→
+   343→function CartItemRow({
+   344→  item,
+   345→  currency,
+   346→  onIncrement,
+   347→  onDecrement,
+   348→  onRemove,
+   349→}: {
+   350→  item: { product: Product; quantity: number };
+   351→  currency: string;
+   352→  onIncrement: () => void;
+   353→  onDecrement: () => void;
+   354→  onRemove: () => void;
+   355→}) {
+   356→  return (
+   357→    <motion.div
+   358→      layout
+   359→      initial={{ opacity: 0, height: 0 }}
+   360→      animate={{ opacity: 1, height: "auto" }}
+   361→      exit={{ opacity: 0, height: 0 }}
+   362→      transition={{ duration: 0.2, ease: "easeInOut" }}
+   363→      className="overflow-hidden"
+   364→    >
+   365→      <div className="flex items-start gap-2 px-3 py-2.5">
+   366→        <div
+   367→          className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-md text-[10px] font-bold text-foreground/70"
+   368→          style={{ backgroundColor: colorFromString(item.product.name) }}
+   369→        >
+   370→          {initialsOf(item.product.name)}
+   371→        </div>
+   372→
+   373→        <div className="min-w-0 flex-1">
+   374→          <p className="truncate text-sm font-medium leading-tight">
+   375→            {item.product.name}
+   376→          </p>
+   377→          <p className="text-xs text-muted-foreground">
+   378→            {formatMoney(item.product.price, currency)} each
+   379→          </p>
+   380→        </div>
+   381→
+   382→        <div className="flex flex-col items-end gap-1.5">
+   383→          <span className="text-sm font-semibold tabular-nums">
+   384→            {formatMoney(item.product.price * item.quantity, currency)}
+   385→          </span>
+   386→          <div className="flex items-center gap-1">
+   387→            <Button
+   388→              size="icon"
+   389→              variant="outline"
+   390→              className="h-6 w-6"
+   391→              onClick={onDecrement}
+   392→              aria-label="Decrease quantity"
+   393→            >
+   394→              <Minus className="h-3 w-3" />
+   395→            </Button>
+   396→            <span className="w-7 text-center text-xs font-medium tabular-nums">
+   397→              {item.quantity}
+   398→            </span>
+   399→            <Button
+   400→              size="icon"
+   401→              variant="outline"
+   402→              className="h-6 w-6"
+   403→              onClick={onIncrement}
+   404→              disabled={item.quantity >= item.product.stock}
+   405→              aria-label="Increase quantity"
+   406→            >
+   407→              <Plus className="h-3 w-3" />
+   408→            </Button>
+   409→            <Button
+   410→              size="icon"
+   411→              variant="ghost"
+   412→              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+   413→              onClick={onRemove}
+   414→              aria-label="Remove item"
+   415→            >
+   416→              <Trash2 className="h-3.5 w-3.5" />
+   417→            </Button>
+   418→          </div>
+   419→        </div>
+   420→      </div>
+   421→      <Separator />
+   422→    </motion.div>
+   423→  );
+   424→}
+   425→
+   426→/* -------------------------------------------------------------------------- */
+   427→/* Main POS Terminal view                                                      */
+   428→/* -------------------------------------------------------------------------- */
+   429→
+   430→export function PosTerminal() {
+   431→  const { data: products = [], isLoading: productsLoading } = useQuery({
+   432→    queryKey: ["products"],
+   433→    queryFn: productsApi.list,
+   434→  });
+   435→
+   436→  const { data: shop } = useQuery({
+   437→    queryKey: ["shop"],
+   438→    queryFn: shopApi.get,
+   439→  });
+   440→
+   441→  const currency = shop?.currency || "₹";
+   442→  const taxRate = shop?.taxRate ?? 0;
+   443→
+   444→  // Cart store — select primitive slices to avoid re-render storms
+   445→  const items = useCartStore((s) => s.items);
+   446→  const discount = useCartStore((s) => s.discount);
+   447→  const paymentMethod = useCartStore((s) => s.paymentMethod);
+   448→  const addProduct = useCartStore((s) => s.addProduct);
+   449→  const addByBarcode = useCartStore((s) => s.addByBarcode);
+   450→  const removeItem = useCartStore((s) => s.removeItem);
+   451→  const updateQuantity = useCartStore((s) => s.updateQuantity);
+   452→  const clearCart = useCartStore((s) => s.clearCart);
+   453→  const setDiscount = useCartStore((s) => s.setDiscount);
+   454→  const setPaymentMethod = useCartStore((s) => s.setPaymentMethod);
+   455→
+   456→  const [scanInput, setScanInput] = useState("");
+   457→  const [activeCategory, setActiveCategory] = useState<string>("All");
+   458→  const [searchTerm, setSearchTerm] = useState("");
+   459→  const [scannerOpen, setScannerOpen] = useState(false);
+   460→  const [checkoutOpen, setCheckoutOpen] = useState(false);
+   461→  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+   462→
+   463→  const categories = useMemo(() => {
+   464→    const set = new Set<string>();
+   465→    products.forEach((p) => p.category && set.add(p.category));
+   466→    return ["All", ...Array.from(set).sort()];
+   467→  }, [products]);
+   468→
+   469→  const filteredProducts = useMemo(() => {
+   470→    const term = searchTerm.trim().toLowerCase();
+   471→    return products.filter((p) => {
+   472→      const matchCat =
+   473→        activeCategory === "All" || p.category === activeCategory;
+   474→      const matchSearch =
+   475→        !term ||
+   476→        p.name.toLowerCase().includes(term) ||
+   477→        p.barcode.toLowerCase().includes(term);
+   478→      return matchCat && matchSearch;
+   479→    });
+   480→  }, [products, activeCategory, searchTerm]);
+   481→
+   482→  const subtotal = useMemo(
+   483→    () => items.reduce((sum, i) => sum + i.product.price * i.quantity, 0),
+   484→    [items]
+   485→  );
+   486→  const totalItems = useMemo(
+   487→    () => items.reduce((sum, i) => sum + i.quantity, 0),
+   488→    [items]
+   489→  );
+   490→  const taxableAmount = Math.max(0, subtotal - discount);
+   491→  const taxAmount = (taxableAmount * taxRate) / 100;
+   492→  const grandTotal = taxableAmount + taxAmount;
+   493→
+   494→  const handleScanSubmit = () => {
+   495→    const code = scanInput.trim();
+   496→    if (!code) return;
+   497→    // Try barcode first
+   498→    const added = addByBarcode(code, products);
+   499→    if (added) {
+   500→      const p = products.find(
+   501→        (x) => x.barcode.toLowerCase() === code.toLowerCase()
+   502→      );
+   503→      toast.success(`${p?.name ?? "Product"} added`);
+   504→      setScanInput("");
+   505→      return;
+   506→    }
+   507→    // Try name match (case-insensitive, exact or contains)
+   508→    const byName = products.find(
+   509→      (p) => p.name.toLowerCase() === code.toLowerCase()
+   510→    );
+   511→    if (byName) {
+   512→      addProduct(byName);
+   513→      toast.success(`${byName.name} added`);
+   514→      setScanInput("");
+   515→      return;
+   516→    }
+   517→    // Partial name match
+   518→    const partial = products.find((p) =>
+   519→      p.name.toLowerCase().includes(code.toLowerCase())
+   520→    );
+   521→    if (partial) {
+   522→      addProduct(partial);
+   523→      toast.success(`${partial.name} added`);
+   524→      setScanInput("");
+   525→      return;
+   526→    }
+   527→    toast.error("Product not found", {
+   528→      description: `No product matches "${code}"`,
+   529→    });
+   530→  };
+   531→
+   532→  const handleCameraScan = (code: string) => {
+   533→    const added = addByBarcode(code, products);
+   534→    if (added) {
+   535→      const p = products.find(
+   536→        (x) => x.barcode.toLowerCase() === code.toLowerCase()
+   537→      );
+   538→      toast.success(`${p?.name ?? "Product"} added`);
+   539→    } else {
+   540→      // Try name match from camera input too
+   541→      const byName = products.find((p) =>
+   542→        p.name.toLowerCase().includes(code.toLowerCase())
+   543→      );
+   544→      if (byName) {
+   545→        addProduct(byName);
+   546→        toast.success(`${byName.name} added`);
+   547→      } else {
+   548→        toast.error("Product not found", {
+   549→          description: `No product matches "${code}"`,
+   550→        });
+   551→      }
+   552→    }
+   553→  };
+   554→
+   555→  const handleAddProduct = (p: Product) => {
+   556→    if (p.stock <= 0) {
+   557→      toast.error("Out of stock", { description: p.name });
+   558→      return;
+   559→    }
+   560→    // Prevent adding more than stock
+   561→    const inCart = items.find((i) => i.product.id === p.id)?.quantity ?? 0;
+   562→    if (inCart >= p.stock) {
+   563→      toast.error("Stock limit reached", {
+   564→        description: `Only ${p.stock} of ${p.name} available`,
+   565→      });
+   566→      return;
+   567→    }
+   568→    addProduct(p);
+   569→    toast.success(`${p.name} added`, { duration: 1200 });
+   570→  };
+   571→
+   572→  return (
+   573→    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+   574→      {/* ---------------- Left column: catalog & scan ---------------- */}
+   575→      <div className="flex-1 min-w-0 space-y-4">
+   576→        {/* Scan bar */}
+   577→        <Card className="gap-0 p-3 sm:p-4">
+   578→          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+   579→            <div className="relative flex-1">
+   580→              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   581→              <Input
+   582→                value={scanInput}
+   583→                onChange={(e) => {
+   584→                  setScanInput(e.target.value);
+   585→                  setSearchTerm(e.target.value);
+   586→                }}
+   587→                onKeyDown={(e) => {
+   588→                  if (e.key === "Enter") handleScanSubmit();
+   589→                }}
+   590→                placeholder="Scan or search product / barcode…"
+   591→                className="pl-9"
+   592→                aria-label="Scan or search product"
+   593→              />
+   594→              {scanInput && (
+   595→                <button
+   596→                  onClick={() => {
+   597→                    setScanInput("");
+   598→                    setSearchTerm("");
+   599→                  }}
+   600→                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+   601→                  aria-label="Clear search"
+   602→                >
+   603→                  <X className="h-3.5 w-3.5" />
+   604→                </button>
+   605→              )}
+   606→            </div>
+   607→            <div className="flex gap-2">
+   608→              <Button
+   609→                variant="outline"
+   610→                onClick={() => setScannerOpen(true)}
+   611→                className="shrink-0"
+   612→              >
+   613→                <Camera className="h-4 w-4" />
+   614→                Scan
+   615→              </Button>
+   616→              <Button
+   617→                onClick={handleScanSubmit}
+   618→                disabled={!scanInput.trim()}
+   619→                className="shrink-0"
+   620→              >
+   621→                <Plus className="h-4 w-4" />
+   622→                Add
+   623→              </Button>
+   624→            </div>
+   625→          </div>
+   626→        </Card>
+   627→
+   628→        {/* Category chips */}
+   629→        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-emerald">
+   630→          {categories.map((cat) => (
+   631→            <button
+   632→              key={cat}
+   633→              onClick={() => setActiveCategory(cat)}
+   634→              className={cn(
+   635→                "shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
+   636→                activeCategory === cat
+   637→                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+   638→                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+   639→              )}
+   640→            >
+   641→              {cat}
+   642→            </button>
+   643→          ))}
+   644→        </div>
+   645→
+   646→        {/* Product grid */}
+   647→        {productsLoading ? (
+   648→          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+   649→            {Array.from({ length: 8 }).map((_, i) => (
+   650→              <div
+   651→                key={i}
+   652→                className="h-40 animate-pulse rounded-xl border bg-muted/50"
+   653→              />
+   654→            ))}
+   655→          </div>
+   656→        ) : filteredProducts.length === 0 ? (
+   657→          <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-16 text-center">
+   658→            <PackageX className="h-10 w-10 text-muted-foreground/60" />
+   659→            <div>
+   660→              <p className="text-sm font-medium">No products found</p>
+   661→              <p className="text-xs text-muted-foreground">
+   662→                Try a different barcode, name, or category.
+   663→              </p>
+   664→            </div>
+   665→          </div>
+   666→        ) : (
+   667→          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+   668→            {filteredProducts.map((p) => (
+   669→              <ProductTile
+   670→                key={p.id}
+   671→                product={p}
+   672→                currency={currency}
+   673→                onAdd={handleAddProduct}
+   674→              />
+   675→            ))}
+   676→          </div>
+   677→        )}
+   678→      </div>
+   679→
+   680→      {/* ---------------- Right column: cart ---------------- */}
+   681→      <div className="w-full lg:w-[380px] lg:shrink-0">
+   682→        <Card className="sticky top-0 flex flex-col gap-0 overflow-hidden p-0 lg:top-0">
+   683→          {/* Header */}
+   684→          <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+   685→            <div className="flex items-center gap-2">
+   686→              <ShoppingCart className="h-4 w-4 text-primary" />
+   687→              <h2 className="text-sm font-semibold">Current Order</h2>
+   688→              {totalItems > 0 && (
+   689→                <Badge className="ml-1 h-5 min-w-5 justify-center px-1.5 text-[11px]">
+   690→                  {totalItems}
+   691→                </Badge>
+   692→              )}
+   693→            </div>
+   694→            {items.length > 0 && (
+   695→              <Button
+   696→                size="sm"
+   697→                variant="ghost"
+   698→                className="h-7 text-xs text-muted-foreground hover:text-destructive"
+   699→                onClick={() => setClearConfirmOpen(true)}
+   700→              >
+   701→                <Trash2 className="h-3.5 w-3.5" />
+   702→                Clear
+   703→              </Button>
+   704→            )}
+   705→          </div>
+   706→
+   707→          {/* Cart items */}
+   708→          {items.length === 0 ? (
+   709→            <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+   710→              <div className="grid h-14 w-14 place-items-center rounded-full bg-accent text-muted-foreground">
+   711→                <ShoppingCart className="h-6 w-6" />
+   712→              </div>
+   713→              <div>
+   714→                <p className="text-sm font-medium">Cart is empty</p>
+   715→                <p className="text-xs text-muted-foreground">
+   716→                  Scan or tap products to add
+   717→                </p>
+   718→              </div>
+   719→            </div>
+   720→          ) : (
+   721→            <div className="max-h-[40vh] overflow-y-auto scrollbar-emerald">
+   722→              <AnimatePresence initial={false}>
+   723→                {items.map((item) => (
+   724→                  <CartItemRow
+   725→                    key={item.product.id}
+   726→                    item={item}
+   727→                    currency={currency}
+   728→                    onIncrement={() => {
+   729→                      if (item.quantity >= item.product.stock) {
+   730→                        toast.error("Stock limit reached", {
+   731→                          description: `Only ${item.product.stock} of ${item.product.name} available`,
+   732→                        });
+   733→                        return;
+   734→                      }
+   735→                      updateQuantity(item.product.id, item.quantity + 1);
+   736→                    }}
+   737→                    onDecrement={() =>
+   738→                      updateQuantity(item.product.id, item.quantity - 1)
+   739→                    }
+   740→                    onRemove={() => removeItem(item.product.id)}
+   741→                  />
+   742→                ))}
+   743→              </AnimatePresence>
+   744→            </div>
+   745→          )}
+   746→
+   747→          {/* Totals + checkout */}
+   748→          {items.length > 0 && (
+   749→            <div className="space-y-3 border-t px-4 py-3">
+   750→              <div className="space-y-1.5 text-sm">
+   751→                <div className="flex justify-between text-muted-foreground">
+   752→                  <span>Subtotal</span>
+   753→                  <span className="tabular-nums">
+   754→                    {formatMoney(subtotal, currency)}
+   755→                  </span>
+   756→                </div>
+   757→
+   758→                <div className="flex items-center justify-between gap-2">
+   759→                  <span className="text-muted-foreground">Discount</span>
+   760→                  <div className="flex items-center gap-1">
+   761→                    <span className="text-xs text-muted-foreground">
+   762→                      {currency}
+   763→                    </span>
+   764→                    <Input
+   765→                      type="number"
+   766→                      min={0}
+   767→                      step="0.01"
+   768→                      value={Number.isFinite(discount) ? discount : 0}
+   769→                      onChange={(e) => {
+   770→                        const v = parseFloat(e.target.value);
+   771→                        setDiscount(Number.isNaN(v) ? 0 : v);
+   772→                      }}
+   773→                      className="h-7 w-24 text-right tabular-nums"
+   774→                    />
+   775→                  </div>
+   776→                </div>
+   777→
+   778→                {taxRate > 0 && (
+   779→                  <div className="flex justify-between text-muted-foreground">
+   780→                    <span>Tax ({taxRate}%)</span>
+   781→                    <span className="tabular-nums">
+   782→                      {formatMoney(taxAmount, currency)}
+   783→                    </span>
+   784→                  </div>
+   785→                )}
+   786→              </div>
+   787→
+   788→              <Separator />
+   789→
+   790→              <div className="flex items-baseline justify-between">
+   791→                <span className="text-sm font-semibold">Grand Total</span>
+   792→                <span className="text-xl font-bold text-primary tabular-nums">
+   793→                  {formatMoney(grandTotal, currency)}
+   794→                </span>
+   795→              </div>
+   796→
+   797→              {/* Payment method */}
+   798→              <div className="grid grid-cols-3 gap-2">
+   799→                {PAYMENT_METHODS.map((m) => {
+   800→                  const Icon = m.icon;
+   801→                  const active = paymentMethod === m.key;
+   802→                  return (
+   803→                    <Button
+   804→                      key={m.key}
+   805→                      type="button"
+   806→                      size="sm"
+   807→                      variant={active ? "default" : "outline"}
+   808→                      onClick={() => setPaymentMethod(m.key)}
+   809→                      className={cn(
+   810→                        "flex flex-col gap-0.5 h-auto py-2",
+   811→                        active && "shadow-sm"
+   812→                      )}
+   813→                    >
+   814→                      <Icon className="h-4 w-4" />
+   815→                      <span className="text-[11px]">{m.label}</span>
+   816→                    </Button>
+   817→                  );
+   818→                })}
+   819→              </div>
+   820→
+   821→              <Button
+   822→                size="lg"
+   823→                className="w-full"
+   824→                onClick={() => setCheckoutOpen(true)}
+   825→              >
+   826→                <CheckCircle2 className="h-4 w-4" />
+   827→                Checkout · {formatMoney(grandTotal, currency)}
+   828→              </Button>
+   829→            </div>
+   830→          )}
+   831→        </Card>
+   832→      </div>
+   833→
+   834→      {/* Camera scanner dialog */}
+   835→      <CameraScannerDialog
+   836→        open={scannerOpen}
+   837→        onOpenChange={setScannerOpen}
+   838→        onScan={handleCameraScan}
+   839→      />
+   840→
+   841→      {/* Checkout dialog */}
+   842→      <CheckoutDialog open={checkoutOpen} onOpenChange={setCheckoutOpen} />
+   843→
+   844→      {/* Clear cart confirm */}
+   845→      <AlertDialog
+   846→        open={clearConfirmOpen}
+   847→        onOpenChange={setClearConfirmOpen}
+   848→      >
+   849→        <AlertDialogContent>
+   850→          <AlertDialogHeader>
+   851→            <AlertDialogTitle>Clear cart?</AlertDialogTitle>
+   852→            <AlertDialogDescription>
+   853→              This will remove all {totalItems} item{totalItems === 1 ? "" : "s"}{" "}
+   854→              from the current order. This cannot be undone.
+   855→            </AlertDialogDescription>
+   856→          </AlertDialogHeader>
+   857→          <AlertDialogFooter>
+   858→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   859→            <AlertDialogAction
+   860→              className="bg-destructive text-white hover:bg-destructive/90"
+   861→              onClick={() => {
+   862→                clearCart();
+   863→                setClearConfirmOpen(false);
+   864→                toast.success("Cart cleared");
+   865→              }}
+   866→            >
+   867→              Clear
+   868→            </AlertDialogAction>
+   869→          </AlertDialogFooter>
+   870→        </AlertDialogContent>
+   871→      </AlertDialog>
+   872→    </div>
+   873→  );
+   874→}
+   875→
