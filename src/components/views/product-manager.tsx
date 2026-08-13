@@ -15,6 +15,7 @@ import {
   Loader2,
   ScanLine,
   X,
+  Copy,
 } from "lucide-react";
 
 import { productsApi } from "@/lib/api";
@@ -230,6 +231,21 @@ export function ProductManager() {
     setFormOpen(true);
   };
 
+  const duplicateProduct = (p: Product) => {
+    // Open the add form pre-filled with the product's data, barcode suffixed with "-COPY"
+    setEditing(null);
+    setForm({
+      name: `${p.name} (Copy)`,
+      barcode: `${p.barcode}-COPY`,
+      price: String(p.price),
+      stock: String(p.stock),
+      category: p.category,
+    });
+    setFormErrors({});
+    setFormOpen(true);
+    toast.info("Product duplicated — review and save", { duration: 2000 });
+  };
+
   const validate = (): boolean => {
     const errs: Partial<Record<keyof FormState, string>> = {};
     if (!form.name.trim()) errs.name = "Name is required";
@@ -430,6 +446,16 @@ export function ProductManager() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
+                          onClick={() => duplicateProduct(p)}
+                          aria-label={`Duplicate ${p.name}`}
+                          title="Duplicate product"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 text-red-600 hover:bg-red-500/10 hover:text-red-700"
                           onClick={() => setDeleteTarget(p)}
                           aria-label={`Delete ${p.name}`}
@@ -484,6 +510,16 @@ export function ProductManager() {
                           aria-label={`Edit ${p.name}`}
                         >
                           <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => duplicateProduct(p)}
+                          aria-label={`Duplicate ${p.name}`}
+                          title="Duplicate product"
+                        >
+                          <Copy className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="outline"

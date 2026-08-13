@@ -439,3 +439,88 @@ Task: QA + implement 3 new features (Hold/Park Order, Dashboard leaderboard + do
 7. **Data export**: export filtered sales to CSV/PDF, scheduled reports.
 
 Project Status: STABLE & ENHANCED (round 3) — 3 new feature groups added (Hold/Park Order, Dashboard leaderboard+donut, Sales History filters). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+
+---
+Task ID: 14
+Agent: webDevReview cron (round 4)
+Task: QA + implement 4 new features (low-stock toast, duplicate product, CSV export, ARIA labels)
+
+## Current project status / assessment
+- Project was stable & enhanced after round 3 (6 views, hold/park orders, dashboard leaderboard + donut, sales filters).
+- QA at start: lint clean, no console/runtime errors, dev server healthy, all views render.
+- No bugs found — proceeded to implement next-phase recommendations.
+
+## Current goals / completed modifications / verification results
+
+### Work Log:
+- Reviewed worklog.md (Tasks 3-13) — understood project state.
+- Performed QA via agent-browser: loaded app, no errors, lint clean.
+
+**1. Low-stock alert toast on app load** (`app-shell.tsx`)
+- Added `useEffect` + `useRef` (notifiedRef) that fires once when products first load.
+- If `lowStockCount > 0` (stock 0-5), shows a `toast.warning` with:
+  * Title: "N products need attention"
+  * Description: breakdown of out-of-stock + low-stock counts
+  * Duration: 6 seconds
+  * Action button: "View" → navigates to Products view
+- Fires only once per app session (notifiedRef prevents duplicate toasts on refetch).
+- Verified by lowering Coca-Cola stock to 3 → toast appeared "1 product need attention / 1 low stock / View". Stock restored after test.
+
+**2. Duplicate product action** (`product-manager.tsx`)
+- Added `Copy` icon import from lucide-react.
+- New `duplicateProduct(p)` handler: opens Add Product form pre-filled with:
+  * Name: "{original name} (Copy)"
+  * Barcode: "{original barcode}-COPY"
+  * Price, stock, category copied from source
+  * Shows info toast "Product duplicated — review and save"
+- Added Duplicate button (ghost/outline, Copy icon) between Edit and Delete in both:
+  * Desktop table row actions
+  * Mobile card list actions
+- Both have `aria-label={`Duplicate ${p.name}`}` and `title="Duplicate product"`.
+- Verified: clicked Duplicate on Coca-Cola → Add Product dialog opened with "Coca-Cola 750ml (Copy)", barcode "8901030867531-COPY", price 45, stock 116, category Beverages.
+
+**3. Sales CSV export** (`sales-history.tsx`)
+- Added `Download` icon import.
+- New `exportSalesCsv()` handler:
+  * Generates CSV with headers: Receipt No, Date/Time, Items, Payment Method, Subtotal, Discount, Tax, Total
+  * Proper CSV escaping (quotes, commas, newlines)
+  * Creates Blob → triggers download as `swiftbill-sales-YYYY-MM-DD.csv`
+  * Toast: "Exported N sales to CSV"
+  * Disabled when no sales; exports currently filtered sales (respects date/payment filters)
+- Added "Export" button (outline, Download icon) next to Refresh in the 7-day chart card header.
+- Verified: clicked Export → toast "Exported 2 sales to CSV", file downloaded.
+
+**4. Accessibility: ARIA labels** (`app-shell.tsx`)
+- Mobile menu button: added `aria-label="Open navigation menu"`.
+- Cart pill button: added `aria-label="Open cart (N items)"` (dynamic based on cart count).
+- Theme toggle already had aria-labels (verified).
+- Product manager buttons already had aria-labels (verified in round 3).
+- POS Terminal cart buttons have text labels (Held/Hold/Clear) so screen readers read them correctly.
+
+### Verification results:
+- `bun run lint`: clean (exit 0).
+- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+- agent-browser QA:
+  * Low-stock toast: lowered Coca-Cola stock to 3 → toast "1 product need attention / 1 low stock / View" appeared on app load. Restored stock after test.
+  * Duplicate product: clicked Duplicate on Coca-Cola → Add Product dialog opened with pre-filled "Coca-Cola 750ml (Copy)" data (name, barcode-COPY, price, stock, category all correct).
+  * CSV export: clicked Export → toast "Exported 2 sales to CSV", file downloaded.
+  * ARIA labels: mobile menu button + cart pill now have aria-labels.
+  * No console errors throughout testing.
+
+## Unresolved issues / risks, and priority recommendations for the next phase
+
+### Files modified this round:
+- `src/components/app-shell.tsx` — low-stock toast + useRef import + ARIA labels
+- `src/components/views/product-manager.tsx` — duplicate product action (Copy icon + handler + buttons)
+- `src/components/views/sales-history.tsx` — CSV export (Download icon + handler + button)
+
+### Recommendations for next round:
+1. **Receipt improvements**: QR code on receipt (digital copy link), 80mm/58mm size toggle, email receipt option.
+2. **Dashboard**: "sales by hour" heatmap, customer return rate metric.
+3. **POS Terminal**: customer display mode for dual-screen setups, quick keypad for manual price entry.
+4. **Product Manager**: bulk CSV import, barcode generation/printing.
+5. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support.
+6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+7. **Reports**: profit margins (cost price field), tax summary report, best-performing categories.
+
+Project Status: STABLE & ENHANCED (round 4) — 4 new features added (low-stock toast, duplicate product, CSV export, ARIA labels). All verified working via agent-browser. No bugs, no lint errors, no runtime errors.

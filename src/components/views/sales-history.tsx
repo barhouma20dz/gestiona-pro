@@ -14,6 +14,7 @@ import {
   X,
   Loader2,
   ReceiptText,
+  Download,
 } from "lucide-react";
 
 import { salesApi, shopApi } from "@/lib/api";
@@ -167,6 +168,54 @@ export function SalesHistory() {
     toast.success("Sales refreshed");
   };
 
+  const exportSalesCsv = () => {
+    if (sales.length === 0) {
+      toast.error("No sales to export");
+      return;
+    }
+    const headers = [
+      "Receipt No",
+      "Date/Time",
+      "Items",
+      "Payment Method",
+      "Subtotal",
+      "Discount",
+      "Tax",
+      "Total",
+    ];
+    const escape = (v: string | number) => {
+      const s = String(v);
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+    const rows = sales.map((s) =>
+      [
+        s.receiptNo,
+        formatDateTime(s.createdAt),
+        s.itemCount,
+        s.paymentMethod,
+        s.subtotal.toFixed(2),
+        s.discount.toFixed(2),
+        s.taxAmount.toFixed(2),
+        s.total.toFixed(2),
+      ]
+        .map(escape)
+        .join(",")
+    );
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `swiftbill-sales-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${sales.length} sales to CSV`);
+  };
+
   const openReceipt = (saleId: string) => {
     setSelectedId(saleId);
     setReceiptOpen(true);
@@ -256,20 +305,32 @@ export function SalesHistory() {
               Revenue trend · {formatMoney(chartTotal, currency)} total
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refreshAll}
-            disabled={salesQuery.isFetching || statsQuery.isFetching}
-          >
-            <RefreshCw
-              className={cn(
-                "h-4 w-4",
-                (salesQuery.isFetching || statsQuery.isFetching) && "animate-spin"
-              )}
-            />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportSalesCsv}
+              disabled={sales.length === 0}
+              title="Export filtered sales to CSV"
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshAll}
+              disabled={salesQuery.isFetching || statsQuery.isFetching}
+            >
+              <RefreshCw
+                className={cn(
+                  "h-4 w-4",
+                  (salesQuery.isFetching || statsQuery.isFetching) && "animate-spin"
+                )}
+              />
+              Refresh
+            </Button>
+          </div>
         </div>
         <div className="mt-5 flex h-32 items-end justify-between gap-2 sm:gap-3">
           {series.map((d) => {

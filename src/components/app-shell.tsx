@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutDashboard,
   ScanLine,
@@ -19,6 +19,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery } from "@tanstack/react-query";
 import { shopApi, productsApi } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
+import { toast } from "sonner";
 import { PosTerminal } from "@/components/views/pos-terminal";
 import { ProductManager } from "@/components/views/product-manager";
 import { SalesHistory } from "@/components/views/sales-history";
@@ -149,9 +150,30 @@ export function AppShell() {
     queryKey: ["products"],
     queryFn: productsApi.list,
   });
-  const lowStockCount = products.filter(
-    (p) => p.stock >= 0 && p.stock <= 5
-  ).length;
+  const lowStockProducts = products.filter((p) => p.stock >= 0 && p.stock <= 5);
+  const lowStockCount = lowStockProducts.length;
+  const notifiedRef = useRef(false);
+
+  // Low-stock alert toast on app load (fires once when products first load)
+  useEffect(() => {
+    if (notifiedRef.current || products.length === 0) return;
+    notifiedRef.current = true;
+    if (lowStockCount > 0) {
+      const outOfStock = products.filter((p) => p.stock === 0).length;
+      const lowOnly = lowStockCount - outOfStock;
+      toast.warning(`${lowStockCount} product${lowStockCount === 1 ? "" : "s"} need attention`, {
+        description:
+          (outOfStock > 0 ? `${outOfStock} out of stock` : "") +
+          (outOfStock > 0 && lowOnly > 0 ? " · " : "") +
+          (lowOnly > 0 ? `${lowOnly} low stock` : ""),
+        duration: 6000,
+        action: {
+          label: "View",
+          onClick: () => setView("products"),
+        },
+      });
+    }
+  }, [products, lowStockCount]);
 
   // Cmd+K / Ctrl+K to open command palette
   useEffect(() => {
@@ -222,6 +244,7 @@ export function AppShell() {
                 size="icon"
                 className="md:hidden"
                 onClick={() => setMobileOpen(true)}
+                aria-label="Open navigation menu"
               >
                 <Menu className="h-5 w-5" />
               </Button>
@@ -260,6 +283,7 @@ export function AppShell() {
             <button
               onClick={() => setView("pos")}
               className="relative flex items-center gap-2 rounded-full border bg-card px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent"
+              aria-label={`Open cart${cartCount > 0 ? ` (${cartCount} items)` : ""}`}
             >
               <ShoppingCart className="h-4 w-4 text-primary" />
               <span className="hidden sm:inline">Cart</span>
