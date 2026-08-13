@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  LayoutDashboard,
   ScanLine,
   Package,
   ReceiptText,
@@ -9,6 +10,7 @@ import {
   Settings,
   ShoppingCart,
   Menu,
+  Command as CommandIcon,
 } from "lucide-react";
 import type { ViewKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -22,9 +24,13 @@ import { ProductManager } from "@/components/views/product-manager";
 import { SalesHistory } from "@/components/views/sales-history";
 import { ShopDetails } from "@/components/views/shop-details";
 import { SettingsView } from "@/components/views/settings-view";
+import { Dashboard } from "@/components/views/dashboard";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { CommandPalette } from "@/components/command-palette";
 
 const NAV: { key: ViewKey; label: string; icon: typeof ScanLine; desc: string }[] =
   [
+    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, desc: "Store overview" },
     { key: "pos", label: "POS Terminal", icon: ScanLine, desc: "Scan & bill" },
     { key: "products", label: "Products", icon: Package, desc: "Manage inventory" },
     { key: "sales", label: "Sales History", icon: ReceiptText, desc: "Past bills" },
@@ -111,8 +117,9 @@ function SidebarContent({
 }
 
 export function AppShell() {
-  const [view, setView] = useState<ViewKey>("pos");
+  const [view, setView] = useState<ViewKey>("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
   const cartCount = useCartStore((s) => s.totalItems());
 
   const { data: shop } = useQuery({
@@ -120,11 +127,25 @@ export function AppShell() {
     queryFn: shopApi.get,
   });
 
+  // Cmd+K / Ctrl+K to open command palette
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCmdOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const current = NAV.find((n) => n.key === view)!;
   const CurrentIcon = current.icon;
 
   const renderView = () => {
     switch (view) {
+      case "dashboard":
+        return <Dashboard onNavigate={select} />;
       case "pos":
         return <PosTerminal />;
       case "products":
@@ -157,6 +178,13 @@ export function AppShell() {
         </SheetContent>
       </Sheet>
 
+      {/* Command palette */}
+      <CommandPalette
+        open={cmdOpen}
+        onOpenChange={setCmdOpen}
+        onNavigate={select}
+      />
+
       {/* Main column */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Top bar */}
@@ -187,8 +215,22 @@ export function AppShell() {
             </div>
           </div>
 
-          {/* Cart pill */}
-          <div className="ml-auto flex items-center gap-2">
+          {/* Search trigger (Cmd+K) */}
+          <button
+            onClick={() => setCmdOpen(true)}
+            className="ml-auto hidden sm:flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
+          >
+            <CommandIcon className="h-4 w-4" />
+            <span className="text-xs">Search…</span>
+            <kbd className="ml-2 rounded border bg-background px-1.5 py-0.5 text-[10px] font-medium">
+              ⌘K
+            </kbd>
+          </button>
+
+          <div className="flex items-center gap-1.5 ml-auto sm:ml-2">
+            <ThemeToggle />
+
+            {/* Cart pill */}
             <button
               onClick={() => setView("pos")}
               className="relative flex items-center gap-2 rounded-full border bg-card px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent"

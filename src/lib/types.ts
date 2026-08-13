@@ -61,6 +61,7 @@ export interface CartItem {
 }
 
 export type ViewKey =
+  | "dashboard"
   | "pos"
   | "products"
   | "sales"

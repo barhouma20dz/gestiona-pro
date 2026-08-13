@@ -197,3 +197,82 @@ Stage Summary:
 - No runtime/console errors. Lint clean. Responsive layout confirmed.
 
 Project Status: COMPLETE & VERIFIED
+
+---
+Task ID: 10-Dashboard
+Agent: full-stack-developer (Dashboard)
+Task: Build Dashboard overview view (NEW feature)
+
+Work Log:
+- Read worklog.md and inspected src/lib/{types,api,format,utils}.ts, src/components/app-shell.tsx, src/components/views/sales-history.tsx, src/components/views/product-manager.tsx, and the shadcn primitives (Card, Badge, Separator, Skeleton) to confirm shared utilities, prop APIs, the emerald theme, and the existing payment-badge / stock-badge patterns already used in sibling views.
+- Verified dev server healthy via `tail dev.log` (GET / 200, all 4 API endpoints returning 200).
+- Created `src/components/views/dashboard.tsx` (NEW file):
+  * `Dashboard({ onNavigate }: { onNavigate: (view: ViewKey) => void })` — the store-owner command center.
+  * **Section 1 — Welcome header**: left = "Welcome back" greeting + shop name (skeleton while shop loads) + full-format current date ("Thursday, 13 August 2026"); right = emerald "New Sale" button (ScanLine → onNavigate("pos")) + outline "Add Product" button (Plus → onNavigate("products")). Responsive: stacks on mobile, row on sm+.
+  * **Section 2 — KPI cards** (grid-cols-2 lg:grid-cols-4): Today's Revenue (TrendingUp, emerald circle, sparkline-style "▲ vs 0 yesterday" + "Today" pill badge), Inventory Value (Boxes, amber circle, computed as Σ price×stock), Low Stock Alerts (AlertTriangle, orange circle, clickable → onNavigate("products"), subtitle shows out-of-stock count), Avg Ticket (Receipt, slate circle). Each card: white bg, rounded-xl, subtle border, hover:shadow-md transition, framer-motion staggered entrance (opacity 0 y 12 → opacity 1 y 0, delay = index × 0.08s). 40px icon avatar circles with `bg-{color}-500/15`. Per-card loading skeleton on the value.
+  * **Section 3 — Two-column grid (lg:grid-cols-3 gap-6)**:
+    - Left (col-span-2): **Recent Sales** card with "View all" link button → onNavigate("sales"). Pulls from `salesApi.list()` (key `["sales"]`), takes 5 most recent. Each row: mono receipt no, formatTime + item count, payment badge (Cash=slate / UPI=emerald / Card=amber), bold total. Dividers via `divide-y`. Empty state: "No sales yet" with ShoppingCart icon + "Start a sale" CTA → onNavigate("pos"). Loading: 5 skeleton rows.
+    - Right (col-span-1): **Inventory Health** card with "Manage" link → onNavigate("products"). Stacked horizontal bar (3 segments: Out=red, Low=amber, Healthy=emerald, widths proportional to counts) + 3 legend rows (colored dot + label + count). Below: Top 5 Low Stock items list (products sorted ascending by stock, take 5) with truncated name, price, and colored stock badge (red=0, amber=1-5, emerald>5). Empty state: "No products yet" with Boxes icon + "Add product" CTA. Loading skeleton.
+  * **Section 4 — Quick actions grid** (sm:grid-cols-2 lg:grid-cols-4): 4 large clickable motion.div cards with whileHover y:-2 lift. Each card has an icon avatar in tinted circle + title + subtitle. Start Billing (ScanLine, emerald) → pos, Manage Products (Package, slate) → products, View Reports (BarChart3, amber) → sales, Shop Settings (Store, slate) → shop. (Used slate instead of blue for the Manage Products card to honor the "no indigo/blue" rule.)
+  * All money via `formatMoney(amount, shop?.currency ?? "₹")`. Emerald primary throughout. NO indigo / blue anywhere.
+- Wired the new view into the app so it is actually reachable as the landing page:
+  * Added `"dashboard"` to the `ViewKey` union in `src/lib/types.ts`.
+  * Imported `Dashboard` in `src/components/app-shell.tsx`, added a LayoutDashboard entry to the top of the NAV array, changed the default `useState<ViewKey>("pos")` → `"dashboard"`, and added a `case "dashboard": return <Dashboard onNavigate={select} />` branch to `renderView`.
+- Ran `bun run lint` — exit 0, no errors, no warnings (across the whole repo).
+- Checked `dev.log`: GET / 200, GET /api/shop 200, GET /api/sales/stats 200, GET /api/products 200, GET /api/sales 200. No runtime errors, no exceptions, no module-not-found warnings related to my files.
+
+Stage Summary:
+- Files created:
+  * src/components/views/dashboard.tsx (NEW — full Dashboard overview view)
+- Files modified (minimal wiring so the new view is reachable as the landing page):
+  * src/lib/types.ts (added "dashboard" to ViewKey union)
+  * src/components/app-shell.tsx (imported Dashboard, added NAV entry, set default view to "dashboard", rendered <Dashboard onNavigate={select} />)
+- Features delivered:
+  * Welcome header with dynamic greeting, shop name, full-format date, and two quick-action buttons.
+  * 4 KPI cards (Today's Revenue + sparkline comparison, Inventory Value, Low Stock Alerts clickable, Avg Ticket) with staggered framer-motion entrance, hover shadow, per-card loading skeletons.
+  * Two-column layout: Recent Sales (5 latest, payment badges, dividers, empty state CTA, loading skeletons) + Inventory Health (stacked proportional bar + legend rows + Top 5 low-stock list with colored badges).
+  * Quick actions grid: 4 large hover-lift motion cards wired to onNavigate for pos / products / sales / shop.
+  * Fully responsive (mobile single-column, desktop multi-column grids), emerald primary throughout, no indigo/blue.
+  * Wired into AppShell so the Dashboard is now the default landing view of SwiftBill POS.
+- Lint: `bun run lint` passes (exit 0, no errors, no warnings).
+- Runtime: page renders at `/` 200; `/api/shop`, `/api/products`, `/api/sales`, `/api/sales/stats` all 200; no runtime errors in dev.log.
+
+---
+Task ID: 11
+Agent: webDevReview cron (round 1)
+Task: QA review + implement Dashboard, dark mode, command palette
+
+Work Log:
+- Reviewed prior worklog (Tasks 3, 5, 6-7, 8, 9, 10-Dashboard) — project was complete & verified.
+- Performed QA via agent-browser: loaded app, tested all 5 existing views, verified no console/runtime errors, confirmed lint clean.
+- Used VLM to analyze Sales History screenshot: confirmed stats cards (Revenue ₹670, Transactions 2, Items Sold 6, Avg Ticket ₹335), 7-day chart, sales table all rendering correctly with no bugs.
+- Dispatched agent to build NEW Dashboard view (Task 10-Dashboard): KPI cards, recent sales, inventory health, quick actions. Agent also wired it into app-shell as default landing view + added "dashboard" to ViewKey union + NAV.
+- Installed next-themes package.
+- Created theme-provider.tsx (next-themes wrapper, attribute="class", defaultTheme="light", enableSystem).
+- Created theme-toggle.tsx (Sun/Moon animated toggle, uses useSyncExternalStore for mount detection — avoids setState-in-effect lint rule).
+- Created command-palette.tsx (cmdk-based CommandDialog with quick actions, navigation items, theme toggle; Cmd+K shortcut).
+- Updated app-shell.tsx: added Cmd+K keyboard listener, search trigger button (⌘K) in header, ThemeToggle, CommandPalette integration.
+- Updated layout.tsx: wrapped Providers in ThemeProvider.
+- Updated globals.css: rewrote .dark theme to use emerald-tinted hues (hue 162.48) instead of grayscale, removed indigo chart-1/sidebar-primary (was 264.376 hue).
+- Fixed lint error: replaced useEffect+setState mount pattern with useSyncExternalStore in theme-toggle.tsx.
+- Verified via agent-browser: Dashboard renders with all sections, Cmd+K opens palette, navigation via palette works, dark mode toggle switches theme (confirmed via document.documentElement.classList), VLM confirms dark mode is "production-grade" with excellent contrast.
+
+Stage Summary:
+- NEW features added:
+  * Dashboard view (6th view): welcome header, 4 KPI cards (revenue/inventory value/low stock/avg ticket), recent sales list, inventory health bar + top low-stock items, 4 quick-action cards. Default landing page.
+  * Dark mode: full emerald-tinted dark theme via next-themes, animated Sun/Moon toggle in header, persists to localStorage, respects system preference.
+  * Command palette (Cmd+K): global search/navigation with quick actions (New Sale, Add Product), page navigation (all 6 views), theme toggle. Accessible via keyboard shortcut or header search button.
+- Files created: src/components/views/dashboard.tsx, src/components/theme-provider.tsx, src/components/theme-toggle.tsx, src/components/command-palette.tsx
+- Files modified: src/components/app-shell.tsx (Cmd+K + toggle + palette + dashboard nav), src/app/layout.tsx (ThemeProvider), src/app/globals.css (emerald dark theme), src/lib/types.ts (ViewKey += "dashboard")
+- QA: lint clean (exit 0), no console/runtime errors, all views render, dark mode verified via VLM as "production-grade", command palette navigation works, dashboard is default landing.
+- ViewKey union now: "dashboard" | "pos" | "products" | "sales" | "shop" | "settings" (6 views)
+
+Unresolved issues / next-phase recommendations:
+- Dashboard KPI "vs yesterday" comparison shows "▲ vs 0 yesterday" since we only have today's stats API. Could add a 7-day stats endpoint + sparkline trend.
+- Command palette could include product search (fuzzy match on product names/barcodes → add to cart or view). Currently only navigates pages.
+- POS Terminal could benefit from keyboard shortcuts (F1 focus scan, F2/F3/F4 payment methods, Enter checkout).
+- Sales History chart shows 6 empty days + 1 tall bar (only 1 day of data). Normal for fresh install.
+- No automated tests yet (test/widget_test.dart was the only "test" in original Flutter app, and it was broken).
+- Consider adding a "Low Stock" notification badge on the Products nav item.
+
+Project Status: STABLE & ENHANCED — 3 new features (Dashboard, Dark Mode, Command Palette) added on top of the complete POS app. All verified working.
