@@ -20,6 +20,7 @@ import {
   Trophy,
   PieChart,
   Clock,
+  Calendar,
 } from "lucide-react";
 
 import { productsApi, salesApi, shopApi } from "@/lib/api";
@@ -503,6 +504,26 @@ export function Dashboard({
     return { unitsSold7d, avgStock, turnover, rate };
   }, [sales, products]);
 
+  // Best-selling day of week (from all sales)
+  const dayOfWeekStats = useMemo(() => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const buckets = new Array(7).fill(0) as number[];
+    let totalRevenue = 0;
+    sales.forEach((sale) => {
+      const dow = new Date(sale.createdAt).getDay();
+      buckets[dow] += sale.total;
+      totalRevenue += sale.total;
+    });
+    const maxIdx = buckets.indexOf(Math.max(...buckets));
+    return {
+      days,
+      buckets,
+      bestDay: days[maxIdx],
+      bestDayRevenue: buckets[maxIdx],
+      totalRevenue,
+    };
+  }, [sales]);
+
   /* greeting */
   const now = new Date();
   const fullDate = now.toLocaleDateString("en-US", {
@@ -617,8 +638,8 @@ export function Dashboard({
           const card = (
             <Card
               className={cn(
-                "gap-0 p-4 transition-shadow hover:shadow-md sm:p-5",
-                kpi.clickable && "cursor-pointer"
+                "gap-0 p-4 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg sm:p-5",
+                kpi.clickable && "cursor-pointer hover:border-primary/40"
               )}
             >
               <div className="flex items-start justify-between gap-3">
@@ -1206,6 +1227,63 @@ export function Dashboard({
           </div>
         </div>
       </Card>
+
+      {/* Best-selling day of week */}
+      {dayOfWeekStats.totalRevenue > 0 && (
+        <Card className="gap-0 p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">
+                Revenue by Day of Week
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Best day:{" "}
+                <span className="font-semibold text-emerald-600">
+                  {dayOfWeekStats.bestDay}
+                </span>{" "}
+                · {formatMoney(dayOfWeekStats.bestDayRevenue, currency)}
+              </p>
+            </div>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="flex items-end gap-2" style={{ height: "80px" }}>
+            {dayOfWeekStats.buckets.map((value, idx) => {
+              const max = Math.max(1, ...dayOfWeekStats.buckets);
+              const pct = (value / max) * 100;
+              const isBest = idx === dayOfWeekStats.buckets.indexOf(Math.max(...dayOfWeekStats.buckets));
+              return (
+                <div
+                  key={idx}
+                  className="flex flex-1 flex-col items-center gap-1.5"
+                  title={`${dayOfWeekStats.days[idx]}: ${formatMoney(value, currency)}`}
+                >
+                  <div className="flex h-16 w-full items-end justify-center">
+                    <div
+                      className={cn(
+                        "w-full max-w-[2rem] rounded-t-md transition-all",
+                        isBest
+                          ? "bg-emerald-500"
+                          : value > 0
+                          ? "bg-emerald-500/35 hover:bg-emerald-500/55"
+                          : "bg-muted"
+                      )}
+                      style={{ height: `${Math.max(3, pct)}%` }}
+                    />
+                  </div>
+                  <span
+                    className={cn(
+                      "text-[10px] font-medium",
+                      isBest ? "text-emerald-600" : "text-muted-foreground"
+                    )}
+                  >
+                    {dayOfWeekStats.days[idx]}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* 4. Quick actions */}
       <div>
