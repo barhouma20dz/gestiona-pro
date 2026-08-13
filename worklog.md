@@ -619,3 +619,78 @@ Task: QA + implement 3 new features (cost price + profit margins, sales-by-hour 
 - The dev server process was killed during Prisma client regeneration (schema change requires process restart, not just HMR). Restarted via subshell `(bun run dev &)`. If the dev server is unresponsive in the next round, run `cd /home/z/my-project && (bun run dev &)` to restart it.
 
 Project Status: STABLE & ENHANCED (round 5) — 3 new feature groups added (cost price + profit margins, sales-by-hour heatmap, receipt size toggle + QR). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+
+---
+Task ID: 16
+Agent: webDevReview cron (round 6)
+Task: QA + implement 2 new features (custom item keypad, profit margin report)
+
+## Current project status / assessment
+- Project was stable & enhanced after round 5 (cost price + profit margins, sales-by-hour heatmap, receipt size toggle + QR).
+- QA at start: dev server up (200), lint clean, no console/runtime errors, all views render.
+- No bugs found — proceeded to implement next-phase recommendations.
+- Deliberately avoided schema changes this round (round 5's Prisma client regeneration caused dev server restart issues). Both new features are frontend-only.
+
+## Current goals / completed modifications / verification results
+
+### Work Log:
+- Reviewed worklog.md (Tasks 3-15) — understood project state.
+- Performed QA via agent-browser: loaded app, no errors, lint clean.
+
+**1. Quick Custom Item keypad** (POS Terminal)
+- Updated `src/components/views/pos-terminal.tsx`:
+  * Added `Calculator` icon import + `Label` component import.
+  * New state: `customItemOpen`, `customName`, `customPrice`.
+  * New `handleAddCustomItem()` handler: creates a pseudo-Product with id `custom-{timestamp}`, barcode `CUSTOM-{XXXXXX}`, stock 999999 (unlimited), category "Custom". Validates price > 0, adds to cart via `addProduct`, shows toast with name + price.
+  * "Custom" button (Calculator icon) added to scan bar, before Scan button. Shows icon only on mobile, icon + "Custom" text on sm+.
+  * Custom item dialog: name input (optional, placeholder "e.g. Loose rice 2kg"), price input (currency-prefixed, number, Enter to submit), quick price chips (₹10/₹20/₹50/₹100/₹500), "Add to cart" button (disabled when price invalid).
+  * Dialog description explains use case: "ideal for loose items, weighed goods, or quick sales not in your catalog."
+- Verified via agent-browser: clicked Custom → dialog opened → entered "Loose Rice 2kg" → clicked ₹50 quick chip → price field showed 50 → clicked "Add to cart" → cart showed "Loose Rice 2kg" + Checkout · ₹50.00.
+
+**2. Profit margin report** (Sales History)
+- Updated `src/components/views/sales-history.tsx`:
+  * Added `productsApi` import + `Wallet`, `Percent` icon imports.
+  * New `productsQuery` (useQuery key `["products"]`) to fetch product cost prices.
+  * New `profitSummary` useMemo: builds a productName→costPrice map from products, iterates filtered sales to compute:
+    - revenue (sum of subtotals)
+    - cost (sum of unitCost × quantity per item, matched by productName)
+    - discountTotal (sum of discounts)
+    - profit = revenue - cost - discountTotal
+    - margin = profit / revenue × 100
+  * New "Profit Summary" Card section (between 7-day chart and sales table): 4-column grid with colored cards:
+    - Revenue (emerald tint, TrendingUp icon)
+    - Cost (slate tint, Wallet icon)
+    - Discounts (amber tint, Receipt icon)
+    - Net Profit (emerald/red tint based on sign, Calculator icon, shows margin %)
+  * Only shows when sales.length > 0. Reflects current date/payment filters.
+- Verified via agent-browser + VLM: Profit Summary shows Revenue ₹680.00 (green), Cost ₹522.00 (grey), Discounts ₹10.00 (amber), Net Profit +₹148.00 (green, 21.8% margin). VLM confirmed all 4 cards render correctly with appropriate colors.
+
+### Verification results:
+- `bun run lint`: clean (exit 0).
+- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+- agent-browser QA:
+  * Custom item: dialog opens, name + price fields work, quick price chips populate price, item added to cart (₹50), checkout button updates.
+  * Profit Summary: 4 cards render with correct values (Revenue ₹680, Cost ₹522, Discounts ₹10, Net Profit +₹148, 21.8% margin). VLM confirmed colors + layout.
+  * No console errors throughout testing.
+
+## Unresolved issues / risks, and priority recommendations for the next phase
+
+### Files modified this round:
+- `src/components/views/pos-terminal.tsx` — custom item keypad (Calculator icon, Label, custom dialog, handler, button)
+- `src/components/views/sales-history.tsx` — profit margin report (productsApi, Wallet/Percent icons, profitSummary useMemo, 4-card Profit Summary section)
+
+### Recommendations for next round:
+1. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support, configurable low-stock threshold (requires schema change + dev server restart).
+2. **Product Manager**: bulk CSV import, barcode generation/printing.
+3. **POS Terminal**: customer display mode for dual-screen setups.
+4. **Reports**: tax summary report, best-performing categories report, export profit report to PDF.
+5. **Dashboard**: customer return rate metric, inventory turnover ratio.
+6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+7. **Receipt**: email receipt option, receipt logo upload, multiple copies option.
+8. **Styling**: gradient headers, improved empty-state illustrations, table row hover effects.
+
+### Note on dev server:
+- Dev server is currently running (PIDs 14482/14483, started via subshell in round 5). If unresponsive, run `cd /home/z/my-project && (bun run dev &)` to restart.
+- Avoid schema changes (Prisma client regeneration) unless necessary — they require a full process restart.
+
+Project Status: STABLE & ENHANCED (round 6) — 2 new features added (custom item keypad, profit margin report). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
