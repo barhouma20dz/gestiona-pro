@@ -1,0 +1,866 @@
+     1→"use client";
+     2→
+     3→import { useMemo, useState } from "react";
+     4→import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+     5→import { motion } from "framer-motion";
+     6→import {
+     7→  Plus,
+     8→  Search,
+     9→  Pencil,
+    10→  Trash2,
+    11→  Package,
+    12→  Wallet,
+    13→  AlertTriangle,
+    14→  PackageX,
+    15→  Loader2,
+    16→  ScanLine,
+    17→  X,
+    18→  Copy,
+    19→  TrendingUp,
+    20→} from "lucide-react";
+    21→
+    22→import { productsApi } from "@/lib/api";
+    23→import type { Product, NewProduct } from "@/lib/types";
+    24→import { formatMoney } from "@/lib/format";
+    25→import { cn } from "@/lib/utils";
+    26→import { toast } from "sonner";
+    27→
+    28→import { Button } from "@/components/ui/button";
+    29→import { Input } from "@/components/ui/input";
+    30→import { Label } from "@/components/ui/label";
+    31→import { Badge } from "@/components/ui/badge";
+    32→import { Card } from "@/components/ui/card";
+    33→import {
+    34→  Table,
+    35→  TableBody,
+    36→  TableCell,
+    37→  TableHead,
+    38→  TableHeader,
+    39→  TableRow,
+    40→} from "@/components/ui/table";
+    41→import {
+    42→  Select,
+    43→  SelectContent,
+    44→  SelectItem,
+    45→  SelectTrigger,
+    46→  SelectValue,
+    47→} from "@/components/ui/select";
+    48→import {
+    49→  Dialog,
+    50→  DialogContent,
+    51→  DialogDescription,
+    52→  DialogFooter,
+    53→  DialogHeader,
+    54→  DialogTitle,
+    55→} from "@/components/ui/dialog";
+    56→import {
+    57→  AlertDialog,
+    58→  AlertDialogAction,
+    59→  AlertDialogCancel,
+    60→  AlertDialogContent,
+    61→  AlertDialogDescription,
+    62→  AlertDialogFooter,
+    63→  AlertDialogHeader,
+    64→  AlertDialogTitle,
+    65→} from "@/components/ui/alert-dialog";
+    66→
+    67→/* ---------- helpers ---------- */
+    68→
+    69→function stockBadge(stock: number) {
+    70→  if (stock === 0) {
+    71→    return (
+    72→      <Badge className="bg-red-500/15 text-red-600 border-red-500/30 hover:bg-red-500/15">
+    73→        Out of stock
+    74→      </Badge>
+    75→    );
+    76→  }
+    77→  if (stock <= 5) {
+    78→    return (
+    79→      <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
+    80→        Low · {stock} left
+    81→      </Badge>
+    82→    );
+    83→  }
+    84→  return (
+    85→    <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
+    86→      {stock} in stock
+    87→    </Badge>
+    88→  );
+    89→}
+    90→
+    91→function categoryBadge(category: string) {
+    92→  return (
+    93→    <Badge variant="outline" className="font-medium">
+    94→      {category}
+    95→    </Badge>
+    96→  );
+    97→}
+    98→
+    99→/* ---------- form state ---------- */
+   100→
+   101→interface FormState {
+   102→  name: string;
+   103→  barcode: string;
+   104→  price: string;
+   105→  costPrice: string;
+   106→  stock: string;
+   107→  category: string;
+   108→}
+   109→
+   110→const emptyForm: FormState = {
+   111→  name: "",
+   112→  barcode: "",
+   113→  price: "",
+   114→  costPrice: "0",
+   115→  stock: "0",
+   116→  category: "General",
+   117→};
+   118→
+   119→function toForm(p: Product): FormState {
+   120→  return {
+   121→    name: p.name,
+   122→    barcode: p.barcode,
+   123→    price: String(p.price),
+   124→    costPrice: String(p.costPrice ?? 0),
+   125→    stock: String(p.stock),
+   126→    category: p.category,
+   127→  };
+   128→}
+   129→
+   130→/* ---------- main component ---------- */
+   131→
+   132→export function ProductManager() {
+   133→  const qc = useQueryClient();
+   134→  const { data: products, isLoading } = useQuery({
+   135→    queryKey: ["products"],
+   136→    queryFn: productsApi.list,
+   137→  });
+   138→
+   139→  // Filter state
+   140→  const [search, setSearch] = useState("");
+   141→  const [category, setCategory] = useState<string>("all");
+   142→
+   143→  // Dialog state
+   144→  const [formOpen, setFormOpen] = useState(false);
+   145→  const [editing, setEditing] = useState<Product | null>(null);
+   146→  const [form, setForm] = useState<FormState>(emptyForm);
+   147→  const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+   148→
+   149→  // Delete state
+   150→  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+   151→
+   152→  /* Derived stats */
+   153→  const stats = useMemo(() => {
+   154→    const list = products ?? [];
+   155→    const totalValue = list.reduce((sum, p) => sum + p.price * p.stock, 0);
+   156→    const totalCost = list.reduce(
+   157→      (sum, p) => sum + (p.costPrice ?? 0) * p.stock,
+   158→      0
+   159→    );
+   160→    const potentialProfit = totalValue - totalCost;
+   161→    const avgMargin =
+   162→      totalValue > 0 ? (potentialProfit / totalValue) * 100 : 0;
+   163→    const lowStock = list.filter((p) => p.stock >= 1 && p.stock <= 5).length;
+   164→    const outStock = list.filter((p) => p.stock === 0).length;
+   165→    return {
+   166→      total: list.length,
+   167→      totalValue,
+   168→      totalCost,
+   169→      potentialProfit,
+   170→      avgMargin,
+   171→      lowStock,
+   172→      outStock,
+   173→    };
+   174→  }, [products]);
+   175→
+   176→  /* Unique categories for filter + datalist */
+   177→  const categories = useMemo(() => {
+   178→    const set = new Set<string>();
+   179→    (products ?? []).forEach((p) => set.add(p.category));
+   180→    return Array.from(set).sort((a, b) => a.localeCompare(b));
+   181→  }, [products]);
+   182→
+   183→  /* Filtered list */
+   184→  const filtered = useMemo(() => {
+   185→    const list = products ?? [];
+   186→    const q = search.trim().toLowerCase();
+   187→    return list
+   188→      .filter((p) => (category === "all" ? true : p.category === category))
+   189→      .filter((p) =>
+   190→        q === ""
+   191→          ? true
+   192→          : p.name.toLowerCase().includes(q) ||
+   193→            p.barcode.toLowerCase().includes(q)
+   194→      )
+   195→      .sort(
+   196→        (a, b) =>
+   197→          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+   198→      );
+   199→  }, [products, search, category]);
+   200→
+   201→  /* Mutations */
+   202→  const createMutation = useMutation({
+   203→    mutationFn: (data: NewProduct) => productsApi.create(data),
+   204→    onSuccess: () => {
+   205→      toast.success("Product created");
+   206→      qc.invalidateQueries({ queryKey: ["products"] });
+   207→      setFormOpen(false);
+   208→    },
+   209→    onError: (e: Error) => toast.error(e.message || "Failed to create product"),
+   210→  });
+   211→
+   212→  const updateMutation = useMutation({
+   213→    mutationFn: ({ id, data }: { id: string; data: Partial<NewProduct> }) =>
+   214→      productsApi.update(id, data),
+   215→    onSuccess: () => {
+   216→      toast.success("Product updated");
+   217→      qc.invalidateQueries({ queryKey: ["products"] });
+   218→      setFormOpen(false);
+   219→    },
+   220→    onError: (e: Error) => toast.error(e.message || "Failed to update product"),
+   221→  });
+   222→
+   223→  const deleteMutation = useMutation({
+   224→    mutationFn: (id: string) => productsApi.delete(id),
+   225→    onSuccess: () => {
+   226→      toast.success("Product deleted");
+   227→      qc.invalidateQueries({ queryKey: ["products"] });
+   228→      setDeleteTarget(null);
+   229→    },
+   230→    onError: (e: Error) => toast.error(e.message || "Failed to delete product"),
+   231→  });
+   232→
+   233→  /* Form handlers */
+   234→  const openAdd = () => {
+   235→    setEditing(null);
+   236→    setForm(emptyForm);
+   237→    setFormErrors({});
+   238→    setFormOpen(true);
+   239→  };
+   240→
+   241→  const openEdit = (p: Product) => {
+   242→    setEditing(p);
+   243→    setForm(toForm(p));
+   244→    setFormErrors({});
+   245→    setFormOpen(true);
+   246→  };
+   247→
+   248→  const duplicateProduct = (p: Product) => {
+   249→    // Open the add form pre-filled with the product's data, barcode suffixed with "-COPY"
+   250→    setEditing(null);
+   251→    setForm({
+   252→      name: `${p.name} (Copy)`,
+   253→      barcode: `${p.barcode}-COPY`,
+   254→      price: String(p.price),
+   255→      stock: String(p.stock),
+   256→      category: p.category,
+   257→    });
+   258→    setFormErrors({});
+   259→    setFormOpen(true);
+   260→    toast.info("Product duplicated — review and save", { duration: 2000 });
+   261→  };
+   262→
+   263→  const validate = (): boolean => {
+   264→    const errs: Partial<Record<keyof FormState, string>> = {};
+   265→    if (!form.name.trim()) errs.name = "Name is required";
+   266→    if (!form.barcode.trim()) errs.barcode = "Barcode is required";
+   267→    const price = Number(form.price);
+   268→    if (form.price === "" || Number.isNaN(price) || price < 0)
+   269→      errs.price = "Price must be 0 or more";
+   270→    const costPrice = Number(form.costPrice);
+   271→    if (form.costPrice === "" || Number.isNaN(costPrice) || costPrice < 0)
+   272→      errs.costPrice = "Cost must be 0 or more";
+   273→    const stock = Number(form.stock);
+   274→    if (form.stock === "" || Number.isNaN(stock) || stock < 0)
+   275→      errs.stock = "Stock must be 0 or more";
+   276→    setFormErrors(errs);
+   277→    return Object.keys(errs).length === 0;
+   278→  };
+   279→
+   280→  const handleSubmit = (e: React.FormEvent) => {
+   281→    e.preventDefault();
+   282→    if (!validate()) return;
+   283→    const payload: NewProduct = {
+   284→      name: form.name.trim(),
+   285→      barcode: form.barcode.trim(),
+   286→      price: Number(form.price),
+   287→      costPrice: Number(form.costPrice),
+   288→      stock: Number(form.stock),
+   289→      category: form.category.trim() || "General",
+   290→    };
+   291→    if (editing) {
+   292→      updateMutation.mutate({ id: editing.id, data: payload });
+   293→    } else {
+   294→      createMutation.mutate(payload);
+   295→    }
+   296→  };
+   297→
+   298→  const saving = createMutation.isPending || updateMutation.isPending;
+   299→
+   300→  const statCards = [
+   301→    {
+   302→      label: "Total Products",
+   303→      value: String(stats.total),
+   304→      icon: Package,
+   305→      tint: "bg-emerald-500/15 text-emerald-600",
+   306→    },
+   307→    {
+   308→      label: "Inventory Value",
+   309→      value: formatMoney(stats.totalValue, "₹"),
+   310→      icon: Wallet,
+   311→      tint: "bg-emerald-500/15 text-emerald-600",
+   312→    },
+   313→    {
+   314→      label: "Potential Profit",
+   315→      value: formatMoney(stats.potentialProfit, "₹"),
+   316→      sub: `${stats.avgMargin.toFixed(1)}% avg margin`,
+   317→      icon: TrendingUp,
+   318→      tint: "bg-emerald-500/15 text-emerald-600",
+   319→    },
+   320→    {
+   321→      label: "Low / Out of Stock",
+   322→      value: `${stats.lowStock} / ${stats.outStock}`,
+   323→      icon: AlertTriangle,
+   324→      tint: "bg-amber-500/15 text-amber-600",
+   325→    },
+   326→  ];
+   327→
+   328→  return (
+   329→    <div className="space-y-6">
+   330→      {/* Gradient page header */}
+   331→      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-emerald-600 to-teal-700 p-5 text-white shadow-lg sm:p-6">
+   332→        <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+   333→        <div className="relative flex flex-wrap items-center justify-between gap-3">
+   334→          <div>
+   335→            <h2 className="text-lg font-bold tracking-tight drop-shadow-sm sm:text-xl">
+   336→              Inventory Management
+   337→            </h2>
+   338→            <p className="mt-0.5 text-sm text-emerald-50/80">
+   339→              {stats.total} products · {formatMoney(stats.totalValue, "₹")} stock value
+   340→            </p>
+   341→          </div>
+   342→          <Button
+   343→            onClick={openAdd}
+   344→            className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+   345→          >
+   346→            <Plus className="h-4 w-4" />
+   347→            Add Product
+   348→          </Button>
+   349→        </div>
+   350→      </div>
+   351→
+   352→      {/* Stats row */}
+   353→      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+   354→        {statCards.map((s, i) => {
+   355→          const Icon = s.icon;
+   356→          return (
+   357→            <motion.div
+   358→              key={s.label}
+   359→              initial={{ opacity: 0, y: 8 }}
+   360→              animate={{ opacity: 1, y: 0 }}
+   361→              transition={{ delay: i * 0.05, duration: 0.25 }}
+   362→            >
+   363→              <Card className="gap-0 p-4 sm:p-5">
+   364→                <div className="flex items-start justify-between gap-3">
+   365→                  <div className="min-w-0">
+   366→                    <p className="text-xs font-medium text-muted-foreground">
+   367→                      {s.label}
+   368→                    </p>
+   369→                    <p className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">
+   370→                      {s.value}
+   371→                    </p>
+   372→                    {s.sub && (
+   373→                      <p className="mt-0.5 text-[11px] font-medium text-emerald-600">
+   374→                        {s.sub}
+   375→                      </p>
+   376→                    )}
+   377→                  </div>
+   378→                  <div
+   379→                    className={cn(
+   380→                      "grid size-10 shrink-0 place-items-center rounded-xl",
+   381→                      s.tint
+   382→                    )}
+   383→                  >
+   384→                    <Icon className="h-5 w-5" />
+   385→                  </div>
+   386→                </div>
+   387→              </Card>
+   388→            </motion.div>
+   389→          );
+   390→        })}
+   391→      </div>
+   392→
+   393→      {/* Toolbar */}
+   394→      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+   395→        <div className="relative flex-1">
+   396→          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   397→          <Input
+   398→            placeholder="Search by name or barcode…"
+   399→            value={search}
+   400→            onChange={(e) => setSearch(e.target.value)}
+   401→            className="pl-9"
+   402→          />
+   403→        </div>
+   404→        <Select value={category} onValueChange={setCategory}>
+   405→          <SelectTrigger className="w-full sm:w-[180px]">
+   406→            <SelectValue placeholder="Category" />
+   407→          </SelectTrigger>
+   408→          <SelectContent>
+   409→            <SelectItem value="all">All categories</SelectItem>
+   410→            {categories.map((c) => (
+   411→              <SelectItem key={c} value={c}>
+   412→                {c}
+   413→              </SelectItem>
+   414→            ))}
+   415→          </SelectContent>
+   416→        </Select>
+   417→        <Button onClick={openAdd} className="w-full sm:w-auto">
+   418→          <Plus className="h-4 w-4" />
+   419→          Add Product
+   420→        </Button>
+   421→      </div>
+   422→
+   423→      {/* Products card */}
+   424→      <Card className="gap-0 p-0">
+   425→        <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
+   426→          <h2 className="text-sm font-semibold">
+   427→            Products{" "}
+   428→            <span className="text-muted-foreground">({filtered.length})</span>
+   429→          </h2>
+   430→          {filtered.length > 0 && (
+   431→            <span className="hidden text-xs text-muted-foreground sm:inline">
+   432→              Sorted by newest
+   433→            </span>
+   434→          )}
+   435→        </div>
+   436→
+   437→        {/* Desktop / tablet table */}
+   438→        <div className="hidden md:block">
+   439→          <Table>
+   440→            <TableHeader>
+   441→              <TableRow className="bg-muted/40 hover:bg-muted/40">
+   442→                <TableHead className="pl-6">Product</TableHead>
+   443→                <TableHead>Category</TableHead>
+   444→                <TableHead className="text-right">Price</TableHead>
+   445→                <TableHead>Stock</TableHead>
+   446→                <TableHead className="pr-6 text-right">Actions</TableHead>
+   447→              </TableRow>
+   448→            </TableHeader>
+   449→            <TableBody>
+   450→              {isLoading ? (
+   451→                <TableRow>
+   452→                  <TableCell colSpan={5} className="py-12 text-center">
+   453→                    <div className="flex items-center justify-center gap-2 text-muted-foreground">
+   454→                      <Loader2 className="h-4 w-4 animate-spin" />
+   455→                      Loading products…
+   456→                    </div>
+   457→                  </TableCell>
+   458→                </TableRow>
+   459→              ) : filtered.length === 0 ? (
+   460→                <TableRow>
+   461→                  <TableCell colSpan={5} className="py-12 text-center">
+   462→                    <EmptyState onAdd={openAdd} hasProducts={(products?.length ?? 0) > 0} />
+   463→                  </TableCell>
+   464→                </TableRow>
+   465→              ) : (
+   466→                filtered.map((p) => (
+   467→                  <TableRow
+   468→                    key={p.id}
+   469→                    className="group transition-colors hover:bg-emerald-500/5"
+   470→                  >
+   471→                    <TableCell className="pl-6 py-3.5">
+   472→                      <div className="flex flex-col">
+   473→                        <span className="font-medium transition-colors group-hover:text-primary">
+   474→                          {p.name}
+   475→                        </span>
+   476→                        <span className="font-mono text-[11px] text-muted-foreground">
+   477→                          {p.barcode}
+   478→                        </span>
+   479→                      </div>
+   480→                    </TableCell>
+   481→                    <TableCell>{categoryBadge(p.category)}</TableCell>
+   482→                    <TableCell className="text-right font-medium tabular-nums">
+   483→                      {formatMoney(p.price, "₹")}
+   484→                    </TableCell>
+   485→                    <TableCell>{stockBadge(p.stock)}</TableCell>
+   486→                    <TableCell className="pr-6 text-right">
+   487→                      <div className="flex items-center justify-end gap-1">
+   488→                        <Button
+   489→                          variant="ghost"
+   490→                          size="icon"
+   491→                          className="h-8 w-8"
+   492→                          onClick={() => openEdit(p)}
+   493→                          aria-label={`Edit ${p.name}`}
+   494→                        >
+   495→                          <Pencil className="h-4 w-4" />
+   496→                        </Button>
+   497→                        <Button
+   498→                          variant="ghost"
+   499→                          size="icon"
+   500→                          className="h-8 w-8 text-muted-foreground hover:text-primary"
+   501→                          onClick={() => duplicateProduct(p)}
+   502→                          aria-label={`Duplicate ${p.name}`}
+   503→                          title="Duplicate product"
+   504→                        >
+   505→                          <Copy className="h-4 w-4" />
+   506→                        </Button>
+   507→                        <Button
+   508→                          variant="ghost"
+   509→                          size="icon"
+   510→                          className="h-8 w-8 text-red-600 hover:bg-red-500/10 hover:text-red-700"
+   511→                          onClick={() => setDeleteTarget(p)}
+   512→                          aria-label={`Delete ${p.name}`}
+   513→                        >
+   514→                          <Trash2 className="h-4 w-4" />
+   515→                        </Button>
+   516→                      </div>
+   517→                    </TableCell>
+   518→                  </TableRow>
+   519→                ))
+   520→              )}
+   521→            </TableBody>
+   522→          </Table>
+   523→        </div>
+   524→
+   525→        {/* Mobile card list */}
+   526→        <div className="block md:hidden">
+   527→          {isLoading ? (
+   528→            <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+   529→              <Loader2 className="h-4 w-4 animate-spin" />
+   530→              Loading products…
+   531→            </div>
+   532→          ) : filtered.length === 0 ? (
+   533→            <div className="px-4 py-12">
+   534→              <EmptyState onAdd={openAdd} hasProducts={(products?.length ?? 0) > 0} />
+   535→            </div>
+   536→          ) : (
+   537→            <ul className="divide-y">
+   538→              {filtered.map((p) => (
+   539→                <li key={p.id} className="p-4">
+   540→                  <div className="flex items-start justify-between gap-3">
+   541→                    <div className="min-w-0">
+   542→                      <p className="truncate font-medium">{p.name}</p>
+   543→                      <p className="font-mono text-[11px] text-muted-foreground">
+   544→                        {p.barcode}
+   545→                      </p>
+   546→                      <div className="mt-2 flex flex-wrap items-center gap-2">
+   547→                        {categoryBadge(p.category)}
+   548→                        {stockBadge(p.stock)}
+   549→                      </div>
+   550→                    </div>
+   551→                    <div className="flex flex-col items-end gap-1">
+   552→                      <span className="font-semibold tabular-nums">
+   553→                        {formatMoney(p.price, "₹")}
+   554→                      </span>
+   555→                      <div className="flex gap-1">
+   556→                        <Button
+   557→                          variant="outline"
+   558→                          size="icon"
+   559→                          className="h-8 w-8"
+   560→                          onClick={() => openEdit(p)}
+   561→                          aria-label={`Edit ${p.name}`}
+   562→                        >
+   563→                          <Pencil className="h-4 w-4" />
+   564→                        </Button>
+   565→                        <Button
+   566→                          variant="outline"
+   567→                          size="icon"
+   568→                          className="h-8 w-8"
+   569→                          onClick={() => duplicateProduct(p)}
+   570→                          aria-label={`Duplicate ${p.name}`}
+   571→                          title="Duplicate product"
+   572→                        >
+   573→                          <Copy className="h-4 w-4" />
+   574→                        </Button>
+   575→                        <Button
+   576→                          variant="outline"
+   577→                          size="icon"
+   578→                          className="h-8 w-8 text-red-600"
+   579→                          onClick={() => setDeleteTarget(p)}
+   580→                          aria-label={`Delete ${p.name}`}
+   581→                        >
+   582→                          <Trash2 className="h-4 w-4" />
+   583→                        </Button>
+   584→                      </div>
+   585→                    </div>
+   586→                  </div>
+   587→                </li>
+   588→              ))}
+   589→            </ul>
+   590→          )}
+   591→        </div>
+   592→      </Card>
+   593→
+   594→      {/* Add/Edit dialog */}
+   595→      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+   596→        <DialogContent className="sm:max-w-md">
+   597→          <DialogHeader>
+   598→            <DialogTitle>{editing ? "Edit product" : "Add product"}</DialogTitle>
+   599→            <DialogDescription>
+   600→              {editing
+   601→                ? "Update the details for this product."
+   602→                : "Fill in the details to add a new product to your inventory."}
+   603→            </DialogDescription>
+   604→          </DialogHeader>
+   605→          <form onSubmit={handleSubmit} className="space-y-4">
+   606→            <div className="space-y-1.5">
+   607→              <Label htmlFor="p-name">Name</Label>
+   608→              <Input
+   609→                id="p-name"
+   610→                value={form.name}
+   611→                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+   612→                placeholder="e.g. Coca-Cola 750ml"
+   613→                autoFocus
+   614→              />
+   615→              {formErrors.name && (
+   616→                <p className="text-xs text-red-600">{formErrors.name}</p>
+   617→              )}
+   618→            </div>
+   619→
+   620→            <div className="space-y-1.5">
+   621→              <Label htmlFor="p-barcode">Barcode</Label>
+   622→              <Input
+   623→                id="p-barcode"
+   624→                value={form.barcode}
+   625→                onChange={(e) =>
+   626→                  setForm((f) => ({ ...f, barcode: e.target.value }))
+   627→                }
+   628→                placeholder="e.g. 8901030867531"
+   629→                className="font-mono"
+   630→              />
+   631→              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+   632→                <ScanLine className="h-3 w-3" />
+   633→                Tip: use a USB barcode scanner or type the digits manually.
+   634→              </p>
+   635→              {formErrors.barcode && (
+   636→                <p className="text-xs text-red-600">{formErrors.barcode}</p>
+   637→              )}
+   638→            </div>
+   639→
+   640→            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+   641→              <div className="space-y-1.5">
+   642→                <Label htmlFor="p-price">Selling Price</Label>
+   643→                <div className="relative">
+   644→                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+   645→                    ₹
+   646→                  </span>
+   647→                  <Input
+   648→                    id="p-price"
+   649→                    type="number"
+   650→                    min={0}
+   651→                    step="0.01"
+   652→                    inputMode="decimal"
+   653→                    value={form.price}
+   654→                    onChange={(e) =>
+   655→                      setForm((f) => ({ ...f, price: e.target.value }))
+   656→                    }
+   657→                    placeholder="0.00"
+   658→                    className="pl-7 tabular-nums"
+   659→                  />
+   660→                </div>
+   661→                {formErrors.price && (
+   662→                  <p className="text-xs text-red-600">{formErrors.price}</p>
+   663→                )}
+   664→              </div>
+   665→              <div className="space-y-1.5">
+   666→                <Label htmlFor="p-cost">Cost Price</Label>
+   667→                <div className="relative">
+   668→                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+   669→                    ₹
+   670→                  </span>
+   671→                  <Input
+   672→                    id="p-cost"
+   673→                    type="number"
+   674→                    min={0}
+   675→                    step="0.01"
+   676→                    inputMode="decimal"
+   677→                    value={form.costPrice}
+   678→                    onChange={(e) =>
+   679→                      setForm((f) => ({ ...f, costPrice: e.target.value }))
+   680→                    }
+   681→                    placeholder="0.00"
+   682→                    className="pl-7 tabular-nums"
+   683→                  />
+   684→                </div>
+   685→                {formErrors.costPrice && (
+   686→                  <p className="text-xs text-red-600">{formErrors.costPrice}</p>
+   687→                )}
+   688→              </div>
+   689→              <div className="col-span-2 space-y-1.5 sm:col-span-1">
+   690→                <Label htmlFor="p-stock">Stock</Label>
+   691→                <Input
+   692→                  id="p-stock"
+   693→                  type="number"
+   694→                  min={0}
+   695→                  step="1"
+   696→                  inputMode="numeric"
+   697→                  value={form.stock}
+   698→                  onChange={(e) =>
+   699→                    setForm((f) => ({ ...f, stock: e.target.value }))
+   700→                  }
+   701→                  className="tabular-nums"
+   702→                />
+   703→                {formErrors.stock && (
+   704→                  <p className="text-xs text-red-600">{formErrors.stock}</p>
+   705→                )}
+   706→              </div>
+   707→            </div>
+   708→
+   709→            {/* Live profit margin indicator */}
+   710→            {Number(form.price) > 0 && Number(form.costPrice) >= 0 && (
+   711→              <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+   712→                <span className="text-muted-foreground">Profit margin:</span>
+   713→                {(() => {
+   714→                  const price = Number(form.price);
+   715→                  const cost = Number(form.costPrice);
+   716→                  const profit = price - cost;
+   717→                  const margin = price > 0 ? (profit / price) * 100 : 0;
+   718→                  const positive = profit >= 0;
+   719→                  return (
+   720→                    <>
+   721→                      <span
+   722→                        className={cn(
+   723→                          "font-semibold tabular-nums",
+   724→                          positive ? "text-emerald-600" : "text-red-600"
+   725→                        )}
+   726→                      >
+   727→                        {positive ? "+" : ""}
+   728→                        {formatMoney(profit, "₹")} ({margin.toFixed(1)}%)
+   729→                      </span>
+   730→                      <div className="ml-auto h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+   731→                        <div
+   732→                          className={cn(
+   733→                            "h-full rounded-full",
+   734→                            positive ? "bg-emerald-500" : "bg-red-500"
+   735→                          )}
+   736→                          style={{
+   737→                            width: `${Math.min(100, Math.max(0, Math.abs(margin)))}%`,
+   738→                          }}
+   739→                        />
+   740→                      </div>
+   741→                    </>
+   742→                  );
+   743→                })()}
+   744→              </div>
+   745→            )}
+   746→
+   747→            <div className="space-y-1.5">
+   748→              <Label htmlFor="p-category">Category</Label>
+   749→              <Input
+   750→                id="p-category"
+   751→                list="category-list"
+   752→                value={form.category}
+   753→                onChange={(e) =>
+   754→                  setForm((f) => ({ ...f, category: e.target.value }))
+   755→                }
+   756→                placeholder="General"
+   757→              />
+   758→              <datalist id="category-list">
+   759→                {categories.map((c) => (
+   760→                  <option key={c} value={c} />
+   761→                ))}
+   762→              </datalist>
+   763→              <p className="text-xs text-muted-foreground">
+   764→                Pick an existing category or type a new one.
+   765→              </p>
+   766→            </div>
+   767→
+   768→            <DialogFooter className="gap-2 pt-2">
+   769→              <Button
+   770→                type="button"
+   771→                variant="outline"
+   772→                onClick={() => setFormOpen(false)}
+   773→                disabled={saving}
+   774→              >
+   775→                <X className="h-4 w-4" />
+   776→                Cancel
+   777→              </Button>
+   778→              <Button type="submit" disabled={saving}>
+   779→                {saving ? (
+   780→                  <Loader2 className="h-4 w-4 animate-spin" />
+   781→                ) : (
+   782→                  <Plus className="h-4 w-4" />
+   783→                )}
+   784→                {editing ? "Save changes" : "Add product"}
+   785→              </Button>
+   786→            </DialogFooter>
+   787→          </form>
+   788→        </DialogContent>
+   789→      </Dialog>
+   790→
+   791→      {/* Delete confirmation */}
+   792→      <AlertDialog
+   793→        open={deleteTarget !== null}
+   794→        onOpenChange={(o) => !o && setDeleteTarget(null)}
+   795→      >
+   796→        <AlertDialogContent className="sm:max-w-md">
+   797→          <AlertDialogHeader>
+   798→            <AlertDialogTitle>Delete product?</AlertDialogTitle>
+   799→            <AlertDialogDescription>
+   800→              Delete{" "}
+   801→              <span className="font-semibold text-foreground">
+   802→                {deleteTarget?.name}
+   803→              </span>
+   804→              ? This cannot be undone.
+   805→            </AlertDialogDescription>
+   806→          </AlertDialogHeader>
+   807→          <AlertDialogFooter>
+   808→            <AlertDialogCancel disabled={deleteMutation.isPending}>
+   809→              Cancel
+   810→            </AlertDialogCancel>
+   811→            <AlertDialogAction
+   812→              className="bg-red-600 text-white hover:bg-red-700"
+   813→              onClick={(e) => {
+   814→                e.preventDefault();
+   815→                if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+   816→              }}
+   817→              disabled={deleteMutation.isPending}
+   818→            >
+   819→              {deleteMutation.isPending ? (
+   820→                <Loader2 className="h-4 w-4 animate-spin" />
+   821→              ) : (
+   822→                <Trash2 className="h-4 w-4" />
+   823→              )}
+   824→              Delete
+   825→            </AlertDialogAction>
+   826→          </AlertDialogFooter>
+   827→        </AlertDialogContent>
+   828→      </AlertDialog>
+   829→    </div>
+   830→  );
+   831→}
+   832→
+   833→/* ---------- empty state ---------- */
+   834→
+   835→function EmptyState({
+   836→  onAdd,
+   837→  hasProducts,
+   838→}: {
+   839→  onAdd: () => void;
+   840→  hasProducts: boolean;
+   841→}) {
+   842→  return (
+   843→    <div className="flex flex-col items-center gap-3 py-6">
+   844→      <div className="grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+   845→        <Package className="h-6 w-6" />
+   846→      </div>
+   847→      <div className="text-center">
+   848→        <p className="text-sm font-medium">
+   849→          {hasProducts ? "No products match your filters" : "No products yet"}
+   850→        </p>
+   851→        <p className="mt-1 text-xs text-muted-foreground">
+   852→          {hasProducts
+   853→            ? "Try adjusting your search or category."
+   854→            : "Add your first product to start selling."}
+   855→        </p>
+   856→      </div>
+   857→      {!hasProducts && (
+   858→        <Button size="sm" onClick={onAdd}>
+   859→          <Plus className="h-4 w-4" />
+   860→          Add your first product
+   861→        </Button>
+   862→      )}
+   863→    </div>
+   864→  );
+   865→}
+   866→

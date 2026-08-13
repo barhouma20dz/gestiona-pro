@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { productsApi, shopApi } from "@/lib/api";
 import { initialsOf } from "@/lib/format";
 import type { Product, Shop } from "@/lib/types";
+import { useLanguage } from "@/lib/language-context";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,7 @@ function subscribeAutoPrint(cb: () => void): () => void {
 }
 
 export function SettingsView() {
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const { data: shop, isLoading } = useQuery({
     queryKey: ["shop"],
@@ -90,12 +92,12 @@ export function SettingsView() {
   const taxMutation = useMutation({
     mutationFn: (rate: number) => shopApi.update({ taxRate: rate }),
     onSuccess: () => {
-      toast.success("Tax rate updated");
+      toast.success(t("taxRateUpdated"));
       void queryClient.invalidateQueries({ queryKey: ["shop"] });
     },
     onError: (err: unknown) => {
       const msg =
-        err instanceof Error ? err.message : "Failed to update tax rate";
+        err instanceof Error ? err.message : t("failedUpdateTax");
       toast.error(msg);
     },
   });
@@ -117,11 +119,11 @@ export function SettingsView() {
       );
       toast.success(
         checked
-          ? "Auto-print enabled for new sales"
-          : "Auto-print disabled"
+          ? t("autoprintEnabled")
+          : t("autoprintDisabled")
       );
     } catch {
-      toast.error("Could not save preference");
+      toast.error(t("couldNotSavePref"));
     }
   };
 
@@ -148,7 +150,7 @@ export function SettingsView() {
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <div className="flex items-center gap-2">
         <SettingsIcon className="h-5 w-5 text-primary" />
-        <h2 className="text-xl font-semibold tracking-tight">Settings</h2>
+        <h2 className="text-xl font-semibold tracking-tight">{t("settings")}</h2>
       </div>
 
       {/* 1. App Profile */}
@@ -168,11 +170,11 @@ export function SettingsView() {
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
                 <Badge variant="secondary" className="gap-1">
                   <Store className="h-3 w-3" />
-                  {shop.currency || "₹"} · Tax {shop.taxRate ?? 0}%
+                  {shop.currency || "₹"} · {t("tax")} {shop.taxRate ?? 0}%
                 </Badge>
                 <Badge variant="outline" className="gap-1">
                   <Info className="h-3 w-3" />
-                  Edit in Shop Details
+                  {t("editInShopDetails")}
                 </Badge>
               </div>
             </div>
@@ -184,11 +186,11 @@ export function SettingsView() {
                   className="cursor-not-allowed opacity-60"
                   disabled
                 >
-                  Edit Shop
+                  {t("editShop")}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                Go to Shop Details in the sidebar
+                {t("goToShopDetails")}
               </TooltipContent>
             </Tooltip>
           </CardContent>
@@ -204,17 +206,17 @@ export function SettingsView() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Tag className="h-4 w-4 text-primary" />
-              Quick Tax Configuration
+              {t("quickTaxConfig")}
             </CardTitle>
             <CardDescription>
-              This tax % is applied to every sale&apos;s taxable amount.
+              {t("taxAppliedTo")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="flex items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Current
+                  {t("current")}
                 </p>
                 <p className="text-2xl font-bold text-primary">
                   {shop.taxRate ?? 0}%
@@ -222,7 +224,7 @@ export function SettingsView() {
               </div>
               <div className="text-right">
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Adjusting to
+                  {t("adjustingTo")}
                 </p>
                 <p className="text-2xl font-bold">{taxValue}%</p>
               </div>
@@ -254,7 +256,7 @@ export function SettingsView() {
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                Save Tax Rate
+                {t("saveTaxRate")}
               </Button>
             </div>
           </CardContent>
@@ -270,21 +272,20 @@ export function SettingsView() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Printer className="h-4 w-4 text-primary" />
-              Printer &amp; Receipts
+              {t("printerReceipts")}
             </CardTitle>
             <CardDescription>
-              Bluetooth thermal printing is available on the mobile app. On web,
-              receipts are printed via your browser&apos;s print dialog.
+              {t("printWebNote")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <Label className="text-sm font-medium">
-                  Print Test Receipt
+                  {t("printTestReceipt")}
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Open your browser&apos;s print dialog with a sample receipt.
+                  {t("openBrowserPrint")}
                 </p>
               </div>
               <Button
@@ -293,7 +294,7 @@ export function SettingsView() {
                 className="self-start sm:self-auto"
               >
                 <Printer className="h-4 w-4" />
-                Print Test
+                {t("printTest")}
               </Button>
             </div>
 
@@ -302,10 +303,10 @@ export function SettingsView() {
             <div className="flex items-center justify-between gap-4">
               <div className="pr-4">
                 <Label className="text-sm font-medium">
-                  Auto-open print dialog after each sale
+                  {t("autoPrintAfterSale")}
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Saved locally on this device only.
+                  {t("savedLocally")}
                 </p>
               </div>
               <Switch checked={autoPrint} onCheckedChange={handleAutoPrintChange} />
@@ -323,10 +324,10 @@ export function SettingsView() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-destructive">
               <ShieldAlert className="h-4 w-4" />
-              Data Management
+              {t("dataManagement")}
             </CardTitle>
             <CardDescription>
-              Destructive actions. Proceed with caution.
+              {t("destructiveActions")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -335,10 +336,10 @@ export function SettingsView() {
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                 <div>
                   <Label className="text-sm font-medium">
-                    Clear All Sales History
+                    {t("clearSalesHistory")}
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Permanently delete every sale record. Cannot be undone.
+                    {t("permanentDelete")}
                   </p>
                 </div>
               </div>
@@ -351,11 +352,11 @@ export function SettingsView() {
                       disabled
                       className="w-full cursor-not-allowed opacity-60 sm:w-auto"
                     >
-                      Clear Sales
+                      {t("clearSales")}
                     </Button>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>Admin only</TooltipContent>
+                <TooltipContent>{t("adminOnly")}</TooltipContent>
               </Tooltip>
             </div>
 
@@ -366,14 +367,14 @@ export function SettingsView() {
                 <Database className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                 <div>
                   <Label className="text-sm font-medium">
-                    Export Products (CSV)
+                    {t("exportProducts")}
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Download all products as a CSV spreadsheet.
+                    {t("downloadCsv")}
                   </p>
                 </div>
               </div>
-              <ExportProductsButton />
+              <ExportProductsButton t={t} />
             </div>
           </CardContent>
         </Card>
@@ -386,31 +387,29 @@ export function SettingsView() {
       >
         <Card>
           <CardHeader>
-            <CardTitle>About</CardTitle>
+            <CardTitle>{t("about")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="grid grid-cols-1 gap-1 sm:grid-cols-3">
-              <span className="text-muted-foreground">App</span>
-              <span className="sm:col-span-2 font-medium">SwiftBill POS</span>
+              <span className="text-muted-foreground">{t("app")}</span>
+              <span className="sm:col-span-2 font-medium">{t("appName")} POS</span>
 
-              <span className="text-muted-foreground">Version</span>
+              <span className="text-muted-foreground">{t("version")}</span>
               <span className="sm:col-span-2 font-medium">{APP_VERSION}</span>
 
-              <span className="text-muted-foreground">Stack</span>
+              <span className="text-muted-foreground">{t("stack")}</span>
               <span className="sm:col-span-2 font-medium">
                 Next.js, Prisma, Tailwind CSS
               </span>
 
-              <span className="text-muted-foreground">Docs</span>
+              <span className="text-muted-foreground">{t("docs")}</span>
               <span className="sm:col-span-2 font-medium text-primary">
-                View user guide (in-app)
+                {t("viewUserGuide")}
               </span>
             </div>
             <Separator />
             <p className="text-xs text-muted-foreground">
-              SwiftBill POS is a lightweight point-of-sale system for small
-              retail stores. Built with Next.js 16, TypeScript, Prisma, and
-              Tailwind CSS.
+              {t("aboutDesc")}
             </p>
           </CardContent>
         </Card>
@@ -443,7 +442,7 @@ export function SettingsView() {
   );
 }
 
-function ExportProductsButton() {
+function ExportProductsButton({ t }: { t: (k: "exportedProducts" | "failedExport" | "exportCsv") => string }) {
   const [busy, setBusy] = useState(false);
 
   const handleExport = useCallback(async () => {
@@ -461,15 +460,15 @@ function ExportProductsButton() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success(`Exported ${products.length} products`);
+      toast.success(`${t("exportedProducts")} (${products.length})`);
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : "Failed to export products";
+        err instanceof Error ? err.message : t("failedExport");
       toast.error(msg);
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [t]);
 
   return (
     <Button
@@ -483,7 +482,7 @@ function ExportProductsButton() {
       ) : (
         <Download className="h-4 w-4" />
       )}
-      Export CSV
+      {t("exportCsv")}
     </Button>
   );
 }

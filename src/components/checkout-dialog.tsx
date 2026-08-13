@@ -14,6 +14,7 @@ import {
 
 import { salesApi, shopApi, type CreateSalePayload } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
+import { useLanguage } from "@/lib/language-context";
 import { formatMoney } from "@/lib/format";
 import type { Sale } from "@/lib/types";
 
@@ -38,6 +39,7 @@ interface CheckoutDialogProps {
 type DialogStage = "review" | "receipt";
 
 export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const [stage, setStage] = useState<DialogStage>("review");
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
@@ -77,8 +79,8 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
     onSuccess: (sale) => {
       setCompletedSale(sale);
       setStage("receipt");
-      toast.success("Sale completed!", {
-        description: `Receipt ${sale.receiptNo}`,
+      toast.success(t("saleCompleted"), {
+        description: `${t("receipt")} ${sale.receiptNo}`,
       });
       // Keep a local copy of sale for the receipt, then clear cart store
       clearCart();
@@ -89,8 +91,8 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
     },
     onError: (err: unknown) => {
       const message =
-        err instanceof Error ? err.message : "Failed to complete sale.";
-      toast.error("Could not complete sale", { description: message });
+        err instanceof Error ? err.message : t("failedCompleteSale");
+      toast.error(t("couldNotCompleteSale"), { description: message });
     },
   });
 
@@ -139,12 +141,11 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-primary" />
-                Payment Successful
+                {t("paymentSuccessful")}
               </DialogTitle>
               <DialogDescription>
-                Sale {completedSale.receiptNo} ·{" "}
-                {formatMoney(completedSale.total, currency)} via{" "}
-                {completedSale.paymentMethod}
+                {t("receipt")} {completedSale.receiptNo} ·{" "}
+                {formatMoney(completedSale.total, currency)} · {completedSale.paymentMethod}
               </DialogDescription>
             </DialogHeader>
 
@@ -156,11 +157,11 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
             <DialogFooter className="no-print gap-2 sm:justify-between">
               <Button variant="outline" onClick={handleNewOrder}>
                 <RotateCcw className="h-4 w-4" />
-                New Order
+                {t("newOrder")}
               </Button>
               <Button onClick={handlePrint}>
                 <Printer className="h-4 w-4" />
-                Print Receipt
+                {t("printReceipt")}
               </Button>
             </DialogFooter>
           </>
@@ -169,10 +170,10 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ShieldCheck className="h-5 w-5 text-primary" />
-                Checkout
+                {t("checkout")}
               </DialogTitle>
               <DialogDescription>
-                Review your order and complete the sale.
+                {t("reviewOrder")}
               </DialogDescription>
             </DialogHeader>
 
@@ -182,10 +183,10 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-muted/60 backdrop-blur">
                     <tr className="text-left text-xs text-muted-foreground">
-                      <th className="px-3 py-2 font-medium">Product</th>
-                      <th className="px-2 py-2 text-center font-medium">Qty</th>
+                      <th className="px-3 py-2 font-medium">{t("product")}</th>
+                      <th className="px-2 py-2 text-center font-medium">{t("qty")}</th>
                       <th className="px-3 py-2 text-right font-medium">
-                        Amount
+                        {t("amount")}
                       </th>
                     </tr>
                   </thead>
@@ -200,7 +201,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                             {i.product.name}
                           </p>
                           <p className="text-[11px] text-muted-foreground">
-                            {formatMoney(i.product.price, currency)} each
+                            {formatMoney(i.product.price, currency)} {t("each")}
                           </p>
                         </td>
                         <td className="px-2 py-2 text-center text-sm tabular-nums">
@@ -229,13 +230,13 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                     />
                   </div>
                   <p className="text-center text-sm font-medium">
-                    Scan to pay{" "}
+                    {t("scanToPay")}{" "}
                     <span className="text-primary">
                       {formatMoney(grandTotal, currency)}
                     </span>
                   </p>
                   <p className="text-center text-[11px] text-muted-foreground">
-                    UPI: {upiId}
+                    {t("upi")}: {upiId}
                   </p>
                 </div>
               )}
@@ -243,14 +244,14 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
               {/* Totals */}
               <div className="space-y-1.5 rounded-lg border bg-card p-3 text-sm">
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Subtotal</span>
+                  <span>{t("subtotal")}</span>
                   <span className="tabular-nums">
                     {formatMoney(subtotal, currency)}
                   </span>
                 </div>
                 {discount > 0 && (
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Discount</span>
+                    <span>{t("discount")}</span>
                     <span className="tabular-nums">
                       − {formatMoney(discount, currency)}
                     </span>
@@ -258,7 +259,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                 )}
                 {taxRate > 0 && (
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Tax ({taxRate}%)</span>
+                    <span>{t("tax")} ({taxRate}%)</span>
                     <span className="tabular-nums">
                       {formatMoney(taxAmount, currency)}
                     </span>
@@ -266,7 +267,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                 )}
                 <Separator className="my-1.5" />
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold">Grand Total</span>
+                  <span className="text-sm font-semibold">{t("grandTotal")}</span>
                   <span className="text-xl font-bold text-primary tabular-nums">
                     {formatMoney(grandTotal, currency)}
                   </span>
@@ -275,7 +276,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
 
               {/* Payment summary */}
               <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">Payment method</span>
+                <span className="text-muted-foreground">{t("paymentMethod")}</span>
                 <Badge variant="secondary">{paymentMethod}</Badge>
               </div>
             </div>
@@ -286,7 +287,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                 onClick={() => onOpenChange(false)}
                 disabled={createSale.isPending}
               >
-                Cancel
+                {t("cancel")}
               </Button>
               <Button
                 onClick={handleComplete}
@@ -296,12 +297,12 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                 {createSale.isPending ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Completing…
+                    {t("completing")}
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="h-4 w-4" />
-                    Complete Sale
+                    {t("completeSale")}
                   </>
                 )}
               </Button>

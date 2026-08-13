@@ -121,6 +121,22 @@
   }
 }
 
+/* RTL support — flip directional utilities when dir=rtl */
+[dir="rtl"] .ltr\:flip {
+  /* helper class for elements that should stay LTR even in RTL mode */
+  direction: ltr;
+}
+
+/* In RTL, flip the sidebar to the right side */
+[dir="rtl"] .md\:block {
+  /* sidebar handled via flex-order in app-shell */
+}
+
+/* Scrollbar thumb direction */
+[dir="rtl"] .scrollbar-emerald::-webkit-scrollbar-thumb {
+  /* scrollbar works the same in both directions */
+}
+
 /* Custom scrollbar for long lists */
 .scrollbar-emerald::-webkit-scrollbar {
   width: 8px;

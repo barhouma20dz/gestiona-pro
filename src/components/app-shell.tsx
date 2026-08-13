@@ -20,6 +20,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery } from "@tanstack/react-query";
 import { shopApi, productsApi } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
+import { useLanguage } from "@/lib/language-context";
 import { toast } from "sonner";
 import { PosTerminal } from "@/components/views/pos-terminal";
 import { ProductManager } from "@/components/views/product-manager";
@@ -28,17 +29,36 @@ import { ShopDetails } from "@/components/views/shop-details";
 import { SettingsView } from "@/components/views/settings-view";
 import { Dashboard } from "@/components/views/dashboard";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageToggle } from "@/components/language-toggle";
 import { CommandPalette } from "@/components/command-palette";
 
-const NAV: { key: ViewKey; label: string; icon: typeof ScanLine; desc: string }[] =
-  [
-    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, desc: "Store overview" },
-    { key: "pos", label: "POS Terminal", icon: ScanLine, desc: "Scan & bill" },
-    { key: "products", label: "Products", icon: Package, desc: "Manage inventory" },
-    { key: "sales", label: "Sales History", icon: ReceiptText, desc: "Past bills" },
-    { key: "shop", label: "Shop Details", icon: Store, desc: "Business info" },
-    { key: "settings", label: "Settings", icon: Settings, desc: "App config" },
-  ];
+interface NavItem {
+  key: ViewKey;
+  labelKey:
+    | "dashboard"
+    | "posTerminal"
+    | "products"
+    | "salesHistory"
+    | "shopDetails"
+    | "settings";
+  descKey:
+    | "storeOverview"
+    | "scanBillCheckout"
+    | "manageInventory"
+    | "pastBills"
+    | "businessInformation"
+    | "appConfiguration";
+  icon: typeof ScanLine;
+}
+
+const NAV: NavItem[] = [
+  { key: "dashboard", labelKey: "dashboard", descKey: "storeOverview", icon: LayoutDashboard },
+  { key: "pos", labelKey: "posTerminal", descKey: "scanBillCheckout", icon: ScanLine },
+  { key: "products", labelKey: "products", descKey: "manageInventory", icon: Package },
+  { key: "sales", labelKey: "salesHistory", descKey: "pastBills", icon: ReceiptText },
+  { key: "shop", labelKey: "shopDetails", descKey: "businessInformation", icon: Store },
+  { key: "settings", labelKey: "settings", descKey: "appConfiguration", icon: Settings },
+];
 
 function SidebarContent({
   view,
@@ -51,6 +71,7 @@ function SidebarContent({
   shopName?: string;
   lowStockCount: number;
 }) {
+  const { t } = useLanguage();
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       {/* Brand */}
@@ -59,15 +80,15 @@ function SidebarContent({
           S
         </div>
         <div className="leading-tight">
-          <p className="font-bold text-base tracking-tight">SwiftBill</p>
-          <p className="text-[11px] text-sidebar-foreground/60">POS System</p>
+          <p className="font-bold text-base tracking-tight">{t("appName")}</p>
+          <p className="text-[11px] text-sidebar-foreground/60">{t("appTagline")}</p>
         </div>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-emerald">
         <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
-          Menu
+          {t("menu")}
         </p>
         {NAV.map((item) => {
           const active = view === item.key;
@@ -91,7 +112,7 @@ function SidebarContent({
                   active ? "text-primary-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground"
                 )}
               />
-              <span className="flex-1 text-left">{item.label}</span>
+              <span className="flex-1 text-left">{t(item.labelKey)}</span>
               {showStockBadge && (
                 <span
                   className={cn(
@@ -100,7 +121,7 @@ function SidebarContent({
                       ? "bg-primary-foreground/20 text-primary-foreground"
                       : "bg-amber-500 text-white"
                   )}
-                  title={`${lowStockCount} product${lowStockCount === 1 ? "" : "s"} need restocking`}
+                  title={`${lowStockCount} ${t("needRestocking")}`}
                 >
                   {lowStockCount}
                 </span>
@@ -117,7 +138,7 @@ function SidebarContent({
       <div className="border-t border-sidebar-border p-3">
         <div className="rounded-lg bg-sidebar-accent/60 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
-            Active Store
+            {t("activeStore")}
           </p>
           <p className="mt-1 truncate text-sm font-semibold text-sidebar-accent-foreground">
             {shopName || "—"}
@@ -127,7 +148,7 @@ function SidebarContent({
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
             </span>
-            <span className="text-[11px] text-sidebar-foreground/60">Live</span>
+            <span className="text-[11px] text-sidebar-foreground/60">{t("live")}</span>
           </div>
         </div>
       </div>
@@ -136,6 +157,7 @@ function SidebarContent({
 }
 
 export function AppShell() {
+  const { t } = useLanguage();
   const [view, setView] = useState<ViewKey>("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -162,19 +184,19 @@ export function AppShell() {
     if (lowStockCount > 0) {
       const outOfStock = products.filter((p) => p.stock === 0).length;
       const lowOnly = lowStockCount - outOfStock;
-      toast.warning(`${lowStockCount} product${lowStockCount === 1 ? "" : "s"} need attention`, {
+      toast.warning(`${lowStockCount} ${t("productsNeedAttention")}`, {
         description:
-          (outOfStock > 0 ? `${outOfStock} out of stock` : "") +
+          (outOfStock > 0 ? `${outOfStock} ${t("outOfStockWord")}` : "") +
           (outOfStock > 0 && lowOnly > 0 ? " · " : "") +
-          (lowOnly > 0 ? `${lowOnly} low stock` : ""),
+          (lowOnly > 0 ? `${lowOnly} ${t("lowStockWord")}` : ""),
         duration: 6000,
         action: {
-          label: "View",
+          label: t("view"),
           onClick: () => setView("products"),
         },
       });
     }
-  }, [products, lowStockCount]);
+  }, [products, lowStockCount, t]);
 
   // Cmd+K / Ctrl+K to open command palette
   useEffect(() => {
@@ -191,6 +213,11 @@ export function AppShell() {
   const current = NAV.find((n) => n.key === view)!;
   const CurrentIcon = current.icon;
 
+  const select = (v: ViewKey) => {
+    setView(v);
+    setMobileOpen(false);
+  };
+
   const renderView = () => {
     switch (view) {
       case "dashboard":
@@ -206,11 +233,6 @@ export function AppShell() {
       case "settings":
         return <SettingsView />;
     }
-  };
-
-  const select = (v: ViewKey) => {
-    setView(v);
-    setMobileOpen(false);
   };
 
   return (
@@ -245,7 +267,7 @@ export function AppShell() {
                 size="icon"
                 className="md:hidden"
                 onClick={() => setMobileOpen(true)}
-                aria-label="Open navigation menu"
+                aria-label={t("openNavMenu")}
               >
                 <Menu className="h-5 w-5" />
               </Button>
@@ -257,10 +279,10 @@ export function AppShell() {
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-base font-semibold leading-tight">
-                {current.label}
+                {t(current.labelKey)}
               </h1>
               <p className="truncate text-xs text-muted-foreground">
-                {current.desc}
+                {t(current.descKey)}
               </p>
             </div>
           </div>
@@ -271,7 +293,7 @@ export function AppShell() {
             className="ml-auto hidden sm:flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
           >
             <CommandIcon className="h-4 w-4" />
-            <span className="text-xs">Search…</span>
+            <span className="text-xs">{t("search")}…</span>
             <kbd className="ml-2 rounded border bg-background px-1.5 py-0.5 text-[10px] font-medium">
               ⌘K
             </kbd>
@@ -279,15 +301,16 @@ export function AppShell() {
 
           <div className="flex items-center gap-1.5 ml-auto sm:ml-2">
             <ThemeToggle />
+            <LanguageToggle />
 
             {/* Cart pill */}
             <button
               onClick={() => setView("pos")}
               className="relative flex items-center gap-2 rounded-full border bg-card px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent"
-              aria-label={`Open cart${cartCount > 0 ? ` (${cartCount} items)` : ""}`}
+              aria-label={`${t("cart")}${cartCount > 0 ? ` (${cartCount} ${t("items")})` : ""}`}
             >
               <ShoppingCart className="h-4 w-4 text-primary" />
-              <span className="hidden sm:inline">Cart</span>
+              <span className="hidden sm:inline">{t("cart")}</span>
               {cartCount > 0 && (
                 <motion.span
                   key={cartCount}
@@ -311,10 +334,10 @@ export function AppShell() {
         {/* Status footer (always pinned) */}
         <footer className="flex h-9 shrink-0 items-center justify-between border-t bg-card px-4 text-[11px] text-muted-foreground md:px-6">
           <div className="flex items-center gap-3">
-            <span className="font-medium text-foreground/70">SwiftBill POS</span>
+            <span className="font-medium text-foreground/70">{t("appName")} POS</span>
             <span className="hidden sm:inline">·</span>
             <span className="hidden sm:inline">
-              {shop?.name || "No store configured"}
+              {shop?.name || t("noStoreConfigured")}
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -327,7 +350,7 @@ export function AppShell() {
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              System operational
+              {t("systemOperational")}
             </span>
           </div>
         </footer>

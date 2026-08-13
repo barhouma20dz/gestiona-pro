@@ -23,6 +23,7 @@ import { productsApi } from "@/lib/api";
 import type { Product, NewProduct } from "@/lib/types";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/lib/language-context";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -66,24 +67,24 @@ import {
 
 /* ---------- helpers ---------- */
 
-function stockBadge(stock: number) {
+function stockBadge(stock: number, t: (k: "outOfStock" | "left" | "inStock" | "lowWithLeft") => string) {
   if (stock === 0) {
     return (
       <Badge className="bg-red-500/15 text-red-600 border-red-500/30 hover:bg-red-500/15">
-        Out of stock
+        {t("outOfStock")}
       </Badge>
     );
   }
   if (stock <= 5) {
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
-        Low · {stock} left
+        {t("lowWithLeft")} {stock} {t("left")}
       </Badge>
     );
   }
   return (
     <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
-      {stock} in stock
+      {stock} {t("inStock")}
     </Badge>
   );
 }
@@ -130,6 +131,7 @@ function toForm(p: Product): FormState {
 /* ---------- main component ---------- */
 
 export function ProductManager() {
+  const { t } = useLanguage();
   const qc = useQueryClient();
   const { data: products, isLoading } = useQuery({
     queryKey: ["products"],
@@ -202,32 +204,32 @@ export function ProductManager() {
   const createMutation = useMutation({
     mutationFn: (data: NewProduct) => productsApi.create(data),
     onSuccess: () => {
-      toast.success("Product created");
+      toast.success(t("productCreated"));
       qc.invalidateQueries({ queryKey: ["products"] });
       setFormOpen(false);
     },
-    onError: (e: Error) => toast.error(e.message || "Failed to create product"),
+    onError: (e: Error) => toast.error(e.message || t("failedCreateProduct")),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<NewProduct> }) =>
       productsApi.update(id, data),
     onSuccess: () => {
-      toast.success("Product updated");
+      toast.success(t("productUpdated"));
       qc.invalidateQueries({ queryKey: ["products"] });
       setFormOpen(false);
     },
-    onError: (e: Error) => toast.error(e.message || "Failed to update product"),
+    onError: (e: Error) => toast.error(e.message || t("failedUpdateProduct")),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => productsApi.delete(id),
     onSuccess: () => {
-      toast.success("Product deleted");
+      toast.success(t("productDeleted"));
       qc.invalidateQueries({ queryKey: ["products"] });
       setDeleteTarget(null);
     },
-    onError: (e: Error) => toast.error(e.message || "Failed to delete product"),
+    onError: (e: Error) => toast.error(e.message || t("failedDeleteProduct")),
   });
 
   /* Form handlers */
@@ -257,22 +259,22 @@ export function ProductManager() {
     });
     setFormErrors({});
     setFormOpen(true);
-    toast.info("Product duplicated — review and save", { duration: 2000 });
+    toast.info(t("productDuplicated"), { duration: 2000 });
   };
 
   const validate = (): boolean => {
     const errs: Partial<Record<keyof FormState, string>> = {};
-    if (!form.name.trim()) errs.name = "Name is required";
-    if (!form.barcode.trim()) errs.barcode = "Barcode is required";
+    if (!form.name.trim()) errs.name = t("nameRequired");
+    if (!form.barcode.trim()) errs.barcode = t("barcodeRequired");
     const price = Number(form.price);
     if (form.price === "" || Number.isNaN(price) || price < 0)
-      errs.price = "Price must be 0 or more";
+      errs.price = t("priceMin");
     const costPrice = Number(form.costPrice);
     if (form.costPrice === "" || Number.isNaN(costPrice) || costPrice < 0)
-      errs.costPrice = "Cost must be 0 or more";
+      errs.costPrice = t("costMin");
     const stock = Number(form.stock);
     if (form.stock === "" || Number.isNaN(stock) || stock < 0)
-      errs.stock = "Stock must be 0 or more";
+      errs.stock = t("stockMin");
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -299,26 +301,26 @@ export function ProductManager() {
 
   const statCards = [
     {
-      label: "Total Products",
+      label: t("totalProducts"),
       value: String(stats.total),
       icon: Package,
       tint: "bg-emerald-500/15 text-emerald-600",
     },
     {
-      label: "Inventory Value",
+      label: t("inventoryValue"),
       value: formatMoney(stats.totalValue, "₹"),
       icon: Wallet,
       tint: "bg-emerald-500/15 text-emerald-600",
     },
     {
-      label: "Potential Profit",
+      label: t("potentialProfit"),
       value: formatMoney(stats.potentialProfit, "₹"),
-      sub: `${stats.avgMargin.toFixed(1)}% avg margin`,
+      sub: `${stats.avgMargin.toFixed(1)}% ${t("margin")}`,
       icon: TrendingUp,
       tint: "bg-emerald-500/15 text-emerald-600",
     },
     {
-      label: "Low / Out of Stock",
+      label: t("lowOutStock"),
       value: `${stats.lowStock} / ${stats.outStock}`,
       icon: AlertTriangle,
       tint: "bg-amber-500/15 text-amber-600",
@@ -333,10 +335,10 @@ export function ProductManager() {
         <div className="relative flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold tracking-tight drop-shadow-sm sm:text-xl">
-              Inventory Management
+              {t("inventoryManagement")}
             </h2>
             <p className="mt-0.5 text-sm text-emerald-50/80">
-              {stats.total} products · {formatMoney(stats.totalValue, "₹")} stock value
+              {stats.total} {t("productsLabel")} · {formatMoney(stats.totalValue, "₹")} {t("inventoryValue").toLowerCase()}
             </p>
           </div>
           <Button
@@ -344,7 +346,7 @@ export function ProductManager() {
             className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
           >
             <Plus className="h-4 w-4" />
-            Add Product
+            {t("addProduct")}
           </Button>
         </div>
       </div>
@@ -395,7 +397,7 @@ export function ProductManager() {
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by name or barcode…"
+            placeholder={t("searchByNameOrBarcode")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -403,10 +405,10 @@ export function ProductManager() {
         </div>
         <Select value={category} onValueChange={setCategory}>
           <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="Category" />
+            <SelectValue placeholder={t("category")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
+            <SelectItem value="all">{t("allCategories")}</SelectItem>
             {categories.map((c) => (
               <SelectItem key={c} value={c}>
                 {c}
@@ -416,7 +418,7 @@ export function ProductManager() {
         </Select>
         <Button onClick={openAdd} className="w-full sm:w-auto">
           <Plus className="h-4 w-4" />
-          Add Product
+          {t("addProduct")}
         </Button>
       </div>
 
@@ -424,12 +426,12 @@ export function ProductManager() {
       <Card className="gap-0 p-0">
         <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
           <h2 className="text-sm font-semibold">
-            Products{" "}
+            {t("productsLabel")}{" "}
             <span className="text-muted-foreground">({filtered.length})</span>
           </h2>
           {filtered.length > 0 && (
             <span className="hidden text-xs text-muted-foreground sm:inline">
-              Sorted by newest
+              {t("sortedByNewest")}
             </span>
           )}
         </div>
@@ -439,11 +441,11 @@ export function ProductManager() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="pl-6">Product</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-right">Price</TableHead>
-                <TableHead>Stock</TableHead>
-                <TableHead className="pr-6 text-right">Actions</TableHead>
+                <TableHead className="pl-6">{t("product")}</TableHead>
+                <TableHead>{t("category")}</TableHead>
+                <TableHead className="text-right">{t("priceLabel")}</TableHead>
+                <TableHead>{t("stock")}</TableHead>
+                <TableHead className="pr-6 text-right">{t("actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -452,14 +454,14 @@ export function ProductManager() {
                   <TableCell colSpan={5} className="py-12 text-center">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading products…
+                      {t("loadingProducts")}
                     </div>
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="py-12 text-center">
-                    <EmptyState onAdd={openAdd} hasProducts={(products?.length ?? 0) > 0} />
+                    <EmptyState onAdd={openAdd} hasProducts={(products?.length ?? 0) > 0} t={t} />
                   </TableCell>
                 </TableRow>
               ) : (
@@ -482,7 +484,7 @@ export function ProductManager() {
                     <TableCell className="text-right font-medium tabular-nums">
                       {formatMoney(p.price, "₹")}
                     </TableCell>
-                    <TableCell>{stockBadge(p.stock)}</TableCell>
+                    <TableCell>{stockBadge(p.stock, t)}</TableCell>
                     <TableCell className="pr-6 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button
@@ -490,7 +492,7 @@ export function ProductManager() {
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => openEdit(p)}
-                          aria-label={`Edit ${p.name}`}
+                          aria-label={`${t("edit")} ${p.name}`}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -499,8 +501,8 @@ export function ProductManager() {
                           size="icon"
                           className="h-8 w-8 text-muted-foreground hover:text-primary"
                           onClick={() => duplicateProduct(p)}
-                          aria-label={`Duplicate ${p.name}`}
-                          title="Duplicate product"
+                          aria-label={`${t("duplicate")} ${p.name}`}
+                          title={t("duplicateProduct")}
                         >
                           <Copy className="h-4 w-4" />
                         </Button>
@@ -509,7 +511,7 @@ export function ProductManager() {
                           size="icon"
                           className="h-8 w-8 text-red-600 hover:bg-red-500/10 hover:text-red-700"
                           onClick={() => setDeleteTarget(p)}
-                          aria-label={`Delete ${p.name}`}
+                          aria-label={`${t("delete")} ${p.name}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -527,11 +529,11 @@ export function ProductManager() {
           {isLoading ? (
             <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading products…
+              {t("loadingProducts")}
             </div>
           ) : filtered.length === 0 ? (
             <div className="px-4 py-12">
-              <EmptyState onAdd={openAdd} hasProducts={(products?.length ?? 0) > 0} />
+              <EmptyState onAdd={openAdd} hasProducts={(products?.length ?? 0) > 0} t={t} />
             </div>
           ) : (
             <ul className="divide-y">
@@ -545,7 +547,7 @@ export function ProductManager() {
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {categoryBadge(p.category)}
-                        {stockBadge(p.stock)}
+                        {stockBadge(p.stock, t)}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
@@ -558,7 +560,7 @@ export function ProductManager() {
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => openEdit(p)}
-                          aria-label={`Edit ${p.name}`}
+                          aria-label={`${t("edit")} ${p.name}`}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -567,8 +569,8 @@ export function ProductManager() {
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => duplicateProduct(p)}
-                          aria-label={`Duplicate ${p.name}`}
-                          title="Duplicate product"
+                          aria-label={`${t("duplicate")} ${p.name}`}
+                          title={t("duplicateProduct")}
                         >
                           <Copy className="h-4 w-4" />
                         </Button>
@@ -577,7 +579,7 @@ export function ProductManager() {
                           size="icon"
                           className="h-8 w-8 text-red-600"
                           onClick={() => setDeleteTarget(p)}
-                          aria-label={`Delete ${p.name}`}
+                          aria-label={`${t("delete")} ${p.name}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -595,16 +597,16 @@ export function ProductManager() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit product" : "Add product"}</DialogTitle>
+            <DialogTitle>{editing ? t("editProduct") : t("addProductTitle")}</DialogTitle>
             <DialogDescription>
               {editing
-                ? "Update the details for this product."
-                : "Fill in the details to add a new product to your inventory."}
+                ? t("updateDetails")
+                : t("fillDetails")}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="p-name">Name</Label>
+              <Label htmlFor="p-name">{t("name")}</Label>
               <Input
                 id="p-name"
                 value={form.name}
@@ -618,7 +620,7 @@ export function ProductManager() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="p-barcode">Barcode</Label>
+              <Label htmlFor="p-barcode">{t("barcode")}</Label>
               <Input
                 id="p-barcode"
                 value={form.barcode}
@@ -630,7 +632,7 @@ export function ProductManager() {
               />
               <p className="flex items-center gap-1 text-xs text-muted-foreground">
                 <ScanLine className="h-3 w-3" />
-                Tip: use a USB barcode scanner or type the digits manually.
+                {t("tipUseScanner")}
               </p>
               {formErrors.barcode && (
                 <p className="text-xs text-red-600">{formErrors.barcode}</p>
@@ -639,7 +641,7 @@ export function ProductManager() {
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
-                <Label htmlFor="p-price">Selling Price</Label>
+                <Label htmlFor="p-price">{t("sellingPrice")}</Label>
                 <div className="relative">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                     ₹
@@ -663,7 +665,7 @@ export function ProductManager() {
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="p-cost">Cost Price</Label>
+                <Label htmlFor="p-cost">{t("costPrice")}</Label>
                 <div className="relative">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                     ₹
@@ -687,7 +689,7 @@ export function ProductManager() {
                 )}
               </div>
               <div className="col-span-2 space-y-1.5 sm:col-span-1">
-                <Label htmlFor="p-stock">Stock</Label>
+                <Label htmlFor="p-stock">{t("stock")}</Label>
                 <Input
                   id="p-stock"
                   type="number"
@@ -709,7 +711,7 @@ export function ProductManager() {
             {/* Live profit margin indicator */}
             {Number(form.price) > 0 && Number(form.costPrice) >= 0 && (
               <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">Profit margin:</span>
+                <span className="text-muted-foreground">{t("profitMargin")}:</span>
                 {(() => {
                   const price = Number(form.price);
                   const cost = Number(form.costPrice);
@@ -745,7 +747,7 @@ export function ProductManager() {
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="p-category">Category</Label>
+              <Label htmlFor="p-category">{t("category")}</Label>
               <Input
                 id="p-category"
                 list="category-list"
@@ -761,7 +763,7 @@ export function ProductManager() {
                 ))}
               </datalist>
               <p className="text-xs text-muted-foreground">
-                Pick an existing category or type a new one.
+                {t("pickExistingOrNew")}
               </p>
             </div>
 
@@ -773,7 +775,7 @@ export function ProductManager() {
                 disabled={saving}
               >
                 <X className="h-4 w-4" />
-                Cancel
+                {t("cancel")}
               </Button>
               <Button type="submit" disabled={saving}>
                 {saving ? (
@@ -781,7 +783,7 @@ export function ProductManager() {
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}
-                {editing ? "Save changes" : "Add product"}
+                {editing ? t("saveChanges") : t("addProduct")}
               </Button>
             </DialogFooter>
           </form>
@@ -795,18 +797,18 @@ export function ProductManager() {
       >
         <AlertDialogContent className="sm:max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete product?</AlertDialogTitle>
+            <AlertDialogTitle>{t("deleteProduct")}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete{" "}
+              {t("delete")}{" "}
               <span className="font-semibold text-foreground">
                 {deleteTarget?.name}
               </span>
-              ? This cannot be undone.
+              ? {t("deleteProductConfirm")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>
-              Cancel
+              {t("cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 text-white hover:bg-red-700"
@@ -821,7 +823,7 @@ export function ProductManager() {
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}
-              Delete
+              {t("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -835,9 +837,11 @@ export function ProductManager() {
 function EmptyState({
   onAdd,
   hasProducts,
+  t,
 }: {
   onAdd: () => void;
   hasProducts: boolean;
+  t: (k: "noProductsMatch" | "noProductsYet" | "tryAdjustingSearch" | "addFirstProductTrack" | "addFirstProduct") => string;
 }) {
   return (
     <div className="flex flex-col items-center gap-3 py-6">
@@ -846,18 +850,18 @@ function EmptyState({
       </div>
       <div className="text-center">
         <p className="text-sm font-medium">
-          {hasProducts ? "No products match your filters" : "No products yet"}
+          {hasProducts ? t("noProductsMatch") : t("noProductsYet")}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {hasProducts
-            ? "Try adjusting your search or category."
-            : "Add your first product to start selling."}
+            ? t("tryAdjustingSearch")
+            : t("addFirstProductTrack")}
         </p>
       </div>
       {!hasProducts && (
         <Button size="sm" onClick={onAdd}>
           <Plus className="h-4 w-4" />
-          Add your first product
+          {t("addFirstProduct")}
         </Button>
       )}
     </div>

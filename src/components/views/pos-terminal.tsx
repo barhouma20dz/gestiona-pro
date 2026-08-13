@@ -29,6 +29,7 @@ import {
 import { productsApi, shopApi } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
 import { useHeldOrdersStore } from "@/lib/held-orders-store";
+import { useLanguage } from "@/lib/language-context";
 import { cn } from "@/lib/utils";
 import { colorFromString, formatMoney, initialsOf } from "@/lib/format";
 import type { Product } from "@/lib/types";
@@ -61,19 +62,19 @@ import {
 import { CheckoutDialog } from "@/components/checkout-dialog";
 
 const PAYMENT_METHODS = [
-  { key: "Cash", label: "Cash", icon: Banknote },
-  { key: "UPI", label: "UPI", icon: QrCode },
-  { key: "Card", label: "Card", icon: CreditCard },
+  { key: "Cash", labelKey: "cash" as const, icon: Banknote },
+  { key: "UPI", labelKey: "upi" as const, icon: QrCode },
+  { key: "Card", labelKey: "card" as const, icon: CreditCard },
 ] as const;
 
-function stockBadge(stock: number) {
+function stockBadge(stock: number, t: (k: "out" | "left" | "inStock") => string) {
   if (stock <= 0)
     return (
       <Badge
         variant="secondary"
         className="bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400"
       >
-        Out
+        {t("out")}
       </Badge>
     );
   if (stock <= 5)
@@ -82,7 +83,7 @@ function stockBadge(stock: number) {
         variant="secondary"
         className="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
       >
-        {stock} left
+        {stock} {t("left")}
       </Badge>
     );
   return (
@@ -90,7 +91,7 @@ function stockBadge(stock: number) {
       variant="secondary"
       className="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
     >
-      {stock} in stock
+      {stock} {t("inStock")}
     </Badge>
   );
 }
@@ -127,6 +128,7 @@ function CameraScannerBody({
   onScan: (code: string) => void;
   onOpenChange: (o: boolean) => void;
 }) {
+  const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
@@ -190,11 +192,10 @@ function CameraScannerBody({
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
           <ScanLine className="h-5 w-5 text-primary" />
-          Scan Barcode
+          {t("scanBarcode")}
         </DialogTitle>
         <DialogDescription>
-          Point your camera at a product barcode, or enter the code manually
-          below.
+          {t("cameraHint")}
         </DialogDescription>
       </DialogHeader>
 
@@ -204,10 +205,10 @@ function CameraScannerBody({
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
             <CameraOff className="h-8 w-8 text-muted-foreground" />
             <p className="text-sm font-medium text-foreground">
-              Camera not available
+              {t("cameraNotAvailable")}
             </p>
             <p className="text-xs text-muted-foreground">
-              Enter the barcode manually below to continue.
+              {t("manualBarcodeHint")}
             </p>
           </div>
         ) : (
@@ -241,7 +242,7 @@ function CameraScannerBody({
             </div>
             {!cameraReady && !cameraError && (
               <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
-                Starting camera…
+                {t("startingCamera")}
               </div>
             )}
           </>
@@ -251,7 +252,7 @@ function CameraScannerBody({
       {/* Manual fallback — primary path */}
       <div className="space-y-2">
         <label className="text-xs font-medium text-muted-foreground">
-          Enter barcode manually
+          {t("enterBarcodeManually")}
         </label>
         <div className="flex gap-2">
           <Input
@@ -265,14 +266,14 @@ function CameraScannerBody({
           />
           <Button type="button" onClick={submitManual} disabled={!manualCode.trim()}>
             <Plus className="h-4 w-4" />
-            Add
+            {t("add")}
           </Button>
         </div>
       </div>
 
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>
-          Close
+          {t("close")}
         </Button>
       </DialogFooter>
     </>
@@ -287,10 +288,12 @@ function ProductTile({
   product,
   currency,
   onAdd,
+  t,
 }: {
   product: Product;
   currency: string;
   onAdd: (p: Product) => void;
+  t: (k: "out" | "left" | "inStock" | "outOfStockMsg") => string;
 }) {
   const outOfStock = product.stock <= 0;
   return (
@@ -302,7 +305,7 @@ function ProductTile({
       disabled={outOfStock}
       onClick={() => {
         if (outOfStock) {
-          toast.error("Out of stock", { description: product.name });
+          toast.error(t("outOfStockMsg"), { description: product.name });
           return;
         }
         onAdd(product);
@@ -340,7 +343,7 @@ function ProductTile({
             <span className="text-sm font-bold text-primary transition-colors group-hover:text-primary/80">
               {formatMoney(product.price, currency)}
             </span>
-            {stockBadge(product.stock)}
+            {stockBadge(product.stock, t)}
           </div>
         </div>
       </Card>
@@ -358,12 +361,14 @@ function CartItemRow({
   onIncrement,
   onDecrement,
   onRemove,
+  t,
 }: {
   item: { product: Product; quantity: number };
   currency: string;
   onIncrement: () => void;
   onDecrement: () => void;
   onRemove: () => void;
+  t: (k: "each") => string;
 }) {
   return (
     <motion.div
@@ -387,7 +392,7 @@ function CartItemRow({
             {item.product.name}
           </p>
           <p className="text-xs text-muted-foreground">
-            {formatMoney(item.product.price, currency)} each
+            {formatMoney(item.product.price, currency)} {t("each")}
           </p>
         </div>
 
@@ -440,6 +445,7 @@ function CartItemRow({
 /* -------------------------------------------------------------------------- */
 
 export function PosTerminal() {
+  const { t } = useLanguage();
   const { data: products = [], isLoading: productsLoading } = useQuery({
     queryKey: ["products"],
     queryFn: productsApi.list,
@@ -488,10 +494,10 @@ export function PosTerminal() {
   const handleAddCustomItem = () => {
     const price = Number(customPrice);
     if (!customPrice || Number.isNaN(price) || price <= 0) {
-      toast.error("Enter a valid price");
+      toast.error(t("enterValidPrice"));
       return;
     }
-    const name = customName.trim() || "Custom Item";
+    const name = customName.trim() || t("customItemDefault");
     const customProduct: Product = {
       id: `custom-${Date.now()}`,
       name,
@@ -504,7 +510,7 @@ export function PosTerminal() {
       updatedAt: new Date().toISOString(),
     };
     addProduct(customProduct);
-    toast.success(`${name} added`, { description: formatMoney(price, currency) });
+    toast.success(`${name} ${t("productAdded")}`, { description: formatMoney(price, currency) });
     setCustomName("");
     setCustomPrice("");
     setCustomItemOpen(false);
@@ -514,8 +520,8 @@ export function PosTerminal() {
     if (items.length === 0) return;
     holdOrder({ items, discount, paymentMethod });
     const count = items.reduce((s, i) => s + i.quantity, 0);
-    toast.success(`Order held (${count} items)`, {
-      description: "Press F7 to resume held orders",
+    toast.success(`${t("orderHeld")} (${count} ${t("orderHeldItems")})`, {
+      description: t("pressF7Resume"),
       duration: 2500,
     });
     clearCart();
@@ -524,13 +530,13 @@ export function PosTerminal() {
   const handleResumeOrder = (id: string) => {
     const order = resumeOrder(id);
     if (!order) {
-      toast.error("Order not found");
+      toast.error(t("orderNotFound"));
       return;
     }
     // If current cart is non-empty, hold it first
     if (items.length > 0) {
       holdOrder({ items, discount, paymentMethod });
-      toast.info("Current cart held", { duration: 1500 });
+      toast.info(t("currentCartHeld"), { duration: 1500 });
     }
     // Restore the held order into the cart
     order.items.forEach((ci) => {
@@ -541,12 +547,12 @@ export function PosTerminal() {
     setDiscount(order.discount);
     setPaymentMethod(order.paymentMethod);
     setHeldOrdersOpen(false);
-    toast.success("Order resumed", { duration: 1500 });
+    toast.success(t("orderResumed"), { duration: 1500 });
   };
 
   const handleDeleteHeldOrder = (id: string) => {
     deleteHeldOrder(id);
-    toast.success("Held order discarded");
+    toast.success(t("heldOrderDiscarded"));
   };
 
   // Keyboard shortcuts: F1 focus scan, F2/F3/F4 payment methods, F6 hold, F7 held, F9 checkout
@@ -571,19 +577,19 @@ export function PosTerminal() {
       if (e.key === "F2" && items.length > 0) {
         e.preventDefault();
         setPaymentMethod("Cash");
-        toast.success("Payment: Cash", { duration: 1000 });
+        toast.success(`${t("paymentMethod")}: ${t("cash")}`, { duration: 1000 });
         return;
       }
       if (e.key === "F3" && items.length > 0) {
         e.preventDefault();
         setPaymentMethod("UPI");
-        toast.success("Payment: UPI", { duration: 1000 });
+        toast.success(`${t("paymentMethod")}: ${t("upi")}`, { duration: 1000 });
         return;
       }
       if (e.key === "F4" && items.length > 0) {
         e.preventDefault();
         setPaymentMethod("Card");
-        toast.success("Payment: Card", { duration: 1000 });
+        toast.success(`${t("paymentMethod")}: ${t("card")}`, { duration: 1000 });
         return;
       }
 
@@ -610,7 +616,7 @@ export function PosTerminal() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [items.length, setPaymentMethod, items, discount, paymentMethod]);
+  }, [items.length, setPaymentMethod, items, discount, paymentMethod, t]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -652,7 +658,7 @@ export function PosTerminal() {
       const p = products.find(
         (x) => x.barcode.toLowerCase() === code.toLowerCase()
       );
-      toast.success(`${p?.name ?? "Product"} added`);
+      toast.success(`${p?.name ?? t("customItemDefault")} ${t("productAdded")}`);
       setScanInput("");
       return;
     }
@@ -662,7 +668,7 @@ export function PosTerminal() {
     );
     if (byName) {
       addProduct(byName);
-      toast.success(`${byName.name} added`);
+      toast.success(`${byName.name} ${t("productAdded")}`);
       setScanInput("");
       return;
     }
@@ -672,12 +678,12 @@ export function PosTerminal() {
     );
     if (partial) {
       addProduct(partial);
-      toast.success(`${partial.name} added`);
+      toast.success(`${partial.name} ${t("productAdded")}`);
       setScanInput("");
       return;
     }
-    toast.error("Product not found", {
-      description: `No product matches "${code}"`,
+    toast.error(t("productNotFound"), {
+      description: `${t("noProductMatches")} "${code}"`,
     });
   };
 
@@ -687,7 +693,7 @@ export function PosTerminal() {
       const p = products.find(
         (x) => x.barcode.toLowerCase() === code.toLowerCase()
       );
-      toast.success(`${p?.name ?? "Product"} added`);
+      toast.success(`${p?.name ?? t("customItemDefault")} ${t("productAdded")}`);
     } else {
       // Try name match from camera input too
       const byName = products.find((p) =>
@@ -695,10 +701,10 @@ export function PosTerminal() {
       );
       if (byName) {
         addProduct(byName);
-        toast.success(`${byName.name} added`);
+        toast.success(`${byName.name} ${t("productAdded")}`);
       } else {
-        toast.error("Product not found", {
-          description: `No product matches "${code}"`,
+        toast.error(t("productNotFound"), {
+          description: `${t("noProductMatches")} "${code}"`,
         });
       }
     }
@@ -706,19 +712,19 @@ export function PosTerminal() {
 
   const handleAddProduct = (p: Product) => {
     if (p.stock <= 0) {
-      toast.error("Out of stock", { description: p.name });
+      toast.error(t("outOfStockMsg"), { description: p.name });
       return;
     }
     // Prevent adding more than stock
     const inCart = items.find((i) => i.product.id === p.id)?.quantity ?? 0;
     if (inCart >= p.stock) {
-      toast.error("Stock limit reached", {
-        description: `Only ${p.stock} of ${p.name} available`,
+      toast.error(t("stockLimitReached"), {
+        description: `${t("only")} ${p.stock} ${t("of")} ${p.name} ${t("available")}`,
       });
       return;
     }
     addProduct(p);
-    toast.success(`${p.name} added`, { duration: 1200 });
+    toast.success(`${p.name} ${t("productAdded")}`, { duration: 1200 });
   };
 
   return (
@@ -740,9 +746,9 @@ export function PosTerminal() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleScanSubmit();
                 }}
-                placeholder="Scan or search product / barcode…"
+                placeholder={t("scanOrSearch")}
                 className="pl-9 pr-10"
-                aria-label="Scan or search product"
+                aria-label={t("scanOrSearch")}
               />
               {scanInput ? (
                 <button
@@ -766,10 +772,10 @@ export function PosTerminal() {
                 variant="outline"
                 onClick={() => setCustomItemOpen(true)}
                 className="shrink-0"
-                title="Add custom item with manual price"
+                title={t("addCustomItemTitle")}
               >
                 <Calculator className="h-4 w-4" />
-                <span className="hidden sm:inline">Custom</span>
+                <span className="hidden sm:inline">{t("custom")}</span>
               </Button>
               <Button
                 variant="outline"
@@ -777,7 +783,7 @@ export function PosTerminal() {
                 className="shrink-0"
               >
                 <Camera className="h-4 w-4" />
-                Scan
+                {t("scan")}
               </Button>
               <Button
                 onClick={handleScanSubmit}
@@ -785,7 +791,7 @@ export function PosTerminal() {
                 className="shrink-0"
               >
                 <Plus className="h-4 w-4" />
-                Add
+                {t("add")}
               </Button>
             </div>
           </div>
@@ -823,9 +829,9 @@ export function PosTerminal() {
           <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-16 text-center">
             <PackageX className="h-10 w-10 text-muted-foreground/60" />
             <div>
-              <p className="text-sm font-medium">No products found</p>
+              <p className="text-sm font-medium">{t("noProductsFound")}</p>
               <p className="text-xs text-muted-foreground">
-                Try a different barcode, name, or category.
+                {t("tryDifferentBarcode")}
               </p>
             </div>
           </div>
@@ -837,6 +843,7 @@ export function PosTerminal() {
                 product={p}
                 currency={currency}
                 onAdd={handleAddProduct}
+                t={t}
               />
             ))}
           </div>
@@ -850,7 +857,7 @@ export function PosTerminal() {
           <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold">Current Order</h2>
+              <h2 className="text-sm font-semibold">{t("currentOrder")}</h2>
               {totalItems > 0 && (
                 <Badge className="ml-1 h-5 min-w-5 justify-center px-1.5 text-[11px]">
                   {totalItems}
@@ -864,10 +871,10 @@ export function PosTerminal() {
                 variant="ghost"
                 className="relative h-7 px-2 text-xs text-muted-foreground hover:text-primary"
                 onClick={() => setHeldOrdersOpen(true)}
-                title="View held orders (F7)"
+                title={`${t("heldOrders")} (F7)`}
               >
                 <History className="h-3.5 w-3.5" />
-                Held
+                {t("held")}
                 {heldOrders.length > 0 && (
                   <span className="ml-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
                     {heldOrders.length}
@@ -881,10 +888,10 @@ export function PosTerminal() {
                     variant="ghost"
                     className="h-7 px-2 text-xs text-muted-foreground hover:text-primary"
                     onClick={handleHoldOrder}
-                    title="Hold this order (F6)"
+                    title={`${t("hold")} (F6)`}
                   >
                     <Pause className="h-3.5 w-3.5" />
-                    Hold
+                    {t("hold")}
                   </Button>
                   <Button
                     size="sm"
@@ -893,7 +900,7 @@ export function PosTerminal() {
                     onClick={() => setClearConfirmOpen(true)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    Clear
+                    {t("clear")}
                   </Button>
                 </>
               )}
@@ -907,9 +914,9 @@ export function PosTerminal() {
                 <ShoppingCart className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm font-medium">Cart is empty</p>
+                <p className="text-sm font-medium">{t("cartIsEmpty")}</p>
                 <p className="text-xs text-muted-foreground">
-                  Scan or tap products to add
+                  {t("scanOrTapProducts")}
                 </p>
               </div>
             </div>
@@ -923,8 +930,8 @@ export function PosTerminal() {
                     currency={currency}
                     onIncrement={() => {
                       if (item.quantity >= item.product.stock) {
-                        toast.error("Stock limit reached", {
-                          description: `Only ${item.product.stock} of ${item.product.name} available`,
+                        toast.error(t("stockLimitReached"), {
+                          description: `${t("only")} ${item.product.stock} ${t("of")} ${item.product.name} ${t("available")}`,
                         });
                         return;
                       }
@@ -934,6 +941,7 @@ export function PosTerminal() {
                       updateQuantity(item.product.id, item.quantity - 1)
                     }
                     onRemove={() => removeItem(item.product.id)}
+                    t={t}
                   />
                 ))}
               </AnimatePresence>
@@ -945,14 +953,14 @@ export function PosTerminal() {
             <div className="space-y-3 border-t px-4 py-3">
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Subtotal</span>
+                  <span>{t("subtotal")}</span>
                   <span className="tabular-nums">
                     {formatMoney(subtotal, currency)}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Discount</span>
+                  <span className="text-muted-foreground">{t("discount")}</span>
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-muted-foreground">
                       {currency}
@@ -973,7 +981,7 @@ export function PosTerminal() {
 
                 {taxRate > 0 && (
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Tax ({taxRate}%)</span>
+                    <span>{t("tax")} ({taxRate}%)</span>
                     <span className="tabular-nums">
                       {formatMoney(taxAmount, currency)}
                     </span>
@@ -984,7 +992,7 @@ export function PosTerminal() {
               <Separator />
 
               <div className="flex items-baseline justify-between">
-                <span className="text-sm font-semibold">Grand Total</span>
+                <span className="text-sm font-semibold">{t("grandTotal")}</span>
                 <span className="text-xl font-bold text-primary tabular-nums">
                   {formatMoney(grandTotal, currency)}
                 </span>
@@ -1009,7 +1017,7 @@ export function PosTerminal() {
                       )}
                     >
                       <Icon className="h-4 w-4" />
-                      <span className="text-[11px]">{m.label}</span>
+                      <span className="text-[11px]">{t(m.labelKey)}</span>
                       <kbd
                         className={cn(
                           "absolute right-1 top-1 rounded px-1 text-[9px] font-medium leading-tight",
@@ -1031,7 +1039,7 @@ export function PosTerminal() {
                 onClick={() => setCheckoutOpen(true)}
               >
                 <CheckCircle2 className="h-4 w-4" />
-                Checkout · {formatMoney(grandTotal, currency)}
+                {t("checkout")} · {formatMoney(grandTotal, currency)}
                 <kbd className="ml-2 rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-medium">
                   F9
                 </kbd>
@@ -1058,23 +1066,23 @@ export function PosTerminal() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Clear cart?</AlertDialogTitle>
+            <AlertDialogTitle>{t("clearCart")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove all {totalItems} item{totalItems === 1 ? "" : "s"}{" "}
-              from the current order. This cannot be undone.
+              {t("removeAllItems")} {totalItems} {t("items")}{" "}
+              {t("fromCurrentOrder")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
               onClick={() => {
                 clearCart();
                 setClearConfirmOpen(false);
-                toast.success("Cart cleared");
+                toast.success(t("cartCleared"));
               }}
             >
-              Clear
+              {t("clear")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1086,7 +1094,7 @@ export function PosTerminal() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-5 w-5 text-primary" />
-              Held Orders
+              {t("heldOrders")}
               {heldOrders.length > 0 && (
                 <Badge className="h-5 min-w-5 justify-center px-1.5 text-[11px]">
                   {heldOrders.length}
@@ -1094,8 +1102,7 @@ export function PosTerminal() {
               )}
             </DialogTitle>
             <DialogDescription>
-              Parked orders you can resume. Held orders are saved on this
-              device.
+              {t("parkedOrdersResume")}
             </DialogDescription>
           </DialogHeader>
 
@@ -1105,9 +1112,9 @@ export function PosTerminal() {
                 <Clock className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm font-medium">No held orders</p>
+                <p className="text-sm font-medium">{t("noHeldOrders")}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Press <kbd className="rounded border bg-muted px-1 text-[10px] font-medium">F6</kbd> on an active order to hold it here.
+                  {t("pressToHold")}
                 </p>
               </div>
             </div>
@@ -1136,13 +1143,13 @@ export function PosTerminal() {
                           {order.label}
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          {orderCount} item{orderCount === 1 ? "" : "s"} ·{" "}
+                          {orderCount} {t("items")} ·{" "}
                           {formatMoney(orderTotal, currency)} ·{" "}
                           {heldAgo < 1
-                            ? "just now"
+                            ? t("justNow")
                             : heldAgo < 60
-                            ? `${heldAgo}m ago`
-                            : `${Math.round(heldAgo / 60)}h ago`}
+                            ? `${heldAgo} ${t("minutesAgo")}`
+                            : `${Math.round(heldAgo / 60)} ${t("hoursAgo")}`}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
@@ -1153,14 +1160,14 @@ export function PosTerminal() {
                           onClick={() => handleResumeOrder(order.id)}
                         >
                           <Play className="h-3 w-3" />
-                          Resume
+                          {t("resume")}
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
                           className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                           onClick={() => handleDeleteHeldOrder(order.id)}
-                          aria-label="Discard held order"
+                          aria-label={t("discard")}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -1177,7 +1184,7 @@ export function PosTerminal() {
               variant="outline"
               onClick={() => setHeldOrdersOpen(false)}
             >
-              Close
+              {t("close")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1189,17 +1196,16 @@ export function PosTerminal() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calculator className="h-5 w-5 text-primary" />
-              Quick Custom Item
+              {t("quickCustomItem")}
             </DialogTitle>
             <DialogDescription>
-              Add a custom item with a manual price — ideal for loose items,
-              weighed goods, or quick sales not in your catalog.
+              {t("customItemDesc")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="custom-name">Item name (optional)</Label>
+              <Label htmlFor="custom-name">{t("itemName")}</Label>
               <Input
                 id="custom-name"
                 value={customName}
@@ -1209,7 +1215,7 @@ export function PosTerminal() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="custom-price">Price</Label>
+              <Label htmlFor="custom-price">{t("price")}</Label>
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                   {currency}
@@ -1234,7 +1240,7 @@ export function PosTerminal() {
             {/* Quick price chips */}
             <div className="flex flex-wrap gap-2">
               <span className="self-center text-xs text-muted-foreground">
-                Quick:
+                {t("quick")}:
               </span>
               {[10, 20, 50, 100, 500].map((amt) => (
                 <button
@@ -1254,14 +1260,14 @@ export function PosTerminal() {
               variant="outline"
               onClick={() => setCustomItemOpen(false)}
             >
-              Cancel
+              {t("cancel")}
             </Button>
             <Button
               onClick={handleAddCustomItem}
               disabled={!customPrice || Number(customPrice) <= 0}
             >
               <Plus className="h-4 w-4" />
-              Add to cart
+              {t("addToCart")}
             </Button>
           </DialogFooter>
         </DialogContent>

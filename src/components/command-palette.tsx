@@ -28,6 +28,7 @@ import type { ViewKey } from "@/lib/types";
 import { useTheme } from "next-themes";
 import { productsApi, shopApi } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
+import { useLanguage } from "@/lib/language-context";
 import { formatMoney, initialsOf, colorFromString } from "@/lib/format";
 
 interface CommandPaletteProps {
@@ -38,51 +39,63 @@ interface CommandPaletteProps {
 
 const NAV_ITEMS: {
   key: ViewKey;
-  label: string;
+  labelKey:
+    | "dashboard"
+    | "posTerminal"
+    | "products"
+    | "salesHistory"
+    | "shopDetails"
+    | "settings";
   icon: typeof ScanLine;
-  desc: string;
+  descKey:
+    | "storeOverview"
+    | "scanBillCheckout"
+    | "manageInventory"
+    | "pastBills"
+    | "businessInformation"
+    | "appConfiguration";
   keywords: string;
 }[] = [
   {
     key: "dashboard",
-    label: "Dashboard",
+    labelKey: "dashboard",
     icon: LayoutDashboard,
-    desc: "Store overview & KPIs",
+    descKey: "storeOverview",
     keywords: "home overview stats",
   },
   {
     key: "pos",
-    label: "POS Terminal",
+    labelKey: "posTerminal",
     icon: ScanLine,
-    desc: "Scan & bill checkout",
+    descKey: "scanBillCheckout",
     keywords: "scan bill cart checkout sale",
   },
   {
     key: "products",
-    label: "Products",
+    labelKey: "products",
     icon: Package,
-    desc: "Manage inventory",
+    descKey: "manageInventory",
     keywords: "inventory stock items catalog",
   },
   {
     key: "sales",
-    label: "Sales History",
+    labelKey: "salesHistory",
     icon: ReceiptText,
-    desc: "Past bills & receipts",
+    descKey: "pastBills",
     keywords: "receipts transactions history reports",
   },
   {
     key: "shop",
-    label: "Shop Details",
+    labelKey: "shopDetails",
     icon: Store,
-    desc: "Business information",
+    descKey: "businessInformation",
     keywords: "store business address settings",
   },
   {
     key: "settings",
-    label: "Settings",
+    labelKey: "settings",
     icon: Settings,
-    desc: "App configuration",
+    descKey: "appConfiguration",
     keywords: "config tax printer preferences",
   },
 ];
@@ -92,6 +105,7 @@ export function CommandPalette({
   onOpenChange,
   onNavigate,
 }: CommandPaletteProps) {
+  const { t } = useLanguage();
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   // Products query for product search
@@ -123,11 +137,11 @@ export function CommandPalette({
 
   const handleAddProduct = (product: (typeof products)[number]) => {
     if (product.stock <= 0) {
-      toast.error("Out of stock", { description: product.name });
+      toast.error(t("outOfStockMsg"), { description: product.name });
       return;
     }
     addProduct(product);
-    toast.success(`${product.name} added to cart`, { duration: 1500 });
+    toast.success(`${product.name} ${t("addedToCart")}`, { duration: 1500 });
     onOpenChange(false);
     onNavigate("pos");
   };
@@ -137,20 +151,20 @@ export function CommandPalette({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Search actions, pages, products…" />
+      <CommandInput placeholder={t("searchActionsPages")} />
       <CommandList className="max-h-[460px]">
-        <CommandEmpty>No results found.</CommandEmpty>
+        <CommandEmpty>{t("noResultsFound")}</CommandEmpty>
 
-        <CommandGroup heading="Quick Actions">
+        <CommandGroup heading={t("quickActions_")}>
           <CommandItem
             onSelect={() => handleNavigate("pos")}
             className="cursor-pointer"
           >
             <ShoppingCart className="mr-2 h-4 w-4 text-primary" />
             <div className="flex flex-col">
-              <span className="font-medium">New Sale</span>
+              <span className="font-medium">{t("newSale")}</span>
               <span className="text-xs text-muted-foreground">
-                Go to POS terminal
+                {t("openTerminal")}
               </span>
             </div>
           </CommandItem>
@@ -160,9 +174,9 @@ export function CommandPalette({
           >
             <Plus className="mr-2 h-4 w-4 text-primary" />
             <div className="flex flex-col">
-              <span className="font-medium">Add Product</span>
+              <span className="font-medium">{t("addProduct")}</span>
               <span className="text-xs text-muted-foreground">
-                Open product manager
+                {t("openProductManager")}
               </span>
             </div>
           </CommandItem>
@@ -170,22 +184,22 @@ export function CommandPalette({
 
         <CommandSeparator />
 
-        <CommandGroup heading="Navigate">
+        <CommandGroup heading={t("navigate")}>
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             return (
               <CommandItem
                 key={item.key}
-                value={`${item.label} ${item.keywords}`}
+                value={`${t(item.labelKey)} ${item.keywords}`}
                 onSelect={() => handleNavigate(item.key)}
                 className="cursor-pointer"
               >
                 <Icon className="mr-2 h-4 w-4 text-muted-foreground" />
                 <div className="flex flex-1 items-center justify-between">
                   <div className="flex flex-col">
-                    <span className="font-medium">{item.label}</span>
+                    <span className="font-medium">{t(item.labelKey)}</span>
                     <span className="text-xs text-muted-foreground">
-                      {item.desc}
+                      {t(item.descKey)}
                     </span>
                   </div>
                 </div>
@@ -197,7 +211,7 @@ export function CommandPalette({
         {availableProducts.length > 0 && (
           <>
             <CommandSeparator />
-            <CommandGroup heading="Add Product to Cart">
+            <CommandGroup heading={t("addToCartHeading")}>
               {availableProducts.map((product) => (
                 <CommandItem
                   key={product.id}
@@ -225,7 +239,7 @@ export function CommandPalette({
                         {formatMoney(product.price, currency)}
                       </span>
                       <span className="text-[10px] text-muted-foreground">
-                        {product.stock} left
+                        {product.stock} {t("left")}
                       </span>
                       <PackagePlus className="h-3.5 w-3.5 text-primary" />
                     </div>
@@ -238,7 +252,7 @@ export function CommandPalette({
 
         <CommandSeparator />
 
-        <CommandGroup heading="Preferences">
+        <CommandGroup heading={t("preferences")}>
           <CommandItem onSelect={toggleTheme} className="cursor-pointer">
             {resolvedTheme === "dark" ? (
               <Sun className="mr-2 h-4 w-4 text-amber-500" />
@@ -247,10 +261,10 @@ export function CommandPalette({
             )}
             <div className="flex flex-col">
               <span className="font-medium">
-                Switch to {resolvedTheme === "dark" ? "light" : "dark"} mode
+                {resolvedTheme === "dark" ? t("switchToLight") : t("switchToDark")}
               </span>
               <span className="text-xs text-muted-foreground">
-                Toggle color theme
+                {t("toggleColorTheme")}
               </span>
             </div>
           </CommandItem>

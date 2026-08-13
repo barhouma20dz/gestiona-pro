@@ -10,6 +10,7 @@ import { shopApi } from "@/lib/api";
 import { formatMoney, initialsOf } from "@/lib/format";
 import type { Shop } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/lib/language-context";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -64,6 +65,7 @@ function toForm(shop: Shop): FormState {
 }
 
 export function ShopDetails() {
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const { data: shop, isLoading } = useQuery({
     queryKey: ["shop"],
@@ -86,7 +88,7 @@ export function ShopDetails() {
   const mutation = useMutation({
     mutationFn: (data: Partial<Shop>) => shopApi.update(data),
     onSuccess: () => {
-      toast.success("Shop details saved");
+      toast.success(t("shopDetailsSaved"));
       void queryClient.invalidateQueries({ queryKey: ["shop"] });
     },
     onError: (err: unknown) => {
@@ -101,7 +103,7 @@ export function ShopDetails() {
 
   const handleSave = () => {
     if (!canSave) {
-      toast.error("Shop name and address line 1 are required");
+      toast.error(t("shopNameAddressRequired"));
       return;
     }
     const tax = Math.min(100, Math.max(0, Number(form.taxRate) || 0));
@@ -155,10 +157,10 @@ export function ShopDetails() {
           </div>
           <div>
             <h2 className="text-lg font-bold tracking-tight drop-shadow-sm sm:text-xl">
-              {shop?.name ?? "Business Information"}
+              {shop?.name ?? t("businessInfo")}
             </h2>
             <p className="mt-0.5 text-sm text-emerald-50/80">
-              These details appear on every printed receipt
+              {t("theseDetailsAppear")}
             </p>
           </div>
         </div>
@@ -175,15 +177,15 @@ export function ShopDetails() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Store className="h-4 w-4 text-primary" />
-                Shop Profile
+                {t("shopProfile")}
               </CardTitle>
               <CardDescription>
-                Update your store&apos;s printed receipt details below.
+                {t("updateReceiptDetails")}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Shop Name" required>
+                <Field label={t("shopName")} required>
                   <Input
                     value={form.name}
                     onChange={(e) => update("name", e.target.value)}
@@ -191,7 +193,7 @@ export function ShopDetails() {
                   />
                 </Field>
 
-                <Field label="Phone Number">
+                <Field label={t("phoneNumber")}>
                   <Input
                     value={form.phoneNumber}
                     onChange={(e) => update("phoneNumber", e.target.value)}
@@ -200,7 +202,7 @@ export function ShopDetails() {
                   />
                 </Field>
 
-                <Field label="Address Line 1" required>
+                <Field label={t("addressLine1")} required>
                   <Input
                     value={form.addressLine1}
                     onChange={(e) => update("addressLine1", e.target.value)}
@@ -208,7 +210,7 @@ export function ShopDetails() {
                   />
                 </Field>
 
-                <Field label="Address Line 2">
+                <Field label={t("addressLine2")}>
                   <Input
                     value={form.addressLine2}
                     onChange={(e) => update("addressLine2", e.target.value)}
@@ -217,8 +219,8 @@ export function ShopDetails() {
                 </Field>
 
                 <Field
-                  label="UPI ID"
-                  hint="Used to generate QR payment codes at checkout"
+                  label={t("upiId")}
+                  hint={t("upiHint")}
                 >
                   <Input
                     value={form.upiId}
@@ -227,7 +229,7 @@ export function ShopDetails() {
                   />
                 </Field>
 
-                <Field label="Currency Symbol">
+                <Field label={t("currencySymbol")}>
                   <div className="flex items-center gap-2">
                     <Input
                       value={form.currency}
@@ -256,8 +258,8 @@ export function ShopDetails() {
                 </Field>
 
                 <Field
-                  label="Tax Rate (%)"
-                  hint="Applied to each sale's subtotal after discount"
+                  label={t("taxRate")}
+                  hint={t("taxRateHint")}
                 >
                   <Input
                     type="number"
@@ -273,7 +275,7 @@ export function ShopDetails() {
                 </Field>
               </div>
 
-              <Field label="Receipt Footer Text">
+              <Field label={t("receiptFooter")}>
                 <Textarea
                   value={form.footerText}
                   onChange={(e) =>
@@ -299,7 +301,7 @@ export function ShopDetails() {
                   ) : (
                     <Save className="h-4 w-4" />
                   )}
-                  Save Changes
+                  {t("saveDetails")}
                 </Button>
               </div>
             </CardContent>
@@ -315,10 +317,10 @@ export function ShopDetails() {
         >
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Receipt className="h-4 w-4 text-primary" />
-            Live Receipt Preview
+            {t("liveReceiptPreview")}
           </div>
 
-          <ReceiptPreview form={form} />
+          <ReceiptPreview form={form} t={t} />
         </motion.div>
       </div>
     </div>
@@ -353,7 +355,7 @@ function Field({
   );
 }
 
-function ReceiptPreview({ form }: { form: FormState }) {
+function ReceiptPreview({ form, t }: { form: FormState; t: (k: "shopName" | "ph" | "upi" | "subtotal" | "tax" | "totalLabel" | "thankYouFooter") => string }) {
   const cur = form.currency || "₹";
   const dummySubtotal = 120;
   const tax = useMemo(() => {
@@ -373,13 +375,13 @@ function ReceiptPreview({ form }: { form: FormState }) {
             </p>
           ) : (
             <p className="text-[15px] font-bold uppercase text-neutral-400">
-              Shop Name
+              {t("shopName")}
             </p>
           )}
           {form.addressLine1 && <p>{form.addressLine1}</p>}
           {form.addressLine2 && <p>{form.addressLine2}</p>}
-          {form.phoneNumber && <p>Ph: {form.phoneNumber}</p>}
-          {form.upiId && <p className="text-[11px] text-neutral-500">UPI: {form.upiId}</p>}
+          {form.phoneNumber && <p>{t("ph")}: {form.phoneNumber}</p>}
+          {form.upiId && <p className="text-[11px] text-neutral-500">{t("upi")}: {form.upiId}</p>}
         </div>
 
         <DashedDivider />
@@ -392,13 +394,13 @@ function ReceiptPreview({ form }: { form: FormState }) {
         <DashedDivider />
 
         <div className="space-y-1">
-          <Row left="Subtotal" right={formatMoney(dummySubtotal, cur)} />
+          <Row left={t("subtotal")} right={formatMoney(dummySubtotal, cur)} />
           <Row
-            left={`Tax (${form.taxRate || 0}%)`}
+            left={`${t("tax")} (${form.taxRate || 0}%)`}
             right={formatMoney(tax, cur)}
           />
           <Row
-            left="TOTAL"
+            left={t("totalLabel")}
             right={formatMoney(total, cur)}
             bold
           />
@@ -407,7 +409,7 @@ function ReceiptPreview({ form }: { form: FormState }) {
         <DashedDivider />
 
         <p className="text-center text-[11px] text-neutral-600">
-          {form.footerText || "Thank you, visit again!"}
+          {form.footerText || t("thankYouFooter")}
         </p>
 
         <div className="mt-2 flex justify-center gap-[2px]">

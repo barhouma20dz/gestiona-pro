@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Providers } from "./providers";
 import { ThemeProvider } from "@/components/theme-provider";
+import { LanguageProvider } from "@/lib/language-context";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,9 +18,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SwiftBill POS — Retail Billing & Point of Sale",
-  description: "Fast, offline-capable Point of Sale & billing system for retail shops. Scan, bill, print receipts, and track sales.",
-  keywords: ["POS", "billing", "point of sale", "retail", "invoice", "barcode"],
+  title: "سويفت بيل — نظام نقاط البيع",
+  description: "نظام نقاط بيع وفوترة سريع للمتاجر. امسح، فاتور، اطبع الإيصالات، وتتبع المبيعات.",
+  keywords: ["POS", "نقاط البيع", "فوترة", "تجزئة", "فاتورة", "باركود"],
   authors: [{ name: "SwiftBill" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
@@ -31,8 +32,9 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Default to Arabic RTL — the LanguageProvider will manage dir/lang dynamically
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
@@ -42,9 +44,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <Providers>
-            {children}
-          </Providers>
+          <LanguageProvider>
+            <Providers>
+              {children}
+            </Providers>
+          </LanguageProvider>
         </ThemeProvider>
         <Toaster />
         <Sonner />
