@@ -17,6 +17,7 @@ import {
   Download,
   Wallet,
   Percent,
+  Share2,
 } from "lucide-react";
 
 import { salesApi, shopApi, productsApi } from "@/lib/api";
@@ -297,6 +298,61 @@ export function SalesHistory() {
     window.print();
   };
 
+  const handleShareReceipt = async () => {
+    if (!saleDetailQuery.data || !shop) return;
+    const sale = saleDetailQuery.data;
+    const lines = [
+      shop.name,
+      `${shop.addressLine1} ${shop.addressLine2}`.trim(),
+      shop.phoneNumber ? `Ph: ${shop.phoneNumber}` : "",
+      "",
+      `Receipt: ${sale.receiptNo}`,
+      `Date: ${formatDateTime(sale.createdAt)}`,
+      `Payment: ${sale.paymentMethod}`,
+      "",
+      ...sale.items.map(
+        (it) =>
+          `${it.productName} x${it.quantity} = ${formatMoney(
+            it.total,
+            currency
+          )}`
+      ),
+      "",
+      `Subtotal: ${formatMoney(sale.subtotal, currency)}`,
+      sale.discount > 0
+        ? `Discount: -${formatMoney(sale.discount, currency)}`
+        : "",
+      sale.taxAmount > 0
+        ? `Tax: ${formatMoney(sale.taxAmount, currency)}`
+        : "",
+      `TOTAL: ${formatMoney(sale.total, currency)}`,
+      "",
+      shop.footerText,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `Receipt ${sale.receiptNo}`,
+          text: lines,
+        });
+      } else {
+        await navigator.clipboard.writeText(lines);
+        toast.success("Receipt copied to clipboard");
+      }
+    } catch {
+      // User cancelled share or clipboard failed — try clipboard fallback
+      try {
+        await navigator.clipboard.writeText(lines);
+        toast.success("Receipt copied to clipboard");
+      } catch {
+        toast.error("Could not share receipt");
+      }
+    }
+  };
+
   const statCards = [
     {
       label: "Today's Revenue",
@@ -327,6 +383,49 @@ export function SalesHistory() {
 
   return (
     <div className="space-y-6">
+      {/* Gradient page header */}
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-emerald-600 to-teal-700 p-5 text-white shadow-lg sm:p-6">
+        <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+        <div className="relative flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight drop-shadow-sm sm:text-xl">
+              Sales Analytics
+            </h2>
+            <p className="mt-0.5 text-sm text-emerald-50/80">
+              Track revenue, profit, tax, and category performance
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportSalesCsv}
+              disabled={sales.length === 0}
+              className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshAll}
+              disabled={salesQuery.isFetching || statsQuery.isFetching}
+              className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            >
+              <RefreshCw
+                className={cn(
+                  "h-4 w-4",
+                  (salesQuery.isFetching || statsQuery.isFetching) &&
+                    "animate-spin"
+                )}
+              />
+              Refresh
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {statCards.map((s, i) => {
@@ -912,13 +1011,24 @@ export function SalesHistory() {
               <X className="h-4 w-4" />
               Close
             </Button>
-            <Button
-              onClick={handlePrint}
-              disabled={!saleDetailQuery.data || !shop}
-            >
-              <Printer className="h-4 w-4" />
-              Print
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleShareReceipt}
+                disabled={!saleDetailQuery.data || !shop}
+                title="Copy receipt summary to clipboard"
+              >
+                <Share2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Share</span>
+              </Button>
+              <Button
+                onClick={handlePrint}
+                disabled={!saleDetailQuery.data || !shop}
+              >
+                <Printer className="h-4 w-4" />
+                Print
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
