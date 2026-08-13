@@ -17,6 +17,8 @@ import {
   BarChart3,
   Store,
   ShoppingCart,
+  Trophy,
+  PieChart,
 } from "lucide-react";
 
 import { productsApi, salesApi, shopApi } from "@/lib/api";
@@ -215,6 +217,127 @@ function LegendRow({
   );
 }
 
+const PAYMENT_COLORS: Record<string, string> = {
+  upi: "#10b981", // emerald-500
+  card: "#f59e0b", // amber-500
+  cash: "#64748b", // slate-500
+};
+
+function paymentColor(method: string): string {
+  return PAYMENT_COLORS[method.toLowerCase()] ?? "#94a3b8";
+}
+
+/**
+ * Donut chart — renders an SVG conic-gradient-like donut for payment breakdown.
+ * Each segment is an SVG stroke-dasharray on a circle.
+ */
+function PaymentDonut({
+  segments,
+}: {
+  segments: { method: string; percent: number }[];
+}) {
+  const size = 128;
+  const stroke = 16;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+
+  // Precompute cumulative offsets so we don't mutate during render.
+  const segs = segments.reduce<
+    { method: string; percent: number; dash: number; offset: number }[]
+  >((acc, seg) => {
+    const dash = (seg.percent / 100) * circumference;
+    const offset = acc.length > 0 ? acc[acc.length - 1].offset + acc[acc.length - 1].dash : 0;
+    acc.push({ method: seg.method, percent: seg.percent, dash, offset });
+    return acc;
+  }, []);
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {/* Background ring */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={stroke}
+        className="text-muted"
+      />
+      {segs.map((seg, i) => (
+        <circle
+          key={`${seg.method}-${i}`}
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={paymentColor(seg.method)}
+          strokeWidth={stroke}
+          strokeDasharray={`${seg.dash} ${circumference - seg.dash}`}
+          strokeDashoffset={-seg.offset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      ))}
+      {/* Center label */}
+      <text
+        x="50%"
+        y="50%"
+        textAnchor="middle"
+        dominantBaseline="central"
+        className="fill-foreground text-lg font-bold"
+      >
+        {segments.length}
+      </text>
+      <text
+        x="50%"
+        y="50%"
+        dy="16"
+        textAnchor="middle"
+        dominantBaseline="central"
+        className="fill-muted-foreground text-[9px] font-medium uppercase tracking-wider"
+      >
+        methods
+      </text>
+    </svg>
+  );
+}
+
+function PaymentLegendRow({
+  method,
+  count,
+  revenue,
+  percent,
+  currency,
+}: {
+  method: string;
+  count: number;
+  revenue: number;
+  percent: number;
+  currency: string;
+}) {
+  const color = paymentColor(method);
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <span
+          className="h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+        <span className="text-[12px] font-medium capitalize truncate">
+          {method}
+        </span>
+        <span className="text-[10px] text-muted-foreground tabular-nums">
+          {percent.toFixed(0)}%
+        </span>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-[11px] text-muted-foreground tabular-nums">
+          {count}× {formatMoney(revenue, currency)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- main component ---------- */
 
 export function Dashboard({
@@ -290,6 +413,47 @@ export function Dashboard({
     prevDaysTotal === 0
       ? null
       : ((revenueTrend[6] - prevDaysTotal / 6) / (prevDaysTotal / 6)) * 100;
+
+  // Top selling products (by quantity sold across all sales)
+  const topProducts = useMemo(() => {
+    const map = new Map<
+      string,
+      { name: string; qty: number; revenue: number }
+    >();
+    sales.forEach((sale) => {
+      sale.items.forEach((item) => {
+        const existing = map.get(item.productName) ?? {
+          name: item.productName,
+          qty: 0,
+          revenue: 0,
+        };
+        existing.qty += item.quantity;
+        existing.revenue += item.total;
+        map.set(item.productName, existing);
+      });
+    });
+    return Array.from(map.values())
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5);
+  }, [sales]);
+
+  // Payment method breakdown (by revenue)
+  const paymentBreakdown = useMemo(() => {
+    const map = new Map<string, { count: number; revenue: number }>();
+    sales.forEach((sale) => {
+      const key = sale.paymentMethod || "Cash";
+      const existing = map.get(key) ?? { count: 0, revenue: 0 };
+      existing.count += 1;
+      existing.revenue += sale.total;
+      map.set(key, existing);
+    });
+    const total = sales.length;
+    return Array.from(map.entries()).map(([method, data]) => ({
+      method,
+      ...data,
+      percent: total > 0 ? (data.count / total) * 100 : 0,
+    }));
+  }, [sales]);
 
   /* greeting */
   const now = new Date();
@@ -684,6 +848,152 @@ export function Dashboard({
                     </li>
                   ))}
                 </ul>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* 3.5. Top Selling Products + Payment Breakdown */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Top Selling Products */}
+        <Card className="gap-0 p-0 lg:col-span-2">
+          <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
+            <div>
+              <h2 className="text-sm font-semibold">Top Selling Products</h2>
+              <p className="text-xs text-muted-foreground">
+                Best sellers by quantity
+              </p>
+            </div>
+            <Trophy className="h-4 w-4 text-amber-500" />
+          </div>
+
+          {salesQuery.isLoading ? (
+            <div className="space-y-3 px-4 py-4 sm:px-6">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Skeleton className="h-8 w-8 rounded-full" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-3.5 w-2/3" />
+                    <Skeleton className="h-2.5 w-1/3" />
+                  </div>
+                  <Skeleton className="h-5 w-16" />
+                </div>
+              ))}
+            </div>
+          ) : topProducts.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 px-4 py-12 text-center sm:px-6">
+              <div className="grid size-12 place-items-center rounded-full bg-amber-500/10 text-amber-600">
+                <Trophy className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">No sales data yet</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Top sellers will appear here once you make sales.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <ul className="divide-y">
+              {topProducts.map((p, i) => {
+                const maxQty = topProducts[0]?.qty || 1;
+                const barWidth = (p.qty / maxQty) * 100;
+                return (
+                  <li
+                    key={p.name}
+                    className="flex items-center gap-3 px-4 py-3 sm:px-6"
+                  >
+                    <span
+                      className={cn(
+                        "grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold",
+                        i === 0
+                          ? "bg-amber-500 text-white"
+                          : i === 1
+                          ? "bg-slate-400 text-white"
+                          : i === 2
+                          ? "bg-amber-700/80 text-white"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {i + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="truncate text-sm font-medium">{p.name}</p>
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                          {p.qty} sold
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary"
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                        <span className="shrink-0 text-xs font-semibold text-primary tabular-nums">
+                          {formatMoney(p.revenue, currency)}
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        {/* Payment Method Breakdown */}
+        <Card className="gap-0 p-0 lg:col-span-1">
+          <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
+            <div>
+              <h2 className="text-sm font-semibold">Payments</h2>
+              <p className="text-xs text-muted-foreground">Method breakdown</p>
+            </div>
+            <PieChart className="h-4 w-4 text-muted-foreground" />
+          </div>
+
+          {salesQuery.isLoading ? (
+            <div className="space-y-3 px-4 py-6 sm:px-6">
+              <Skeleton className="mx-auto h-32 w-32 rounded-full" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-2/3" />
+            </div>
+          ) : paymentBreakdown.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 px-4 py-12 text-center sm:px-6">
+              <div className="grid size-12 place-items-center rounded-full bg-slate-500/10 text-slate-500">
+                <PieChart className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">No payments yet</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Payment breakdown will appear here.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 px-4 py-5 sm:px-6">
+              {/* Donut chart */}
+              <div className="flex justify-center">
+                <PaymentDonut
+                  segments={paymentBreakdown.map((b) => ({
+                    method: b.method,
+                    percent: b.percent,
+                  }))}
+                />
+              </div>
+              {/* Legend */}
+              <div className="space-y-2">
+                {paymentBreakdown.map((b) => (
+                  <PaymentLegendRow
+                    key={b.method}
+                    method={b.method}
+                    count={b.count}
+                    revenue={b.revenue}
+                    percent={b.percent}
+                    currency={currency}
+                  />
+                ))}
               </div>
             </div>
           )}

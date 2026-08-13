@@ -19,10 +19,15 @@ import {
   CreditCard,
   Banknote,
   QrCode,
+  Pause,
+  Play,
+  History,
+  Clock,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
+import { useHeldOrdersStore } from "@/lib/held-orders-store";
 import { cn } from "@/lib/utils";
 import { colorFromString, formatMoney, initialsOf } from "@/lib/format";
 import type { Product } from "@/lib/types";
@@ -453,6 +458,12 @@ export function PosTerminal() {
   const setDiscount = useCartStore((s) => s.setDiscount);
   const setPaymentMethod = useCartStore((s) => s.setPaymentMethod);
 
+  // Held orders (parked sales) — persisted to localStorage
+  const heldOrders = useHeldOrdersStore((s) => s.orders);
+  const holdOrder = useHeldOrdersStore((s) => s.holdOrder);
+  const resumeOrder = useHeldOrdersStore((s) => s.resumeOrder);
+  const deleteHeldOrder = useHeldOrdersStore((s) => s.deleteOrder);
+
   const [scanInput, setScanInput] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [searchTerm, setSearchTerm] = useState("");
@@ -460,10 +471,50 @@ export function PosTerminal() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [shortcutsHintOpen, setShortcutsHintOpen] = useState(false);
+  const [heldOrdersOpen, setHeldOrdersOpen] = useState(false);
 
   const scanInputRef = useRef<HTMLInputElement>(null);
 
-  // Keyboard shortcuts: F1 focus scan, F2/F3/F4 payment methods, F9 checkout
+  const handleHoldOrder = () => {
+    if (items.length === 0) return;
+    holdOrder({ items, discount, paymentMethod });
+    const count = items.reduce((s, i) => s + i.quantity, 0);
+    toast.success(`Order held (${count} items)`, {
+      description: "Press F7 to resume held orders",
+      duration: 2500,
+    });
+    clearCart();
+  };
+
+  const handleResumeOrder = (id: string) => {
+    const order = resumeOrder(id);
+    if (!order) {
+      toast.error("Order not found");
+      return;
+    }
+    // If current cart is non-empty, hold it first
+    if (items.length > 0) {
+      holdOrder({ items, discount, paymentMethod });
+      toast.info("Current cart held", { duration: 1500 });
+    }
+    // Restore the held order into the cart
+    order.items.forEach((ci) => {
+      for (let i = 0; i < ci.quantity; i++) {
+        addProduct(ci.product);
+      }
+    });
+    setDiscount(order.discount);
+    setPaymentMethod(order.paymentMethod);
+    setHeldOrdersOpen(false);
+    toast.success("Order resumed", { duration: 1500 });
+  };
+
+  const handleDeleteHeldOrder = (id: string) => {
+    deleteHeldOrder(id);
+    toast.success("Held order discarded");
+  };
+
+  // Keyboard shortcuts: F1 focus scan, F2/F3/F4 payment methods, F6 hold, F7 held, F9 checkout
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Skip if a dialog is open or user is typing in a non-scan input
@@ -507,10 +558,24 @@ export function PosTerminal() {
         setCheckoutOpen(true);
         return;
       }
+
+      // F6 — hold current order (only when cart non-empty and not typing)
+      if (e.key === "F6" && items.length > 0 && !isTyping) {
+        e.preventDefault();
+        handleHoldOrder();
+        return;
+      }
+
+      // F7 — open held orders dialog (only when not typing)
+      if (e.key === "F7" && !isTyping) {
+        e.preventDefault();
+        setHeldOrdersOpen(true);
+        return;
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [items.length, setPaymentMethod]);
+  }, [items.length, setPaymentMethod, items, discount, paymentMethod]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -748,17 +813,47 @@ export function PosTerminal() {
                 </Badge>
               )}
             </div>
-            {items.length > 0 && (
+            <div className="flex items-center gap-1">
+              {/* Held orders button */}
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 text-xs text-muted-foreground hover:text-destructive"
-                onClick={() => setClearConfirmOpen(true)}
+                className="relative h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+                onClick={() => setHeldOrdersOpen(true)}
+                title="View held orders (F7)"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                Clear
+                <History className="h-3.5 w-3.5" />
+                Held
+                {heldOrders.length > 0 && (
+                  <span className="ml-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                    {heldOrders.length}
+                  </span>
+                )}
               </Button>
-            )}
+              {items.length > 0 && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+                    onClick={handleHoldOrder}
+                    title="Hold this order (F6)"
+                  >
+                    <Pause className="h-3.5 w-3.5" />
+                    Hold
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                    onClick={() => setClearConfirmOpen(true)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Clear
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Cart items */}
@@ -940,6 +1035,109 @@ export function PosTerminal() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Held orders dialog */}
+      <Dialog open={heldOrdersOpen} onOpenChange={setHeldOrdersOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5 text-primary" />
+              Held Orders
+              {heldOrders.length > 0 && (
+                <Badge className="h-5 min-w-5 justify-center px-1.5 text-[11px]">
+                  {heldOrders.length}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Parked orders you can resume. Held orders are saved on this
+              device.
+            </DialogDescription>
+          </DialogHeader>
+
+          {heldOrders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+              <div className="grid h-12 w-12 place-items-center rounded-full bg-accent text-muted-foreground">
+                <Clock className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">No held orders</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Press <kbd className="rounded border bg-muted px-1 text-[10px] font-medium">F6</kbd> on an active order to hold it here.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="max-h-[50vh] space-y-2 overflow-y-auto scrollbar-emerald">
+              {heldOrders.map((order) => {
+                const orderTotal = order.items.reduce(
+                  (s, i) => s + i.product.price * i.quantity,
+                  0
+                );
+                const orderCount = order.items.reduce(
+                  (s, i) => s + i.quantity,
+                  0
+                );
+                const heldAgo = Math.round(
+                  (Date.now() - order.heldAt) / 60000
+                );
+                return (
+                  <div
+                    key={order.id}
+                    className="rounded-lg border bg-card p-3 transition-colors hover:border-primary/30"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {order.label}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {orderCount} item{orderCount === 1 ? "" : "s"} ·{" "}
+                          {formatMoney(orderTotal, currency)} ·{" "}
+                          {heldAgo < 1
+                            ? "just now"
+                            : heldAgo < 60
+                            ? `${heldAgo}m ago`
+                            : `${Math.round(heldAgo / 60)}h ago`}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => handleResumeOrder(order.id)}
+                        >
+                          <Play className="h-3 w-3" />
+                          Resume
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDeleteHeldOrder(order.id)}
+                          aria-label="Discard held order"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setHeldOrdersOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -361,3 +361,81 @@ Task: QA + implement 4 new features (low-stock badge, keyboard shortcuts, produc
 7. **Accessibility**: add ARIA labels to all icon-only buttons, and ensure keyboard navigation works through the product grid.
 
 Project Status: STABLE & ENHANCED (round 2) — 4 new features added. All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+
+---
+Task ID: 13
+Agent: webDevReview cron (round 3)
+Task: QA + implement 3 new features (Hold/Park Order, Dashboard leaderboard + donut, Sales History filters)
+
+## Current project status / assessment
+- Project was stable & enhanced after round 2 (6 views, dark mode, command palette, dashboard with sparkline, keyboard shortcuts, low-stock badge).
+- QA at start: lint clean, no console/runtime errors, dev server healthy, all views render.
+- No bugs found — proceeded to implement next-phase recommendations.
+
+## Current goals / completed modifications / verification results
+
+### Work Log:
+- Reviewed worklog.md (Tasks 3-12) — understood project state.
+- Performed QA via agent-browser: loaded app, no errors, lint clean.
+
+**1. Hold/Park Order feature** (POS Terminal)
+- Created `src/lib/held-orders-store.ts`: Zustand store with localStorage persistence (`swiftbill-held-orders`). Holds order snapshots (items, discount, paymentMethod, heldAt, label).
+- Modified `src/components/views/pos-terminal.tsx`:
+  * Added "Hold" button in cart header (Pause icon) — parks current cart to held store + clears cart.
+  * Added "Held" button with badge count (History icon) — opens Held Orders dialog.
+  * Held Orders dialog: lists parked orders with label, item count, total, time-ago, Resume + Discard buttons. Empty state with F6 hint.
+  * Resume logic: if current cart non-empty, holds it first, then restores the selected order.
+  * F6 keyboard shortcut: hold current order.
+  * F7 keyboard shortcut: open held orders dialog.
+  * Handlers declared before useEffect to satisfy react-hooks/immutability lint rule.
+
+**2. Top Selling Products + Payment Breakdown** (Dashboard)
+- Modified `src/components/views/dashboard.tsx`:
+  * New `PaymentDonut` component: SVG donut chart using stroke-dasharray segments (cumulative offsets precomputed via reduce to avoid render-time mutation). Shows method count in center.
+  * New `PaymentLegendRow` component: colored dot + method name + percentage + count×revenue.
+  * `paymentColor()` helper: UPI=emerald, Card=amber, Cash=slate.
+  * `topProducts` derived: aggregates sale items by productName, sorts by qty desc, top 5.
+  * `paymentBreakdown` derived: aggregates by paymentMethod, computes count/revenue/percent.
+  * New section (lg:grid-cols-3): Top Selling (col-span-2) leaderboard with rank badges (gold/silver/bronze), progress bars, qty + revenue. Payments (col-span-1) donut chart + legend.
+  * Added Trophy + PieChart icon imports.
+  * Empty states for both sections when no sales data.
+
+**3. Date-range + Payment filters** (Sales History)
+- Modified `src/components/views/sales-history.tsx`:
+  * New state: `dateFilter` ("all"|"today"|"7d"|"30d") + `paymentFilter` ("all"|"cash"|"upi"|"card").
+  * `sales` now filters `allSales` by date range + payment method (client-side, useMemo).
+  * Renamed raw query data to `allSales` to distinguish from filtered `sales`.
+  * Filter toolbar in table header: Period chips (All/Today/7 days/30 days) + Payment chips (All/Cash/UPI/Card). Selected = emerald filled.
+  * "Clear filters" button appears when any filter active.
+  * Sales count shows "N of M" when filtered.
+
+### Verification results:
+- `bun run lint`: clean (exit 0).
+- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+- agent-browser QA:
+  * Dashboard Top Selling: VLM confirmed ranked leaderboard (Coca-Cola #1 4 sold ₹180, Lay's #2 1 sold ₹20, Tata Tea #3 1 sold ₹480) with progress bars.
+  * Dashboard Payments donut: VLM confirmed donut chart "2 METHODS" with Cash 50% / UPI 50% breakdown + legend.
+  * POS F6: held order, badge showed "Held 1", cart cleared.
+  * POS F7: opened held orders dialog, showed held order with Resume/Discard.
+  * Resume: clicked Resume, cart restored with Coca-Cola (₹45), checkout button showed ₹45.00.
+  * Sales History filters: Period + Payment chips render. "Today" filter showed "Sales (2)". "UPI" filter showed "Sales (1 of 2)" — only INV-...0002 (the UPI sale).
+  * No console errors throughout testing.
+
+## Unresolved issues / risks, and priority recommendations for the next phase
+
+### Files modified this round:
+- `src/lib/held-orders-store.ts` (NEW) — Zustand persisted store for parked orders
+- `src/components/views/pos-terminal.tsx` — Hold/Resume UI + F6/F7 shortcuts + held orders dialog
+- `src/components/views/dashboard.tsx` — Top Selling leaderboard + Payment donut + legend
+- `src/components/views/sales-history.tsx` — Date-range + payment filters
+
+### Recommendations for next round:
+1. **Product Manager**: bulk CSV import, barcode generation/printing, duplicate product action.
+2. **Receipt improvements**: QR code on receipt (digital copy link), 80mm/58mm size toggle, email receipt option.
+3. **Dashboard**: add "sales by hour" heatmap, customer return rate metric.
+4. **POS Terminal**: customer display mode for dual-screen setups, quick keypad for manual price entry.
+5. **Accessibility**: ARIA labels on all icon-only buttons, full keyboard nav through product grid.
+6. **Notifications**: low-stock toast on app load, daily summary notification.
+7. **Data export**: export filtered sales to CSV/PDF, scheduled reports.
+
+Project Status: STABLE & ENHANCED (round 3) — 3 new feature groups added (Hold/Park Order, Dashboard leaderboard+donut, Sales History filters). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.

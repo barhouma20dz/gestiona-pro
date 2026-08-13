@@ -102,6 +102,10 @@ export function SalesHistory() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [dateFilter, setDateFilter] = useState<"all" | "today" | "7d" | "30d">(
+    "all"
+  );
+  const [paymentFilter, setPaymentFilter] = useState<string>("all");
 
   const salesQuery = useQuery({
     queryKey: ["sales"],
@@ -122,10 +126,36 @@ export function SalesHistory() {
     enabled: !!selectedId && receiptOpen,
   });
 
-  const sales = salesQuery.data ?? [];
+  const allSales = salesQuery.data ?? [];
   const stats = statsQuery.data;
   const shop = shopQuery.data;
   const currency = shop?.currency ?? "₹";
+
+  // Apply date + payment filters
+  const sales = useMemo(() => {
+    const now = new Date();
+    now.setHours(23, 59, 59, 999);
+    const startToday = new Date(now);
+    startToday.setHours(0, 0, 0, 0);
+    const start7d = new Date(now);
+    start7d.setDate(start7d.getDate() - 6);
+    start7d.setHours(0, 0, 0, 0);
+    const start30d = new Date(now);
+    start30d.setDate(start30d.getDate() - 29);
+    start30d.setHours(0, 0, 0, 0);
+
+    return allSales.filter((s) => {
+      const d = new Date(s.createdAt);
+      let dateMatch = true;
+      if (dateFilter === "today") dateMatch = d >= startToday && d <= now;
+      else if (dateFilter === "7d") dateMatch = d >= start7d && d <= now;
+      else if (dateFilter === "30d") dateMatch = d >= start30d && d <= now;
+      const payMatch =
+        paymentFilter === "all" ||
+        s.paymentMethod.toLowerCase() === paymentFilter.toLowerCase();
+      return dateMatch && payMatch;
+    });
+  }, [allSales, dateFilter, paymentFilter]);
 
   const series = useMemo(() => build7DaySeries(sales), [sales]);
   const maxDay = Math.max(1, ...series.map((d) => d.total));
@@ -273,16 +303,90 @@ export function SalesHistory() {
 
       {/* Sales table */}
       <Card className="gap-0 p-0">
-        <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold">
-              Sales{" "}
-              <span className="text-muted-foreground">({sales.length})</span>
-            </h2>
+        <div className="flex flex-col gap-3 border-b px-4 py-3 sm:px-6">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">
+                Sales{" "}
+                <span className="text-muted-foreground">
+                  ({sales.length}
+                  {sales.length !== allSales.length &&
+                    ` of ${allSales.length}`}
+                  )
+                </span>
+              </h2>
+            </div>
+            {(dateFilter !== "all" || paymentFilter !== "all") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={() => {
+                  setDateFilter("all");
+                  setPaymentFilter("all");
+                }}
+              >
+                <X className="h-3 w-3" />
+                Clear filters
+              </Button>
+            )}
           </div>
-          <span className="hidden text-xs text-muted-foreground sm:inline">
-            Sorted by newest
-          </span>
+          {/* Filter chips */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1">
+              <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Period:
+              </span>
+              {(
+                [
+                  ["all", "All"],
+                  ["today", "Today"],
+                  ["7d", "7 days"],
+                  ["30d", "30 days"],
+                ] as const
+              ).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setDateFilter(val)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                    dateFilter === val
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-muted-foreground hover:bg-accent"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="hidden h-4 w-px bg-border sm:block" />
+            <div className="flex items-center gap-1">
+              <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Payment:
+              </span>
+              {(
+                [
+                  ["all", "All"],
+                  ["cash", "Cash"],
+                  ["upi", "UPI"],
+                  ["card", "Card"],
+                ] as const
+              ).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setPaymentFilter(val)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                    paymentFilter === val
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-muted-foreground hover:bg-accent"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Desktop table */}
