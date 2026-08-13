@@ -464,10 +464,15 @@ export function ProductManager() {
                 </TableRow>
               ) : (
                 filtered.map((p) => (
-                  <TableRow key={p.id} className="group">
-                    <TableCell className="pl-6">
+                  <TableRow
+                    key={p.id}
+                    className="group transition-colors hover:bg-emerald-500/5"
+                  >
+                    <TableCell className="pl-6 py-3.5">
                       <div className="flex flex-col">
-                        <span className="font-medium">{p.name}</span>
+                        <span className="font-medium transition-colors group-hover:text-primary">
+                          {p.name}
+                        </span>
                         <span className="font-mono text-[11px] text-muted-foreground">
                           {p.barcode}
                         </span>

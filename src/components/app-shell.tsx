@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   ScanLine,
@@ -288,9 +289,15 @@ export function AppShell() {
               <ShoppingCart className="h-4 w-4 text-primary" />
               <span className="hidden sm:inline">Cart</span>
               {cartCount > 0 && (
-                <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground shadow">
+                <motion.span
+                  key={cartCount}
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{ scale: [0.5, 1.3, 1], opacity: 1 }}
+                  transition={{ duration: 0.35, ease: "easeOut" }}
+                  className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground shadow"
+                >
                   {cartCount}
-                </span>
+                </motion.span>
               )}
             </button>
           </div>

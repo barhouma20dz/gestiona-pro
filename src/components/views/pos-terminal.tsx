@@ -296,8 +296,9 @@ function ProductTile({
   return (
     <motion.button
       type="button"
-      whileHover={outOfStock ? undefined : { y: -2 }}
-      whileTap={outOfStock ? undefined : { scale: 0.97 }}
+      whileHover={outOfStock ? undefined : { y: -4, scale: 1.02 }}
+      whileTap={outOfStock ? undefined : { scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
       disabled={outOfStock}
       onClick={() => {
         if (outOfStock) {
@@ -307,32 +308,36 @@ function ProductTile({
         onAdd(product);
       }}
       className={cn(
-        "group text-left",
+        "group relative text-left",
         outOfStock && "cursor-not-allowed opacity-50 grayscale"
       )}
     >
       <Card
         className={cn(
-          "h-full gap-0 overflow-hidden p-0 transition-colors",
+          "h-full gap-0 overflow-hidden p-0 transition-all duration-200",
           outOfStock
             ? "bg-muted/40"
-            : "group-hover:border-primary/40 group-hover:bg-accent/50"
+            : "group-hover:border-primary/50 group-hover:bg-accent/60 group-hover:shadow-lg group-hover:shadow-primary/10"
         )}
       >
         <div
-          className="flex h-20 items-center justify-center text-xl font-bold"
+          className="relative flex h-20 items-center justify-center text-xl font-bold transition-transform duration-200 group-hover:scale-105"
           style={{ backgroundColor: colorFromString(product.name) }}
         >
-          <span className="grid h-12 w-12 place-items-center rounded-full bg-white/70 text-sm font-bold text-foreground/80 backdrop-blur">
+          <span className="grid h-12 w-12 place-items-center rounded-full bg-white/70 text-sm font-bold text-foreground/80 backdrop-blur transition-transform duration-200 group-hover:scale-110">
             {initialsOf(product.name)}
           </span>
+          {/* Shine effect on hover */}
+          {!outOfStock && (
+            <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-500 group-hover:translate-x-full" />
+          )}
         </div>
         <div className="space-y-1.5 p-2.5">
           <p className="line-clamp-2 text-xs font-medium leading-snug text-foreground min-h-[2rem]">
             {product.name}
           </p>
           <div className="flex items-center justify-between gap-1">
-            <span className="text-sm font-bold text-primary">
+            <span className="text-sm font-bold text-primary transition-colors group-hover:text-primary/80">
               {formatMoney(product.price, currency)}
             </span>
             {stockBadge(product.stock)}

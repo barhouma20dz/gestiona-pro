@@ -474,6 +474,35 @@ export function Dashboard({
   const peakHour = hourlyBuckets.indexOf(Math.max(...hourlyBuckets));
   const totalHourly = hourlyBuckets.reduce((a, b) => a + b, 0);
 
+  // Inventory turnover ratio: units sold (7d) / avg units in stock
+  const inventoryTurnover = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    let unitsSold7d = 0;
+    sales.forEach((sale) => {
+      if (new Date(sale.createdAt) >= cutoff) {
+        sale.items.forEach((it) => {
+          unitsSold7d += it.quantity;
+        });
+      }
+    });
+    const avgStock =
+      products.length > 0
+        ? products.reduce((sum, p) => sum + p.stock, 0) / products.length
+        : 0;
+    const turnover = avgStock > 0 ? unitsSold7d / avgStock : 0;
+    // Turnover rate: low (<0.3 = slow), medium (0.3-1), high (>1)
+    const rate =
+      turnover === 0
+        ? "none"
+        : turnover < 0.3
+        ? "slow"
+        : turnover < 1
+        ? "medium"
+        : "high";
+    return { unitsSold7d, avgStock, turnover, rate };
+  }, [sales, products]);
+
   /* greeting */
   const now = new Date();
   const fullDate = now.toLocaleDateString("en-US", {
@@ -1125,6 +1154,57 @@ export function Dashboard({
             </div>
           </div>
         )}
+      </Card>
+
+      {/* Inventory Turnover Card */}
+      <Card className="gap-0 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "grid size-10 shrink-0 place-items-center rounded-xl",
+                inventoryTurnover.rate === "high"
+                  ? "bg-emerald-500/15 text-emerald-600"
+                  : inventoryTurnover.rate === "medium"
+                  ? "bg-amber-500/15 text-amber-600"
+                  : "bg-slate-500/15 text-slate-600"
+              )}
+            >
+              <TrendingUp className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold">Inventory Turnover</h2>
+              <p className="text-xs text-muted-foreground">
+                Last 7 days · {inventoryTurnover.unitsSold7d} units sold · avg{" "}
+                {inventoryTurnover.avgStock.toFixed(0)} units/ product in stock
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-2xl font-bold tabular-nums">
+                {inventoryTurnover.turnover.toFixed(2)}
+              </p>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                turnover ratio
+              </p>
+            </div>
+            <span
+              className={cn(
+                "rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize",
+                inventoryTurnover.rate === "high"
+                  ? "bg-emerald-500/15 text-emerald-600"
+                  : inventoryTurnover.rate === "medium"
+                  ? "bg-amber-500/15 text-amber-600"
+                  : inventoryTurnover.rate === "slow"
+                  ? "bg-orange-500/15 text-orange-600"
+                  : "bg-slate-500/15 text-slate-600"
+              )}
+            >
+              {inventoryTurnover.rate}
+            </span>
+          </div>
+        </div>
       </Card>
 
       {/* 4. Quick actions */}
