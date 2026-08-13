@@ -459,6 +459,58 @@ export function PosTerminal() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [shortcutsHintOpen, setShortcutsHintOpen] = useState(false);
+
+  const scanInputRef = useRef<HTMLInputElement>(null);
+
+  // Keyboard shortcuts: F1 focus scan, F2/F3/F4 payment methods, F9 checkout
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Skip if a dialog is open or user is typing in a non-scan input
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+
+      // F1 — focus scan input (always works, even if typing)
+      if (e.key === "F1") {
+        e.preventDefault();
+        scanInputRef.current?.focus();
+        scanInputRef.current?.select();
+        return;
+      }
+
+      // F2/F3/F4 — payment method selection (only when cart non-empty)
+      if (e.key === "F2" && items.length > 0) {
+        e.preventDefault();
+        setPaymentMethod("Cash");
+        toast.success("Payment: Cash", { duration: 1000 });
+        return;
+      }
+      if (e.key === "F3" && items.length > 0) {
+        e.preventDefault();
+        setPaymentMethod("UPI");
+        toast.success("Payment: UPI", { duration: 1000 });
+        return;
+      }
+      if (e.key === "F4" && items.length > 0) {
+        e.preventDefault();
+        setPaymentMethod("Card");
+        toast.success("Payment: Card", { duration: 1000 });
+        return;
+      }
+
+      // F9 — checkout (only when cart non-empty and not typing in scan input)
+      if (e.key === "F9" && items.length > 0 && !isTyping) {
+        e.preventDefault();
+        setCheckoutOpen(true);
+        return;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [items.length, setPaymentMethod]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -579,6 +631,7 @@ export function PosTerminal() {
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                ref={scanInputRef}
                 value={scanInput}
                 onChange={(e) => {
                   setScanInput(e.target.value);
@@ -588,10 +641,10 @@ export function PosTerminal() {
                   if (e.key === "Enter") handleScanSubmit();
                 }}
                 placeholder="Scan or search product / barcode…"
-                className="pl-9"
+                className="pl-9 pr-10"
                 aria-label="Scan or search product"
               />
-              {scanInput && (
+              {scanInput ? (
                 <button
                   onClick={() => {
                     setScanInput("");
@@ -602,6 +655,10 @@ export function PosTerminal() {
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
+              ) : (
+                <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  F1
+                </kbd>
               )}
             </div>
             <div className="flex gap-2">
@@ -796,9 +853,10 @@ export function PosTerminal() {
 
               {/* Payment method */}
               <div className="grid grid-cols-3 gap-2">
-                {PAYMENT_METHODS.map((m) => {
+                {PAYMENT_METHODS.map((m, idx) => {
                   const Icon = m.icon;
                   const active = paymentMethod === m.key;
+                  const fkey = idx + 2; // F2=Cash, F3=UPI, F4=Card
                   return (
                     <Button
                       key={m.key}
@@ -807,12 +865,22 @@ export function PosTerminal() {
                       variant={active ? "default" : "outline"}
                       onClick={() => setPaymentMethod(m.key)}
                       className={cn(
-                        "flex flex-col gap-0.5 h-auto py-2",
+                        "relative flex flex-col gap-0.5 h-auto py-2",
                         active && "shadow-sm"
                       )}
                     >
                       <Icon className="h-4 w-4" />
                       <span className="text-[11px]">{m.label}</span>
+                      <kbd
+                        className={cn(
+                          "absolute right-1 top-1 rounded px-1 text-[9px] font-medium leading-tight",
+                          active
+                            ? "bg-primary-foreground/20 text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        F{fkey}
+                      </kbd>
                     </Button>
                   );
                 })}
@@ -825,6 +893,9 @@ export function PosTerminal() {
               >
                 <CheckCircle2 className="h-4 w-4" />
                 Checkout · {formatMoney(grandTotal, currency)}
+                <kbd className="ml-2 rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-medium">
+                  F9
+                </kbd>
               </Button>
             </div>
           )}

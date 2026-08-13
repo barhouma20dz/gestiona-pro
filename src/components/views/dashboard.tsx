@@ -12,6 +12,7 @@ import {
   Receipt,
   ArrowRight,
   ArrowUpRight,
+  ArrowDownRight,
   Package,
   BarChart3,
   Store,
@@ -73,6 +74,81 @@ function stockBadgeFor(stock: number) {
     <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
       {stock} left
     </Badge>
+  );
+}
+
+/**
+ * Mini sparkline — renders an inline SVG polyline of the last 7 days' revenue.
+ * Each point's Y is proportional to the max value; zero points sit on the baseline.
+ */
+function RevenueSparkline({
+  values,
+  className,
+}: {
+  values: number[];
+  className?: string;
+}) {
+  const width = 120;
+  const height = 36;
+  const pad = 3;
+  const max = Math.max(...values, 1); // avoid divide-by-zero
+  const innerH = height - pad * 2;
+  const step = values.length > 1 ? (width - pad * 2) / (values.length - 1) : 0;
+
+  const points = values.map((v, i) => {
+    const x = pad + i * step;
+    const y = pad + innerH - (v / max) * innerH;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const path = points.join(" ");
+
+  // Area path (fill under the line)
+  const areaPath =
+    values.length > 0
+      ? `M ${pad},${(pad + innerH).toFixed(1)} L ${path
+          .replace(/ /g, " L ")} L ${(pad + (values.length - 1) * step).toFixed(
+            1
+          )},${(pad + innerH).toFixed(1)} Z`
+      : "";
+
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      className={cn("overflow-visible", className)}
+      preserveAspectRatio="none"
+    >
+      <defs>
+        <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {areaPath && <path d={areaPath} fill="url(#sparkGrad)" />}
+      <polyline
+        points={path}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {values.map((v, i) => {
+        const x = pad + i * step;
+        const y = pad + innerH - (v / max) * innerH;
+        const isLast = i === values.length - 1;
+        return (
+          <circle
+            key={i}
+            cx={x}
+            cy={y}
+            r={isLast ? 2.5 : 0}
+            fill="currentColor"
+          />
+        );
+      })}
+    </svg>
   );
 }
 
@@ -188,6 +264,33 @@ export function Dashboard({
   );
   const recentSales = useMemo(() => sales.slice(0, 5), [sales]);
 
+  // 7-day revenue trend for the sparkline (oldest → newest, today is last)
+  const revenueTrend = useMemo(() => {
+    const days: number[] = [];
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const day = new Date(now);
+      day.setHours(0, 0, 0, 0);
+      day.setDate(day.getDate() - i);
+      const next = new Date(day);
+      next.setDate(next.getDate() + 1);
+      const total = sales
+        .filter((s) => {
+          const d = new Date(s.createdAt);
+          return d >= day && d < next;
+        })
+        .reduce((sum, s) => sum + s.total, 0);
+      days.push(total);
+    }
+    return days;
+  }, [sales]);
+  const weekTotal = revenueTrend.reduce((a, b) => a + b, 0);
+  const prevDaysTotal = revenueTrend.slice(0, 6).reduce((a, b) => a + b, 0);
+  const todayVsPrev =
+    prevDaysTotal === 0
+      ? null
+      : ((revenueTrend[6] - prevDaysTotal / 6) / (prevDaysTotal / 6)) * 100;
+
   /* greeting */
   const now = new Date();
   const fullDate = now.toLocaleDateString("en-US", {
@@ -302,13 +405,36 @@ export function Dashboard({
                   </p>
                   {kpi.comparison && (
                     <div className="mt-2 flex items-center gap-2">
-                      <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
-                        <ArrowUpRight className="h-3 w-3" />
-                        Today
-                      </span>
+                      {todayVsPrev !== null ? (
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
+                            todayVsPrev >= 0
+                              ? "bg-emerald-500/10 text-emerald-600"
+                              : "bg-red-500/10 text-red-600"
+                          )}
+                        >
+                          {todayVsPrev >= 0 ? (
+                            <ArrowUpRight className="h-3 w-3" />
+                          ) : (
+                            <ArrowDownRight className="h-3 w-3" />
+                          )}
+                          {Math.abs(todayVsPrev).toFixed(0)}% vs avg
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
+                          <ArrowUpRight className="h-3 w-3" />
+                          Today
+                        </span>
+                      )}
                       <span className="text-[10px] text-muted-foreground">
-                        ▲ vs 0 yesterday
+                        7d: {formatMoney(weekTotal, currency)}
                       </span>
+                    </div>
+                  )}
+                  {kpi.comparison && !salesQuery.isLoading && weekTotal > 0 && (
+                    <div className="mt-2 text-emerald-600">
+                      <RevenueSparkline values={revenueTrend} />
                     </div>
                   )}
                 </div>

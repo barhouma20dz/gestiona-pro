@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery } from "@tanstack/react-query";
-import { shopApi } from "@/lib/api";
+import { shopApi, productsApi } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
 import { PosTerminal } from "@/components/views/pos-terminal";
 import { ProductManager } from "@/components/views/product-manager";
@@ -42,10 +42,12 @@ function SidebarContent({
   view,
   onSelect,
   shopName,
+  lowStockCount,
 }: {
   view: ViewKey;
   onSelect: (v: ViewKey) => void;
   shopName?: string;
+  lowStockCount: number;
 }) {
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -68,6 +70,8 @@ function SidebarContent({
         {NAV.map((item) => {
           const active = view === item.key;
           const Icon = item.icon;
+          // Show low-stock badge on Products nav item
+          const showStockBadge = item.key === "products" && lowStockCount > 0;
           return (
             <button
               key={item.key}
@@ -86,7 +90,20 @@ function SidebarContent({
                 )}
               />
               <span className="flex-1 text-left">{item.label}</span>
-              {active && (
+              {showStockBadge && (
+                <span
+                  className={cn(
+                    "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[10px] font-bold tabular-nums",
+                    active
+                      ? "bg-primary-foreground/20 text-primary-foreground"
+                      : "bg-amber-500 text-white"
+                  )}
+                  title={`${lowStockCount} product${lowStockCount === 1 ? "" : "s"} need restocking`}
+                >
+                  {lowStockCount}
+                </span>
+              )}
+              {active && !showStockBadge && (
                 <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground/80" />
               )}
             </button>
@@ -126,6 +143,15 @@ export function AppShell() {
     queryKey: ["shop"],
     queryFn: shopApi.get,
   });
+
+  // Products query — used to compute the low-stock badge on the Products nav item
+  const { data: products = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: productsApi.list,
+  });
+  const lowStockCount = products.filter(
+    (p) => p.stock >= 0 && p.stock <= 5
+  ).length;
 
   // Cmd+K / Ctrl+K to open command palette
   useEffect(() => {
@@ -168,13 +194,13 @@ export function AppShell() {
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Desktop sidebar */}
       <aside className="hidden md:block w-64 shrink-0">
-        <SidebarContent view={view} onSelect={select} shopName={shop?.name} />
+        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} />
       </aside>
 
       {/* Mobile sidebar */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-64 p-0">
-          <SidebarContent view={view} onSelect={select} shopName={shop?.name} />
+          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} />
         </SheetContent>
       </Sheet>
 
