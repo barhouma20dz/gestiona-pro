@@ -24,6 +24,7 @@ import { salesApi, shopApi, productsApi } from "@/lib/api";
 import type { Sale } from "@/lib/types";
 import { formatMoney, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/lib/language-context";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -49,25 +50,25 @@ import { AnimatedNumber } from "@/components/animated-number";
 
 /* ---------- helpers ---------- */
 
-function paymentBadge(method: string) {
+function paymentBadge(method: string, t: (k: "upi" | "card" | "cash") => string) {
   const m = method.toLowerCase();
   if (m === "upi") {
     return (
       <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
-        UPI
+        {t("upi")}
       </Badge>
     );
   }
   if (m === "card") {
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
-        Card
+        {t("card")}
       </Badge>
     );
   }
   return (
     <Badge className="bg-slate-500/15 text-slate-600 border-slate-500/30 hover:bg-slate-500/15">
-      Cash
+      {t("cash")}
     </Badge>
   );
 }
@@ -103,6 +104,7 @@ function build7DaySeries(sales: Sale[]) {
 /* ---------- main component ---------- */
 
 export function SalesHistory() {
+  const { t } = useLanguage();
   const qc = useQueryClient();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -239,12 +241,12 @@ export function SalesHistory() {
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ["sales"] });
     qc.invalidateQueries({ queryKey: ["salesStats"] });
-    toast.success("Sales refreshed");
+    toast.success(t("salesRefreshed"));
   };
 
   const exportSalesCsv = () => {
     if (sales.length === 0) {
-      toast.error("No sales to export");
+      toast.error(t("noSalesToExport"));
       return;
     }
     const headers = [
@@ -277,7 +279,7 @@ export function SalesHistory() {
         .map(escape)
         .join(",")
     );
-    const csv = [headers.join(","), ...rows].join("\n");
+    const csv = [headers.join("|"), ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -287,7 +289,7 @@ export function SalesHistory() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success(`Exported ${sales.length} sales to CSV`);
+    toast.success(`${sales.length} ${t("exportedSales")}`);
   };
 
   const openReceipt = (saleId: string) => {
@@ -336,27 +338,27 @@ export function SalesHistory() {
     try {
       if (navigator.share) {
         await navigator.share({
-          title: `Receipt ${sale.receiptNo}`,
+          title: `${t("receipt")} ${sale.receiptNo}`,
           text: lines,
         });
       } else {
         await navigator.clipboard.writeText(lines);
-        toast.success("Receipt copied to clipboard");
+        toast.success(t("receiptCopied"));
       }
     } catch {
       // User cancelled share or clipboard failed — try clipboard fallback
       try {
         await navigator.clipboard.writeText(lines);
-        toast.success("Receipt copied to clipboard");
+        toast.success(t("receiptCopied"));
       } catch {
-        toast.error("Could not share receipt");
+        toast.error(t("couldNotShare"));
       }
     }
   };
 
   const statCards = [
     {
-      label: "Today's Revenue",
+      label: t("todaysRevenue"),
       value: formatMoney(stats?.totalSales ?? 0, currency),
       numericValue: stats?.totalSales ?? 0,
       decimals: 2,
@@ -366,7 +368,7 @@ export function SalesHistory() {
       big: true,
     },
     {
-      label: "Transactions",
+      label: t("transactions"),
       value: String(stats?.transactionCount ?? 0),
       numericValue: stats?.transactionCount ?? 0,
       decimals: 0,
@@ -375,7 +377,7 @@ export function SalesHistory() {
       tint: "bg-emerald-500/15 text-emerald-600",
     },
     {
-      label: "Items Sold",
+      label: t("itemsSold"),
       value: String(stats?.itemsSold ?? 0),
       numericValue: stats?.itemsSold ?? 0,
       decimals: 0,
@@ -384,7 +386,7 @@ export function SalesHistory() {
       tint: "bg-amber-500/15 text-amber-600",
     },
     {
-      label: "Avg Ticket",
+      label: t("avgTicket"),
       value: formatMoney(stats?.avgTicket ?? 0, currency),
       numericValue: stats?.avgTicket ?? 0,
       decimals: 2,
@@ -402,10 +404,10 @@ export function SalesHistory() {
         <div className="relative flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold tracking-tight drop-shadow-sm sm:text-xl">
-              Sales Analytics
+              {t("salesAnalytics")}
             </h2>
             <p className="mt-0.5 text-sm text-emerald-50/80">
-              Track revenue, profit, tax, and category performance
+              {t("trackRevenueProfit")}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -417,7 +419,7 @@ export function SalesHistory() {
               className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
             >
               <Download className="h-4 w-4" />
-              Export
+              {t("export")}
             </Button>
             <Button
               variant="outline"
@@ -433,7 +435,7 @@ export function SalesHistory() {
                     "animate-spin"
                 )}
               />
-              Refresh
+              {t("refresh")}
             </Button>
           </div>
         </div>
@@ -492,9 +494,9 @@ export function SalesHistory() {
       <Card className="p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold">Last 7 days</h3>
+            <h3 className="text-sm font-semibold">{t("last7Days")}</h3>
             <p className="text-xs text-muted-foreground">
-              Revenue trend · {formatMoney(chartTotal, currency)} total
+              {t("revenueTrend")} · {formatMoney(chartTotal, currency)} {t("total")}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -503,10 +505,10 @@ export function SalesHistory() {
               size="sm"
               onClick={exportSalesCsv}
               disabled={sales.length === 0}
-              title="Export filtered sales to CSV"
+              title={t("export")}
             >
               <Download className="h-4 w-4" />
-              Export
+              {t("export")}
             </Button>
             <Button
               variant="outline"
@@ -520,7 +522,7 @@ export function SalesHistory() {
                   (salesQuery.isFetching || statsQuery.isFetching) && "animate-spin"
                 )}
               />
-              Refresh
+              {t("refresh")}
             </Button>
           </div>
         </div>
@@ -559,10 +561,9 @@ export function SalesHistory() {
         <Card className="gap-0 p-4 sm:p-5">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold">Profit Summary</h3>
+              <h3 className="text-sm font-semibold">{t("profitSummary")}</h3>
               <p className="text-xs text-muted-foreground">
-                Based on {sales.length} filtered sale
-                {sales.length === 1 ? "" : "s"}
+                {t("basedOn")} {sales.length} {t("filteredSales")}
               </p>
             </div>
             <Percent className="h-4 w-4 text-muted-foreground" />
@@ -573,7 +574,7 @@ export function SalesHistory() {
               <div className="flex items-center gap-1.5">
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
                 <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Revenue
+                  {t("revenue")}
                 </p>
               </div>
               <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 sm:text-xl">
@@ -585,7 +586,7 @@ export function SalesHistory() {
               <div className="flex items-center gap-1.5">
                 <Wallet className="h-3.5 w-3.5 text-slate-600" />
                 <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Cost
+                  {t("cost")}
                 </p>
               </div>
               <p className="mt-1 text-lg font-bold tabular-nums text-slate-600 sm:text-xl">
@@ -597,7 +598,7 @@ export function SalesHistory() {
               <div className="flex items-center gap-1.5">
                 <Receipt className="h-3.5 w-3.5 text-amber-600" />
                 <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Discounts
+                  {t("discounts")}
                 </p>
               </div>
               <p className="mt-1 text-lg font-bold tabular-nums text-amber-600 sm:text-xl">
@@ -623,7 +624,7 @@ export function SalesHistory() {
                   )}
                 />
                 <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Net Profit
+                  {t("netProfit")}
                 </p>
               </div>
               <p
@@ -638,7 +639,7 @@ export function SalesHistory() {
                 {formatMoney(profitSummary.profit, currency)}
               </p>
               <p className="mt-0.5 text-[10px] font-medium text-muted-foreground">
-                {profitSummary.margin.toFixed(1)}% margin
+                {profitSummary.margin.toFixed(1)}% {t("margin")}
               </p>
             </div>
           </div>
@@ -652,10 +653,9 @@ export function SalesHistory() {
           <Card className="gap-0 p-4 sm:p-5">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold">Tax Summary</h3>
+                <h3 className="text-sm font-semibold">{t("taxSummary")}</h3>
                 <p className="text-xs text-muted-foreground">
-                  Tax collected from {sales.length} sale
-                  {sales.length === 1 ? "" : "s"}
+                  {t("taxCollectedFrom")} {sales.length} {t("sales")}
                 </p>
               </div>
               <Receipt className="h-4 w-4 text-muted-foreground" />
@@ -663,7 +663,7 @@ export function SalesHistory() {
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">
-                  Taxable amount
+                  {t("taxableAmount")}
                 </span>
                 <span className="text-sm font-semibold tabular-nums">
                   {formatMoney(taxSummary.taxable, currency)}
@@ -671,7 +671,7 @@ export function SalesHistory() {
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">
-                  Tax collected
+                  {t("taxCollected")}
                 </span>
                 <span className="text-sm font-semibold tabular-nums text-amber-600">
                   {formatMoney(taxSummary.taxCollected, currency)}
@@ -680,7 +680,7 @@ export function SalesHistory() {
               <div className="h-px bg-border" />
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-muted-foreground">
-                  Effective tax rate
+                  {t("effectiveTaxRate")}
                 </span>
                 <span className="text-base font-bold tabular-nums text-amber-600">
                   {taxSummary.effectiveRate.toFixed(2)}%
@@ -700,10 +700,10 @@ export function SalesHistory() {
               </div>
               <p className="text-[10px] text-muted-foreground">
                 {taxSummary.effectiveRate < 0.01
-                  ? "No tax configured — set a tax rate in Shop Details."
+                  ? t("noTaxConfigured")
                   : `${taxSummary.effectiveRate.toFixed(
                       2
-                    )}% average applied to taxable sales.`}
+                    )}% ${t("avgApplied")}`}
               </p>
             </div>
           </Card>
@@ -713,17 +713,17 @@ export function SalesHistory() {
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold">
-                  Category Breakdown
+                  {t("categoryBreakdown")}
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Revenue & profit by category
+                  {t("revenueProfitByCategory")}
                 </p>
               </div>
               <Package className="h-4 w-4 text-muted-foreground" />
             </div>
             {categoryBreakdown.length === 0 ? (
               <p className="py-6 text-center text-xs text-muted-foreground">
-                No category data for the current filters.
+                {t("noCategoryData")}
               </p>
             ) : (
               <div className="space-y-2.5">
@@ -738,7 +738,7 @@ export function SalesHistory() {
                         </span>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground tabular-nums">
-                            {cat.qty} sold
+                            {cat.qty} {t("sold")}
                           </span>
                           <span className="text-sm font-semibold tabular-nums text-emerald-600">
                             {formatMoney(cat.revenue, currency)}
@@ -766,11 +766,11 @@ export function SalesHistory() {
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold">
-                Sales{" "}
+                {t("sales")}{" "}
                 <span className="text-muted-foreground">
                   ({sales.length}
                   {sales.length !== allSales.length &&
-                    ` of ${allSales.length}`}
+                    ` ${t("of")} ${allSales.length}`}
                   )
                 </span>
               </h2>
@@ -786,7 +786,7 @@ export function SalesHistory() {
                 }}
               >
                 <X className="h-3 w-3" />
-                Clear filters
+                {t("clearFilters")}
               </Button>
             )}
           </div>
@@ -794,14 +794,14 @@ export function SalesHistory() {
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1">
               <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Period:
+                {t("period")}:
               </span>
               {(
                 [
-                  ["all", "All"],
-                  ["today", "Today"],
-                  ["7d", "7 days"],
-                  ["30d", "30 days"],
+                  ["all", t("all")],
+                  ["today", t("today_")],
+                  ["7d", t("days7")],
+                  ["30d", t("days30")],
                 ] as const
               ).map(([val, label]) => (
                 <button
@@ -821,14 +821,14 @@ export function SalesHistory() {
             <div className="hidden h-4 w-px bg-border sm:block" />
             <div className="flex items-center gap-1">
               <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Payment:
+                {t("payment")}:
               </span>
               {(
                 [
-                  ["all", "All"],
-                  ["cash", "Cash"],
-                  ["upi", "UPI"],
-                  ["card", "Card"],
+                  ["all", t("all")],
+                  ["cash", t("cash")],
+                  ["upi", t("upi")],
+                  ["card", t("card")],
                 ] as const
               ).map(([val, label]) => (
                 <button
@@ -853,12 +853,12 @@ export function SalesHistory() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="pl-6">Receipt No</TableHead>
-                <TableHead>Date / Time</TableHead>
-                <TableHead className="text-right">Items</TableHead>
-                <TableHead>Payment</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="pr-6 text-right">Action</TableHead>
+                <TableHead className="pl-6">{t("receiptNo")}</TableHead>
+                <TableHead>{t("dateTime")}</TableHead>
+                <TableHead className="text-right">{t("items")}</TableHead>
+                <TableHead>{t("payment")}</TableHead>
+                <TableHead className="text-right">{t("total")}</TableHead>
+                <TableHead className="pr-6 text-right">{t("action")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -867,14 +867,14 @@ export function SalesHistory() {
                   <TableCell colSpan={6} className="py-12 text-center">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading sales…
+                      {t("loadingSales")}
                     </div>
                   </TableCell>
                 </TableRow>
               ) : sales.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="py-12 text-center">
-                    <EmptyState />
+                    <EmptyState t={t} />
                   </TableCell>
                 </TableRow>
               ) : (
@@ -894,7 +894,7 @@ export function SalesHistory() {
                     <TableCell className="py-3.5 text-right tabular-nums">
                       {s.itemCount}
                     </TableCell>
-                    <TableCell className="py-3.5">{paymentBadge(s.paymentMethod)}</TableCell>
+                    <TableCell className="py-3.5">{paymentBadge(s.paymentMethod, t)}</TableCell>
                     <TableCell className="py-3.5 text-right font-bold tabular-nums transition-colors group-hover:text-primary">
                       {formatMoney(s.total, currency)}
                     </TableCell>
@@ -906,7 +906,7 @@ export function SalesHistory() {
                         className="transition-all group-hover:border-primary/40 group-hover:text-primary"
                       >
                         <Eye className="h-4 w-4" />
-                        View
+                        {t("view")}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -921,11 +921,11 @@ export function SalesHistory() {
           {salesQuery.isLoading ? (
             <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading sales…
+              {t("loadingSales")}
             </div>
           ) : sales.length === 0 ? (
             <div className="px-4 py-12">
-              <EmptyState />
+              <EmptyState t={t} />
             </div>
           ) : (
             <ul className="divide-y">
@@ -940,9 +940,9 @@ export function SalesHistory() {
                         {formatDateTime(s.createdAt)}
                       </p>
                       <div className="mt-2 flex items-center gap-2">
-                        {paymentBadge(s.paymentMethod)}
+                        {paymentBadge(s.paymentMethod, t)}
                         <span className="text-xs text-muted-foreground">
-                          {s.itemCount} item{s.itemCount === 1 ? "" : "s"}
+                          {s.itemCount} {t("items")}
                         </span>
                       </div>
                     </div>
@@ -956,7 +956,7 @@ export function SalesHistory() {
                         onClick={() => openReceipt(s.id)}
                       >
                         <Eye className="h-4 w-4" />
-                        View
+                        {t("view")}
                       </Button>
                     </div>
                   </div>
@@ -983,14 +983,14 @@ export function SalesHistory() {
           className="no-print sm:max-w-[360px] p-4"
         >
           <DialogHeader className="text-center">
-            <DialogTitle className="text-base">Receipt</DialogTitle>
+            <DialogTitle className="text-base">{t("receipt")}</DialogTitle>
           </DialogHeader>
 
           <div className="max-h-[60vh] overflow-y-auto rounded-lg bg-white scrollbar-emerald">
             {saleDetailQuery.isLoading || !shop ? (
               <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Loading receipt…
+                {t("loadingReceipt")}
               </div>
             ) : saleDetailQuery.data && shop ? (
               <ReceiptComponent
@@ -1001,7 +1001,7 @@ export function SalesHistory() {
               />
             ) : (
               <div className="py-16 text-center text-sm text-muted-foreground">
-                Could not load receipt.
+                {t("couldNotLoadReceipt")}
               </div>
             )}
           </div>
@@ -1009,7 +1009,7 @@ export function SalesHistory() {
           {/* Size toggle */}
           <div className="no-print flex items-center justify-center gap-2">
             <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Paper:
+              {t("paper")}:
             </span>
             {(["80mm", "58mm"] as const).map((s) => (
               <button
@@ -1034,24 +1034,24 @@ export function SalesHistory() {
               disabled={saleDetailQuery.isLoading}
             >
               <X className="h-4 w-4" />
-              Close
+              {t("close")}
             </Button>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 onClick={handleShareReceipt}
                 disabled={!saleDetailQuery.data || !shop}
-                title="Copy receipt summary to clipboard"
+                title={t("share")}
               >
                 <Share2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Share</span>
+                <span className="hidden sm:inline">{t("share")}</span>
               </Button>
               <Button
                 onClick={handlePrint}
                 disabled={!saleDetailQuery.data || !shop}
               >
                 <Printer className="h-4 w-4" />
-                Print
+                {t("print")}
               </Button>
             </div>
           </DialogFooter>
@@ -1063,16 +1063,16 @@ export function SalesHistory() {
 
 /* ---------- empty state ---------- */
 
-function EmptyState() {
+function EmptyState({ t }: { t: (k: "noSalesRecorded" | "completeFirstSale") => string }) {
   return (
     <div className="flex flex-col items-center gap-3 py-6">
       <div className="grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
         <ReceiptText className="h-6 w-6" />
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium">No sales recorded yet</p>
+        <p className="text-sm font-medium">{t("noSalesRecorded")}</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Complete your first sale from the POS Terminal.
+          {t("completeFirstSale")}
         </p>
       </div>
     </div>

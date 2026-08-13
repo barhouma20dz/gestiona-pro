@@ -24,9 +24,13 @@ import {
 } from "lucide-react";
 
 import { productsApi, salesApi, shopApi } from "@/lib/api";
-import type { ViewKey } from "@/lib/types";
+import type { ViewKey } from "@lib/types";
 import { formatMoney, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/lib/language-context";
+import type { TranslationKey } from "@/lib/i18n";
+
+type T = (key: TranslationKey) => string;
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,47 +41,47 @@ import { AnimatedNumber } from "@/components/animated-number";
 
 /* ---------- helpers ---------- */
 
-function paymentBadge(method: string) {
+function paymentBadge(method: string, t: T) {
   const m = method.toLowerCase();
   if (m === "upi") {
     return (
       <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
-        UPI
+        {t("upi")}
       </Badge>
     );
   }
   if (m === "card") {
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
-        Card
+        {t("card")}
       </Badge>
     );
   }
   return (
     <Badge className="bg-slate-500/15 text-slate-600 border-slate-500/30 hover:bg-slate-500/15">
-      Cash
+      {t("cash")}
     </Badge>
   );
 }
 
-function stockBadgeFor(stock: number) {
+function stockBadgeFor(stock: number, t: T) {
   if (stock === 0) {
     return (
       <Badge className="bg-red-500/15 text-red-600 border-red-500/30 hover:bg-red-500/15">
-        0 left
+        0 {t("left")}
       </Badge>
     );
   }
   if (stock <= 5) {
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
-        {stock} left
+        {stock} {t("left")}
       </Badge>
     );
   }
   return (
     <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
-      {stock} left
+      {stock} {t("left")}
     </Badge>
   );
 }
@@ -160,8 +164,16 @@ function RevenueSparkline({
 /* ---------- quick actions config ---------- */
 
 interface QuickAction {
-  title: string;
-  subtitle: string;
+  titleKey:
+    | "startBilling"
+    | "manageProducts"
+    | "viewReports"
+    | "shopSettings";
+  subtitleKey:
+    | "openTerminal"
+    | "inventoryPrices"
+    | "salesHistoryTrends"
+    | "businessTax";
   icon: typeof ScanLine;
   tint: string;
   view: ViewKey;
@@ -169,29 +181,29 @@ interface QuickAction {
 
 const QUICK_ACTIONS: QuickAction[] = [
   {
-    title: "Start Billing",
-    subtitle: "Open POS terminal",
+    titleKey: "startBilling",
+    subtitleKey: "openTerminal",
     icon: ScanLine,
     tint: "bg-emerald-500/15 text-emerald-600",
     view: "pos",
   },
   {
-    title: "Manage Products",
-    subtitle: "Inventory & prices",
+    titleKey: "manageProducts",
+    subtitleKey: "inventoryPrices",
     icon: Package,
     tint: "bg-slate-500/15 text-slate-600",
     view: "products",
   },
   {
-    title: "View Reports",
-    subtitle: "Sales history & trends",
+    titleKey: "viewReports",
+    subtitleKey: "salesHistoryTrends",
     icon: BarChart3,
     tint: "bg-amber-500/15 text-amber-600",
     view: "sales",
   },
   {
-    title: "Shop Settings",
-    subtitle: "Business profile & tax",
+    titleKey: "shopSettings",
+    subtitleKey: "businessTax",
     icon: Store,
     tint: "bg-slate-500/15 text-slate-600",
     view: "shop",
@@ -236,8 +248,10 @@ function paymentColor(method: string): string {
  */
 function PaymentDonut({
   segments,
+  t: tFn,
 }: {
   segments: { method: string; percent: number }[];
+  t: T;
 }) {
   const size = 128;
   const stroke = 16;
@@ -298,7 +312,7 @@ function PaymentDonut({
         dominantBaseline="central"
         className="fill-muted-foreground text-[9px] font-medium uppercase tracking-wider"
       >
-        methods
+        {tFn("methods")}
       </text>
     </svg>
   );
@@ -310,14 +324,22 @@ function PaymentLegendRow({
   revenue,
   percent,
   currency,
+  t,
 }: {
   method: string;
   count: number;
   revenue: number;
   percent: number;
   currency: string;
+  t: T;
 }) {
   const color = paymentColor(method);
+  const label =
+    method.toLowerCase() === "upi"
+      ? t("upi")
+      : method.toLowerCase() === "card"
+      ? t("card")
+      : t("cash");
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2 min-w-0">
@@ -325,8 +347,8 @@ function PaymentLegendRow({
           className="h-2.5 w-2.5 shrink-0 rounded-full"
           style={{ backgroundColor: color }}
         />
-        <span className="text-[12px] font-medium capitalize truncate">
-          {method}
+        <span className="text-[12px] font-medium truncate">
+          {label}
         </span>
         <span className="text-[10px] text-muted-foreground tabular-nums">
           {percent.toFixed(0)}%
@@ -348,6 +370,7 @@ export function Dashboard({
 }: {
   onNavigate: (view: ViewKey) => void;
 }) {
+  const { t } = useLanguage();
   /* queries */
   const shopQuery = useQuery({ queryKey: ["shop"], queryFn: shopApi.get });
   const statsQuery = useQuery({
@@ -547,45 +570,45 @@ export function Dashboard({
     loading: boolean;
   }[] = [
     {
-      label: "Today's Revenue",
+      label: t("todaysRevenue"),
       value: formatMoney(stats?.totalSales ?? 0, currency),
       numericValue: stats?.totalSales ?? 0,
       decimals: 2,
       icon: TrendingUp,
       tint: "bg-emerald-500/15 text-emerald-600",
-      subtitle: `from ${stats?.transactionCount ?? 0} sales`,
+      subtitle: `${t("fromXSales")} ${stats?.transactionCount ?? 0} ${t("salesWord")}`,
       comparison: true,
       loading: statsQuery.isLoading,
     },
     {
-      label: "Inventory Value",
+      label: t("inventoryValue"),
       value: formatMoney(inventoryValue, currency),
       numericValue: inventoryValue,
       decimals: 2,
       icon: Boxes,
       tint: "bg-amber-500/15 text-amber-600",
-      subtitle: `${products.length} products`,
+      subtitle: `${products.length} ${t("productsLabel")}`,
       loading: productsQuery.isLoading,
     },
     {
-      label: "Low Stock Alerts",
+      label: t("lowStockAlerts"),
       value: String(lowStockCount),
       numericValue: lowStockCount,
       decimals: 0,
       icon: AlertTriangle,
       tint: "bg-orange-500/15 text-orange-600",
-      subtitle: `${outOfStockCount} out of stock`,
+      subtitle: `${outOfStockCount} ${t("outOfStock")}`,
       clickable: true,
       loading: productsQuery.isLoading,
     },
     {
-      label: "Avg Ticket",
+      label: t("avgTicket"),
       value: formatMoney(stats?.avgTicket ?? 0, currency),
       numericValue: stats?.avgTicket ?? 0,
       decimals: 2,
       icon: Receipt,
       tint: "bg-slate-500/15 text-slate-600",
-      subtitle: "per transaction today",
+      subtitle: t("perTransactionToday"),
       loading: statsQuery.isLoading,
     },
   ];
@@ -600,13 +623,13 @@ export function Dashboard({
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-sm font-medium text-emerald-50/90">
-              Welcome back
+              {t("welcomeBack")}
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight drop-shadow-sm sm:text-3xl">
               {shopQuery.isLoading ? (
                 <Skeleton className="h-8 w-48 bg-white/20" />
               ) : (
-                shop?.name ?? "SwiftBill POS"
+                shop?.name ?? t("appName")
               )}
             </h1>
             <p className="mt-1.5 text-sm text-emerald-50/80">{fullDate}</p>
@@ -617,7 +640,7 @@ export function Dashboard({
               className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
             >
               <ScanLine className="h-4 w-4" />
-              New Sale
+              {t("newSale")}
             </Button>
             <Button
               variant="outline"
@@ -625,7 +648,7 @@ export function Dashboard({
               className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
             >
               <Plus className="h-4 w-4" />
-              Add Product
+              {t("addProduct")}
             </Button>
           </div>
         </div>
@@ -679,16 +702,16 @@ export function Dashboard({
                           ) : (
                             <ArrowDownRight className="h-3 w-3" />
                           )}
-                          {Math.abs(todayVsPrev).toFixed(0)}% vs avg
+                          {Math.abs(todayVsPrev).toFixed(0)}% {t("vsYesterday")}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
                           <ArrowUpRight className="h-3 w-3" />
-                          Today
+                          {t("today")}
                         </span>
                       )}
                       <span className="text-[10px] text-muted-foreground">
-                        7d: {formatMoney(weekTotal, currency)}
+                        {t("last7Days")}: {formatMoney(weekTotal, currency)}
                       </span>
                     </div>
                   )}
@@ -738,8 +761,8 @@ export function Dashboard({
         <Card className="gap-0 p-0 lg:col-span-2">
           <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
             <div>
-              <h2 className="text-sm font-semibold">Recent Sales</h2>
-              <p className="text-xs text-muted-foreground">Latest transactions</p>
+              <h2 className="text-sm font-semibold">{t("recentSales")}</h2>
+              <p className="text-xs text-muted-foreground">{t("latestTransactions")}</p>
             </div>
             <Button
               variant="link"
@@ -747,7 +770,7 @@ export function Dashboard({
               className="h-auto px-0 text-emerald-600 hover:text-emerald-700"
               onClick={() => onNavigate("sales")}
             >
-              View all
+              {t("viewAll")}
               <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -779,9 +802,9 @@ export function Dashboard({
                 <ShoppingCart className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm font-medium">No sales yet</p>
+                <p className="text-sm font-medium">{t("noSalesYet")}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Start your first sale to see activity here.
+                  {t("startFirstSale")}
                 </p>
               </div>
               <Button
@@ -790,7 +813,7 @@ export function Dashboard({
                 className="bg-emerald-600 text-white hover:bg-emerald-700"
               >
                 <ScanLine className="h-4 w-4" />
-                Start a sale
+                {t("startSale")}
               </Button>
             </div>
           ) : (
@@ -805,12 +828,11 @@ export function Dashboard({
                       {sale.receiptNo}
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {formatTime(sale.createdAt)} · {sale.itemCount} item
-                      {sale.itemCount === 1 ? "" : "s"}
+                      {formatTime(sale.createdAt)} · {sale.itemCount} {t("items")}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
-                    {paymentBadge(sale.paymentMethod)}
+                    {paymentBadge(sale.paymentMethod, t)}
                     <span className="font-bold tabular-nums">
                       {formatMoney(sale.total, currency)}
                     </span>
@@ -825,8 +847,8 @@ export function Dashboard({
         <Card className="gap-0 p-0 lg:col-span-1">
           <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
             <div>
-              <h2 className="text-sm font-semibold">Inventory Health</h2>
-              <p className="text-xs text-muted-foreground">Stock overview</p>
+              <h2 className="text-sm font-semibold">{t("inventoryHealth")}</h2>
+              <p className="text-xs text-muted-foreground">{t("stockOverview")}</p>
             </div>
             <Button
               variant="link"
@@ -834,7 +856,7 @@ export function Dashboard({
               className="h-auto px-0 text-emerald-600 hover:text-emerald-700"
               onClick={() => onNavigate("products")}
             >
-              Manage
+              {t("manage")}
               <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -860,9 +882,9 @@ export function Dashboard({
                 <Boxes className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm font-medium">No products yet</p>
+                <p className="text-sm font-medium">{t("noProductsYet")}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Add your first product to track inventory.
+                  {t("addFirstProductTrack")}
                 </p>
               </div>
               <Button
@@ -871,7 +893,7 @@ export function Dashboard({
                 onClick={() => onNavigate("products")}
               >
                 <Plus className="h-4 w-4" />
-                Add product
+                {t("addProduct")}
               </Button>
             </div>
           ) : (
@@ -904,17 +926,17 @@ export function Dashboard({
               <div className="space-y-2">
                 <LegendRow
                   color="bg-red-500"
-                  label="Out of stock"
+                  label={t("outOfStock")}
                   count={outOfStockCount}
                 />
                 <LegendRow
                   color="bg-amber-500"
-                  label="Low stock (1-5)"
+                  label={`${t("lowStock")} (1-5)`}
                   count={lowStockCount}
                 />
                 <LegendRow
                   color="bg-emerald-500"
-                  label="Healthy (>5)"
+                  label={`${t("healthy")} (>5)`}
                   count={healthyCount}
                 />
               </div>
@@ -924,7 +946,7 @@ export function Dashboard({
               {/* Top 5 low stock items */}
               <div>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Top 5 low stock
+                  {t("top5LowStock")}
                 </p>
                 <ul className="space-y-2">
                   {topLowStock.map((p) => (
@@ -940,7 +962,7 @@ export function Dashboard({
                           {formatMoney(p.price, currency)}
                         </p>
                       </div>
-                      {stockBadgeFor(p.stock)}
+                      {stockBadgeFor(p.stock, t)}
                     </li>
                   ))}
                 </ul>
@@ -956,9 +978,9 @@ export function Dashboard({
         <Card className="gap-0 p-0 lg:col-span-2">
           <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
             <div>
-              <h2 className="text-sm font-semibold">Top Selling Products</h2>
+              <h2 className="text-sm font-semibold">{t("topSellingProducts")}</h2>
               <p className="text-xs text-muted-foreground">
-                Best sellers by quantity
+                {t("bestSellersByQuantity")}
               </p>
             </div>
             <Trophy className="h-4 w-4 text-amber-500" />
@@ -983,9 +1005,9 @@ export function Dashboard({
                 <Trophy className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm font-medium">No sales data yet</p>
+                <p className="text-sm font-medium">{t("noSalesDataYet")}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Top sellers will appear here once you make sales.
+                  {t("topSellersWillAppear")}
                 </p>
               </div>
             </div>
@@ -1017,7 +1039,7 @@ export function Dashboard({
                       <div className="flex items-baseline justify-between gap-2">
                         <p className="truncate text-sm font-medium">{p.name}</p>
                         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                          {p.qty} sold
+                          {p.qty} {t("sold")}
                         </span>
                       </div>
                       <div className="mt-1.5 flex items-center gap-2">
@@ -1043,8 +1065,8 @@ export function Dashboard({
         <Card className="gap-0 p-0 lg:col-span-1">
           <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
             <div>
-              <h2 className="text-sm font-semibold">Payments</h2>
-              <p className="text-xs text-muted-foreground">Method breakdown</p>
+              <h2 className="text-sm font-semibold">{t("payments")}</h2>
+              <p className="text-xs text-muted-foreground">{t("methodBreakdown")}</p>
             </div>
             <PieChart className="h-4 w-4 text-muted-foreground" />
           </div>
@@ -1061,9 +1083,9 @@ export function Dashboard({
                 <PieChart className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm font-medium">No payments yet</p>
+                <p className="text-sm font-medium">{t("noPaymentsYet")}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Payment breakdown will appear here.
+                  {t("paymentBreakdownWillAppear")}
                 </p>
               </div>
             </div>
@@ -1076,6 +1098,7 @@ export function Dashboard({
                     method: b.method,
                     percent: b.percent,
                   }))}
+                  t={t}
                 />
               </div>
               {/* Legend */}
@@ -1088,6 +1111,7 @@ export function Dashboard({
                     revenue={b.revenue}
                     percent={b.percent}
                     currency={currency}
+                    t={t}
                   />
                 ))}
               </div>
@@ -1100,14 +1124,14 @@ export function Dashboard({
       <Card className="gap-0 p-0">
         <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
           <div>
-            <h2 className="text-sm font-semibold">Sales by Hour</h2>
+            <h2 className="text-sm font-semibold">{t("salesByHour")}</h2>
             <p className="text-xs text-muted-foreground">
-              Last 7 days · {formatMoney(totalHourly, currency)} total
+              {t("last7Days")} · {formatMoney(totalHourly, currency)} {t("total")}
               {peakHour > 0 && totalHourly > 0 && (
                 <>
                   {" · "}
                   <span className="font-medium text-emerald-600">
-                    Peak at {peakHour}:00
+                    {t("peakAt")} {peakHour}:00
                   </span>
                 </>
               )}
@@ -1126,9 +1150,9 @@ export function Dashboard({
               <Clock className="h-6 w-6" />
             </div>
             <div>
-              <p className="text-sm font-medium">No hourly data yet</p>
+              <p className="text-sm font-medium">{t("noHourlyDataYet")}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Sales by hour will appear here as you make sales.
+                {t("hourlyWillAppear")}
               </p>
             </div>
           </div>
@@ -1194,10 +1218,10 @@ export function Dashboard({
               <TrendingUp className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold">Inventory Turnover</h2>
+              <h2 className="text-sm font-semibold">{t("inventoryTurnover")}</h2>
               <p className="text-xs text-muted-foreground">
-                Last 7 days · {inventoryTurnover.unitsSold7d} units sold · avg{" "}
-                {inventoryTurnover.avgStock.toFixed(0)} units/ product in stock
+                {t("last7DaysUnits")} {inventoryTurnover.unitsSold7d} {t("unitsSoldWord")}{" "}
+                {inventoryTurnover.avgStock.toFixed(0)} {t("unitsPerProduct")}
               </p>
             </div>
           </div>
@@ -1207,12 +1231,12 @@ export function Dashboard({
                 {inventoryTurnover.turnover.toFixed(2)}
               </p>
               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                turnover ratio
+                {t("turnoverRatio")}
               </p>
             </div>
             <span
               className={cn(
-                "rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize",
+                "rounded-full px-2.5 py-1 text-[11px] font-semibold",
                 inventoryTurnover.rate === "high"
                   ? "bg-emerald-500/15 text-emerald-600"
                   : inventoryTurnover.rate === "medium"
@@ -1222,7 +1246,13 @@ export function Dashboard({
                   : "bg-slate-500/15 text-slate-600"
               )}
             >
-              {inventoryTurnover.rate}
+              {inventoryTurnover.rate === "high"
+                ? t("healthy")
+                : inventoryTurnover.rate === "medium"
+                ? t("healthy")
+                : inventoryTurnover.rate === "slow"
+                ? t("lowStock")
+                : t("no")}
             </span>
           </div>
         </div>
@@ -1234,10 +1264,10 @@ export function Dashboard({
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold">
-                Revenue by Day of Week
+                {t("revenueByDayOfWeek")}
               </h2>
               <p className="text-xs text-muted-foreground">
-                Best day:{" "}
+                {t("bestDay")}:{" "}
                 <span className="font-semibold text-emerald-600">
                   {dayOfWeekStats.bestDay}
                 </span>{" "}
@@ -1288,14 +1318,14 @@ export function Dashboard({
       {/* 4. Quick actions */}
       <div>
         <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
-          Quick actions
+          {t("quickActions")}
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {QUICK_ACTIONS.map((qa, i) => {
             const Icon = qa.icon;
             return (
               <motion.div
-                key={qa.title}
+                key={qa.titleKey}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08, duration: 0.3, ease: "easeOut" }}
@@ -1315,9 +1345,9 @@ export function Dashboard({
                     >
                       <Icon className="h-5 w-5" />
                     </div>
-                    <p className="mt-3 text-sm font-semibold">{qa.title}</p>
+                    <p className="mt-3 text-sm font-semibold">{t(qa.titleKey)}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {qa.subtitle}
+                      {t(qa.subtitleKey)}
                     </p>
                   </Card>
                 </button>
