@@ -15,9 +15,11 @@ import {
   Loader2,
   ReceiptText,
   Download,
+  Wallet,
+  Percent,
 } from "lucide-react";
 
-import { salesApi, shopApi } from "@/lib/api";
+import { salesApi, shopApi, productsApi } from "@/lib/api";
 import type { Sale } from "@/lib/types";
 import { formatMoney, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -121,6 +123,10 @@ export function SalesHistory() {
     queryKey: ["shop"],
     queryFn: shopApi.get,
   });
+  const productsQuery = useQuery({
+    queryKey: ["products"],
+    queryFn: productsApi.list,
+  });
 
   const saleDetailQuery = useQuery({
     queryKey: ["sale", selectedId],
@@ -132,6 +138,7 @@ export function SalesHistory() {
   const stats = statsQuery.data;
   const shop = shopQuery.data;
   const currency = shop?.currency ?? "₹";
+  const products = productsQuery.data ?? [];
 
   // Apply date + payment filters
   const sales = useMemo(() => {
@@ -162,6 +169,26 @@ export function SalesHistory() {
   const series = useMemo(() => build7DaySeries(sales), [sales]);
   const maxDay = Math.max(1, ...series.map((d) => d.total));
   const chartTotal = series.reduce((sum, d) => sum + d.total, 0);
+
+  // Profit computation: match sale items to product cost prices by name
+  const profitSummary = useMemo(() => {
+    const costMap = new Map<string, number>();
+    products.forEach((p) => costMap.set(p.name, p.costPrice ?? 0));
+    let revenue = 0;
+    let cost = 0;
+    let discountTotal = 0;
+    sales.forEach((sale) => {
+      revenue += sale.subtotal;
+      discountTotal += sale.discount;
+      sale.items.forEach((item) => {
+        const unitCost = costMap.get(item.productName) ?? 0;
+        cost += unitCost * item.quantity;
+      });
+    });
+    const profit = revenue - cost - discountTotal;
+    const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+    return { revenue, cost, profit, margin, discountTotal };
+  }, [sales, products]);
 
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ["sales"] });
@@ -362,6 +389,97 @@ export function SalesHistory() {
           })}
         </div>
       </Card>
+
+      {/* Profit summary (reflects current filters) */}
+      {sales.length > 0 && (
+        <Card className="gap-0 p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold">Profit Summary</h3>
+              <p className="text-xs text-muted-foreground">
+                Based on {sales.length} filtered sale
+                {sales.length === 1 ? "" : "s"}
+              </p>
+            </div>
+            <Percent className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {/* Revenue */}
+            <div className="rounded-lg border bg-emerald-500/5 p-3">
+              <div className="flex items-center gap-1.5">
+                <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Revenue
+                </p>
+              </div>
+              <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 sm:text-xl">
+                {formatMoney(profitSummary.revenue, currency)}
+              </p>
+            </div>
+            {/* Cost */}
+            <div className="rounded-lg border bg-slate-500/5 p-3">
+              <div className="flex items-center gap-1.5">
+                <Wallet className="h-3.5 w-3.5 text-slate-600" />
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Cost
+                </p>
+              </div>
+              <p className="mt-1 text-lg font-bold tabular-nums text-slate-600 sm:text-xl">
+                {formatMoney(profitSummary.cost, currency)}
+              </p>
+            </div>
+            {/* Discount */}
+            <div className="rounded-lg border bg-amber-500/5 p-3">
+              <div className="flex items-center gap-1.5">
+                <Receipt className="h-3.5 w-3.5 text-amber-600" />
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Discounts
+                </p>
+              </div>
+              <p className="mt-1 text-lg font-bold tabular-nums text-amber-600 sm:text-xl">
+                {formatMoney(profitSummary.discountTotal, currency)}
+              </p>
+            </div>
+            {/* Net Profit */}
+            <div
+              className={cn(
+                "rounded-lg border p-3",
+                profitSummary.profit >= 0
+                  ? "bg-emerald-500/10"
+                  : "bg-red-500/10"
+              )}
+            >
+              <div className="flex items-center gap-1.5">
+                <Calculator
+                  className={cn(
+                    "h-3.5 w-3.5",
+                    profitSummary.profit >= 0
+                      ? "text-emerald-600"
+                      : "text-red-600"
+                  )}
+                />
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Net Profit
+                </p>
+              </div>
+              <p
+                className={cn(
+                  "mt-1 text-lg font-bold tabular-nums sm:text-xl",
+                  profitSummary.profit >= 0
+                    ? "text-emerald-600"
+                    : "text-red-600"
+                )}
+              >
+                {profitSummary.profit >= 0 ? "+" : ""}
+                {formatMoney(profitSummary.profit, currency)}
+              </p>
+              <p className="mt-0.5 text-[10px] font-medium text-muted-foreground">
+                {profitSummary.margin.toFixed(1)}% margin
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Sales table */}
       <Card className="gap-0 p-0">

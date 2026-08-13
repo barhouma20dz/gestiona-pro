@@ -23,6 +23,7 @@ import {
   Play,
   History,
   Clock,
+  Calculator,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
@@ -35,6 +36,7 @@ import type { Product } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -472,8 +474,36 @@ export function PosTerminal() {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [shortcutsHintOpen, setShortcutsHintOpen] = useState(false);
   const [heldOrdersOpen, setHeldOrdersOpen] = useState(false);
+  const [customItemOpen, setCustomItemOpen] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
 
   const scanInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAddCustomItem = () => {
+    const price = Number(customPrice);
+    if (!customPrice || Number.isNaN(price) || price <= 0) {
+      toast.error("Enter a valid price");
+      return;
+    }
+    const name = customName.trim() || "Custom Item";
+    const customProduct: Product = {
+      id: `custom-${Date.now()}`,
+      name,
+      barcode: `CUSTOM-${Date.now().toString().slice(-6)}`,
+      price,
+      costPrice: 0,
+      stock: 999999,
+      category: "Custom",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    addProduct(customProduct);
+    toast.success(`${name} added`, { description: formatMoney(price, currency) });
+    setCustomName("");
+    setCustomPrice("");
+    setCustomItemOpen(false);
+  };
 
   const handleHoldOrder = () => {
     if (items.length === 0) return;
@@ -727,6 +757,15 @@ export function PosTerminal() {
               )}
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setCustomItemOpen(true)}
+                className="shrink-0"
+                title="Add custom item with manual price"
+              >
+                <Calculator className="h-4 w-4" />
+                <span className="hidden sm:inline">Custom</span>
+              </Button>
               <Button
                 variant="outline"
                 onClick={() => setScannerOpen(true)}
@@ -1134,6 +1173,90 @@ export function PosTerminal() {
               onClick={() => setHeldOrdersOpen(false)}
             >
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom item dialog */}
+      <Dialog open={customItemOpen} onOpenChange={setCustomItemOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-primary" />
+              Quick Custom Item
+            </DialogTitle>
+            <DialogDescription>
+              Add a custom item with a manual price — ideal for loose items,
+              weighed goods, or quick sales not in your catalog.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="custom-name">Item name (optional)</Label>
+              <Input
+                id="custom-name"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder="e.g. Loose rice 2kg"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="custom-price">Price</Label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  {currency}
+                </span>
+                <Input
+                  id="custom-price"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  value={customPrice}
+                  onChange={(e) => setCustomPrice(e.target.value)}
+                  placeholder="0.00"
+                  className="pl-7 tabular-nums"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddCustomItem();
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Quick price chips */}
+            <div className="flex flex-wrap gap-2">
+              <span className="self-center text-xs text-muted-foreground">
+                Quick:
+              </span>
+              {[10, 20, 50, 100, 500].map((amt) => (
+                <button
+                  key={amt}
+                  onClick={() => setCustomPrice(String(amt))}
+                  className="rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
+                >
+                  {currency}
+                  {amt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCustomItemOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddCustomItem}
+              disabled={!customPrice || Number(customPrice) <= 0}
+            >
+              <Plus className="h-4 w-4" />
+              Add to cart
             </Button>
           </DialogFooter>
         </DialogContent>
