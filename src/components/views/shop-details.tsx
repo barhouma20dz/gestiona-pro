@@ -146,12 +146,22 @@ export function ShopDetails() {
 
   return (
     <div className="space-y-6">
-      {/* Section header */}
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">Business Information</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          These details appear on every printed receipt.
-        </p>
+      {/* Gradient page header */}
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-emerald-600 to-teal-700 p-5 text-white shadow-lg sm:p-6">
+        <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+        <div className="relative flex items-center gap-4">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/20 text-2xl font-bold backdrop-blur">
+            {initialsOf(shop?.name ?? "S")}
+          </div>
+          <div>
+            <h2 className="text-lg font-bold tracking-tight drop-shadow-sm sm:text-xl">
+              {shop?.name ?? "Business Information"}
+            </h2>
+            <p className="mt-0.5 text-sm text-emerald-50/80">
+              These details appear on every printed receipt
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">

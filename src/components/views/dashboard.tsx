@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AnimatedNumber } from "@/components/animated-number";
 
 /* ---------- helpers ---------- */
 
@@ -486,6 +487,8 @@ export function Dashboard({
   const kpis: {
     label: string;
     value: string;
+    numericValue: number;
+    decimals: number;
     icon: typeof TrendingUp;
     tint: string;
     subtitle: string;
@@ -496,6 +499,8 @@ export function Dashboard({
     {
       label: "Today's Revenue",
       value: formatMoney(stats?.totalSales ?? 0, currency),
+      numericValue: stats?.totalSales ?? 0,
+      decimals: 2,
       icon: TrendingUp,
       tint: "bg-emerald-500/15 text-emerald-600",
       subtitle: `from ${stats?.transactionCount ?? 0} sales`,
@@ -505,6 +510,8 @@ export function Dashboard({
     {
       label: "Inventory Value",
       value: formatMoney(inventoryValue, currency),
+      numericValue: inventoryValue,
+      decimals: 2,
       icon: Boxes,
       tint: "bg-amber-500/15 text-amber-600",
       subtitle: `${products.length} products`,
@@ -513,6 +520,8 @@ export function Dashboard({
     {
       label: "Low Stock Alerts",
       value: String(lowStockCount),
+      numericValue: lowStockCount,
+      decimals: 0,
       icon: AlertTriangle,
       tint: "bg-orange-500/15 text-orange-600",
       subtitle: `${outOfStockCount} out of stock`,
@@ -522,6 +531,8 @@ export function Dashboard({
     {
       label: "Avg Ticket",
       value: formatMoney(stats?.avgTicket ?? 0, currency),
+      numericValue: stats?.avgTicket ?? 0,
+      decimals: 2,
       icon: Receipt,
       tint: "bg-slate-500/15 text-slate-600",
       subtitle: "per transaction today",
@@ -590,7 +601,13 @@ export function Dashboard({
                     <Skeleton className="mt-2 h-7 w-24" />
                   ) : (
                     <p className="mt-1 text-2xl font-bold tracking-tight tabular-nums sm:text-3xl">
-                      {kpi.value}
+                      <AnimatedNumber
+                        value={kpi.numericValue}
+                        decimals={kpi.decimals}
+                        prefix={
+                          kpi.decimals > 0 ? currency : undefined
+                        }
+                      />
                     </p>
                   )}
                   <p className="mt-1 text-xs text-muted-foreground">

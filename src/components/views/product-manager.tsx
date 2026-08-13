@@ -327,6 +327,28 @@ export function ProductManager() {
 
   return (
     <div className="space-y-6">
+      {/* Gradient page header */}
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-emerald-600 to-teal-700 p-5 text-white shadow-lg sm:p-6">
+        <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+        <div className="relative flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight drop-shadow-sm sm:text-xl">
+              Inventory Management
+            </h2>
+            <p className="mt-0.5 text-sm text-emerald-50/80">
+              {stats.total} products · {formatMoney(stats.totalValue, "₹")} stock value
+            </p>
+          </div>
+          <Button
+            onClick={openAdd}
+            className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+          >
+            <Plus className="h-4 w-4" />
+            Add Product
+          </Button>
+        </div>
+      </div>
+
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {statCards.map((s, i) => {
