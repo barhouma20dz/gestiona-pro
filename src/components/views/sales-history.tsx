@@ -45,6 +45,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Receipt as ReceiptComponent } from "@/components/receipt";
+import { AnimatedNumber } from "@/components/animated-number";
 
 /* ---------- helpers ---------- */
 
@@ -357,6 +358,9 @@ export function SalesHistory() {
     {
       label: "Today's Revenue",
       value: formatMoney(stats?.totalSales ?? 0, currency),
+      numericValue: stats?.totalSales ?? 0,
+      decimals: 2,
+      prefix: currency,
       icon: TrendingUp,
       tint: "bg-emerald-500/15 text-emerald-600",
       big: true,
@@ -364,18 +368,27 @@ export function SalesHistory() {
     {
       label: "Transactions",
       value: String(stats?.transactionCount ?? 0),
+      numericValue: stats?.transactionCount ?? 0,
+      decimals: 0,
+      prefix: undefined,
       icon: Receipt,
       tint: "bg-emerald-500/15 text-emerald-600",
     },
     {
       label: "Items Sold",
       value: String(stats?.itemsSold ?? 0),
+      numericValue: stats?.itemsSold ?? 0,
+      decimals: 0,
+      prefix: undefined,
       icon: Package,
       tint: "bg-amber-500/15 text-amber-600",
     },
     {
       label: "Avg Ticket",
       value: formatMoney(stats?.avgTicket ?? 0, currency),
+      numericValue: stats?.avgTicket ?? 0,
+      decimals: 2,
+      prefix: currency,
       icon: Calculator,
       tint: "bg-slate-500/15 text-slate-600",
     },
@@ -437,7 +450,7 @@ export function SalesHistory() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05, duration: 0.25 }}
             >
-              <Card className="p-4 sm:p-5">
+              <Card className="p-4 sm:p-5 transition-shadow hover:shadow-md">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-muted-foreground">
@@ -445,11 +458,19 @@ export function SalesHistory() {
                     </p>
                     <p
                       className={cn(
-                        "mt-1 font-bold tracking-tight",
+                        "mt-1 font-bold tracking-tight tabular-nums",
                         s.big ? "text-2xl sm:text-3xl" : "text-xl sm:text-2xl"
                       )}
                     >
-                      {s.value}
+                      {statsQuery.isLoading ? (
+                        "—"
+                      ) : (
+                        <AnimatedNumber
+                          value={s.numericValue}
+                          decimals={s.decimals}
+                          prefix={s.prefix}
+                        />
+                      )}
                     </p>
                   </div>
                   <div
