@@ -63,6 +63,17 @@ export async function PUT(
       data.price = price;
     }
 
+    if (body?.costPrice !== undefined) {
+      const costPrice = Number(body.costPrice);
+      if (Number.isNaN(costPrice) || costPrice < 0) {
+        return NextResponse.json(
+          { error: "Cost price must be a number >= 0" },
+          { status: 400 }
+        );
+      }
+      data.costPrice = costPrice;
+    }
+
     if (body?.stock !== undefined) {
       const stock = Number(body.stock);
       if (Number.isNaN(stock) || stock < 0) {

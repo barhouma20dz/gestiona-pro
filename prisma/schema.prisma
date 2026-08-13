@@ -15,6 +15,7 @@ model Product {
   name      String
   barcode   String   @unique
   price     Float
+  costPrice Float    @default(0) // purchase cost for profit margin calculation
   stock     Int      @default(0)
   category  String   @default("General")
   createdAt DateTime @default(now())

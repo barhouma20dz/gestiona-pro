@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import type { Shop, Sale } from "@/lib/types";
 import { formatDateTime, formatMoney } from "@/lib/format";
 
@@ -8,23 +9,39 @@ interface ReceiptProps {
   shop: Shop;
   sale: Sale;
   className?: string;
+  size?: "80mm" | "58mm";
+  showQr?: boolean;
 }
 
 /**
- * Print-optimized thermal-style receipt (80mm).
+ * Print-optimized thermal-style receipt.
+ * Supports 80mm (default) and 58mm paper widths.
+ * Optionally renders a QR code linking to a digital receipt payload.
  * Use `window.print()` to print — CSS hides everything except `.print-receipt`.
  */
 export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
-  function Receipt({ shop, sale, className }, ref) {
+  function Receipt({ shop, sale, className, size = "80mm", showQr = true }, ref) {
     const currency = shop.currency || "₹";
+    const is58 = size === "58mm";
+    const width = is58 ? 220 : 300;
+    const padding = is58 ? "p-4" : "p-5";
+    const fontBase = is58 ? "text-[11px]" : "text-[12px]";
+    const titleSize = is58 ? "text-sm" : "text-base";
+
+    // Digital receipt QR payload — encodes receipt summary as a URL fragment
+    const qrData = `swiftbill://receipt/${sale.id}?no=${encodeURIComponent(
+      sale.receiptNo
+    )}&total=${sale.total.toFixed(2)}&items=${sale.itemCount}`;
+
     return (
       <div
         ref={ref}
-        className={`print-receipt mx-auto w-[300px] bg-white p-5 font-mono text-[12px] leading-relaxed text-black ${className ?? ""}`}
+        className={`print-receipt mx-auto bg-white ${padding} font-mono ${fontBase} leading-relaxed text-black ${className ?? ""}`}
+        style={{ width: `${width}px` }}
       >
         {/* Header */}
         <div className="text-center">
-          <p className="text-base font-bold uppercase tracking-wide">
+          <p className={`${titleSize} font-bold uppercase tracking-wide`}>
             {shop.name || "My Store"}
           </p>
           {shop.addressLine1 && <p>{shop.addressLine1}</p>}
@@ -91,6 +108,23 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         </div>
 
         <div className="my-2 border-t border-dashed border-black/40" />
+
+        {/* QR code (digital receipt) */}
+        {showQr && (
+          <div className="flex flex-col items-center gap-1 pb-2">
+            <div className="rounded bg-white p-1">
+              <QRCodeSVG
+                value={qrData}
+                size={is58 ? 72 : 84}
+                level="M"
+                includeMargin={false}
+              />
+            </div>
+            <p className="text-center text-[9px] text-black/60">
+              Scan for digital receipt
+            </p>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="text-center">

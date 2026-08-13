@@ -103,6 +103,7 @@ export function SalesHistory() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptSize, setReceiptSize] = useState<"80mm" | "58mm">("80mm");
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "7d" | "30d">(
     "all"
   );
@@ -594,6 +595,7 @@ export function SalesHistory() {
               <ReceiptComponent
                 shop={shop}
                 sale={saleDetailQuery.data}
+                size={receiptSize}
                 className="bg-white"
               />
             ) : (
@@ -601,6 +603,27 @@ export function SalesHistory() {
                 Could not load receipt.
               </div>
             )}
+          </div>
+
+          {/* Size toggle */}
+          <div className="no-print flex items-center justify-center gap-2">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Paper:
+            </span>
+            {(["80mm", "58mm"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setReceiptSize(s)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                  receiptSize === s
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-card text-muted-foreground hover:bg-accent"
+                )}
+              >
+                {s}
+              </button>
+            ))}
           </div>
 
           <DialogFooter className="gap-2 no-print sm:justify-between">
