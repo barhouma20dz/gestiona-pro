@@ -694,3 +694,72 @@ Task: QA + implement 2 new features (custom item keypad, profit margin report)
 - Avoid schema changes (Prisma client regeneration) unless necessary — they require a full process restart.
 
 Project Status: STABLE & ENHANCED (round 6) — 2 new features added (custom item keypad, profit margin report). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+
+---
+Task ID: 17
+Agent: webDevReview cron (round 7)
+Task: QA + implement 3 new features (tax summary, category breakdown, gradient hero header)
+
+## Current project status / assessment
+- Project was stable & enhanced after round 6 (custom item keypad, profit margin report).
+- QA at start: dev server up (200), lint clean, no console/runtime errors, all views render.
+- No bugs found — proceeded to implement next-phase recommendations.
+- All changes are frontend-only (no schema changes, no dev server restart needed).
+
+## Current goals / completed modifications / verification results
+
+### Work Log:
+- Reviewed worklog.md (Tasks 3-16) — understood project state.
+- Performed QA via agent-browser: loaded app, no errors, lint clean.
+
+**1. Tax Summary report** (Sales History)
+- Updated `src/components/views/sales-history.tsx`:
+  * New `taxSummary` useMemo: iterates filtered sales to compute taxable amount (max(0, subtotal - discount)), tax collected (sum of taxAmount), effective rate (taxCollected / taxable × 100).
+  * New "Tax Summary" Card (left column of two-column grid): shows Taxable amount, Tax collected (amber), Effective tax rate (amber, bold), progress bar (scaled ×5 for visibility), and contextual hint text ("No tax configured — set a tax rate in Shop Details" when rate < 0.01, or "X% average applied to taxable sales" otherwise).
+  * Only renders when sales.length > 0. Reflects current date/payment filters.
+
+**2. Category Breakdown report** (Sales History)
+- New `categoryBreakdown` useMemo: builds productName→{costPrice, category} maps from products, aggregates sale items by category (revenue, cost, qty), computes profit, sorts by revenue desc.
+- New "Category Breakdown" Card (right column): lists each category with qty sold + revenue (emerald), and a proportional emerald progress bar (width = category revenue / top category revenue × 100).
+- Empty state when no category data for current filters.
+- Only renders when sales.length > 0. Reflects current date/payment filters.
+
+**3. Gradient hero header** (Dashboard styling polish)
+- Updated `src/components/views/dashboard.tsx` welcome header:
+  * Replaced flat layout with a gradient hero banner: `bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700` with white text, rounded-2xl, shadow-lg.
+  * Decorative blurred circles (white/10, white/5) for depth.
+  * "New Sale" button: white background with emerald text (high contrast on gradient).
+  * "Add Product" button: outline style with white border/text, translucent bg.
+  * Drop-shadow on the shop name headline.
+  * Skeleton uses bg-white/20 while loading.
+- VLM confirmed: "prominent emerald-to-green gradient hero banner" with "solid white New Sale button" + "transparent outline Add Product button" + "subtle decorative blur effect".
+
+### Verification results:
+- `bun run lint`: clean (exit 0).
+- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+- agent-browser QA:
+  * Tax Summary: renders with Taxable ₹670, Tax collected ₹0, Effective rate 0.00%, "No tax configured" hint, amber progress bar (VLM confirmed).
+  * Category Breakdown: renders Beverages (5 sold, ₹660, long green bar) + Snacks (1 sold, ₹20, short green bar) (VLM confirmed).
+  * Gradient hero header: emerald-to-teal gradient with white text, white New Sale button + outline Add Product button, decorative blur (VLM confirmed "visually striking header").
+  * No console errors throughout testing.
+
+## Unresolved issues / risks, and priority recommendations for the next phase
+
+### Files modified this round:
+- `src/components/views/sales-history.tsx` — tax summary + category breakdown (useMemo + 2 cards in two-column grid)
+- `src/components/views/dashboard.tsx` — gradient hero header (replaced flat welcome section)
+
+### Recommendations for next round:
+1. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support, configurable low-stock threshold.
+2. **Product Manager**: bulk CSV import, barcode generation/printing.
+3. **POS Terminal**: customer display mode for dual-screen setups.
+4. **Reports**: export profit/tax/category report to PDF, daily/weekly/monthly comparison.
+5. **Dashboard**: customer return rate metric, inventory turnover ratio, gradient headers on other views.
+6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+7. **Receipt**: email receipt option, receipt logo upload, multiple copies option.
+8. **Styling**: gradient headers on Sales/Products/Settings views, improved table row hover effects, animated KPI count-up.
+
+### Note on dev server:
+- Dev server is running (PIDs 14482/14483). If unresponsive, run `cd /home/z/my-project && (bun run dev &)` to restart.
+
+Project Status: STABLE & ENHANCED (round 7) — 3 new features added (tax summary report, category breakdown report, gradient hero header). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.

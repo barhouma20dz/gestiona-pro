@@ -531,31 +531,42 @@ export function Dashboard({
 
   return (
     <div className="space-y-6">
-      {/* 1. Welcome header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">Welcome back</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
-            {shopQuery.isLoading ? (
-              <Skeleton className="h-8 w-48" />
-            ) : (
-              shop?.name ?? "SwiftBill POS"
-            )}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{fullDate}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            onClick={() => onNavigate("pos")}
-            className="bg-emerald-600 text-white hover:bg-emerald-700"
-          >
-            <ScanLine className="h-4 w-4" />
-            New Sale
-          </Button>
-          <Button variant="outline" onClick={() => onNavigate("products")}>
-            <Plus className="h-4 w-4" />
-            Add Product
-          </Button>
+      {/* 1. Welcome header — gradient hero */}
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 p-6 text-white shadow-lg sm:p-8">
+        {/* Decorative circles */}
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
+        <div className="pointer-events-none absolute -bottom-20 -left-10 h-40 w-40 rounded-full bg-white/5 blur-2xl" />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-emerald-50/90">
+              Welcome back
+            </p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight drop-shadow-sm sm:text-3xl">
+              {shopQuery.isLoading ? (
+                <Skeleton className="h-8 w-48 bg-white/20" />
+              ) : (
+                shop?.name ?? "SwiftBill POS"
+              )}
+            </h1>
+            <p className="mt-1.5 text-sm text-emerald-50/80">{fullDate}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              onClick={() => onNavigate("pos")}
+              className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+            >
+              <ScanLine className="h-4 w-4" />
+              New Sale
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => onNavigate("products")}
+              className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            >
+              <Plus className="h-4 w-4" />
+              Add Product
+            </Button>
+          </div>
         </div>
       </div>
 
