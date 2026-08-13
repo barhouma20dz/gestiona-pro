@@ -190,6 +190,50 @@ export function SalesHistory() {
     return { revenue, cost, profit, margin, discountTotal };
   }, [sales, products]);
 
+  // Tax summary: total tax collected + taxable amount + effective rate
+  const taxSummary = useMemo(() => {
+    let taxable = 0;
+    let taxCollected = 0;
+    sales.forEach((sale) => {
+      taxable += Math.max(0, sale.subtotal - sale.discount);
+      taxCollected += sale.taxAmount;
+    });
+    const effectiveRate = taxable > 0 ? (taxCollected / taxable) * 100 : 0;
+    return { taxable, taxCollected, effectiveRate };
+  }, [sales]);
+
+  // Category breakdown: revenue + profit by product category
+  const categoryBreakdown = useMemo(() => {
+    const costMap = new Map<string, number>();
+    const catMap = new Map<string, string>();
+    products.forEach((p) => {
+      costMap.set(p.name, p.costPrice ?? 0);
+      catMap.set(p.name, p.category);
+    });
+    const agg = new Map<
+      string,
+      { revenue: number; cost: number; qty: number }
+    >();
+    sales.forEach((sale) => {
+      sale.items.forEach((item) => {
+        const cat = catMap.get(item.productName) ?? "Uncategorized";
+        const unitCost = costMap.get(item.productName) ?? 0;
+        const existing = agg.get(cat) ?? { revenue: 0, cost: 0, qty: 0 };
+        existing.revenue += item.total;
+        existing.cost += unitCost * item.quantity;
+        existing.qty += item.quantity;
+        agg.set(cat, existing);
+      });
+    });
+    return Array.from(agg.entries())
+      .map(([category, data]) => ({
+        category,
+        ...data,
+        profit: data.revenue - data.cost,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [sales, products]);
+
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ["sales"] });
     qc.invalidateQueries({ queryKey: ["salesStats"] });
@@ -479,6 +523,121 @@ export function SalesHistory() {
             </div>
           </div>
         </Card>
+      )}
+
+      {/* Tax + Category breakdown (two-column) */}
+      {sales.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* Tax Summary */}
+          <Card className="gap-0 p-4 sm:p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold">Tax Summary</h3>
+                <p className="text-xs text-muted-foreground">
+                  Tax collected from {sales.length} sale
+                  {sales.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              <Receipt className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">
+                  Taxable amount
+                </span>
+                <span className="text-sm font-semibold tabular-nums">
+                  {formatMoney(taxSummary.taxable, currency)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">
+                  Tax collected
+                </span>
+                <span className="text-sm font-semibold tabular-nums text-amber-600">
+                  {formatMoney(taxSummary.taxCollected, currency)}
+                </span>
+              </div>
+              <div className="h-px bg-border" />
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Effective tax rate
+                </span>
+                <span className="text-base font-bold tabular-nums text-amber-600">
+                  {taxSummary.effectiveRate.toFixed(2)}%
+                </span>
+              </div>
+              {/* Tax rate bar */}
+              <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="bg-amber-500"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.max(2, taxSummary.effectiveRate * 5)
+                    )}%`,
+                  }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {taxSummary.effectiveRate < 0.01
+                  ? "No tax configured — set a tax rate in Shop Details."
+                  : `${taxSummary.effectiveRate.toFixed(
+                      2
+                    )}% average applied to taxable sales.`}
+              </p>
+            </div>
+          </Card>
+
+          {/* Category Breakdown */}
+          <Card className="gap-0 p-4 sm:p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold">
+                  Category Breakdown
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Revenue & profit by category
+                </p>
+              </div>
+              <Package className="h-4 w-4 text-muted-foreground" />
+            </div>
+            {categoryBreakdown.length === 0 ? (
+              <p className="py-6 text-center text-xs text-muted-foreground">
+                No category data for the current filters.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {categoryBreakdown.map((cat) => {
+                  const maxRev = categoryBreakdown[0]?.revenue || 1;
+                  const barWidth = (cat.revenue / maxRev) * 100;
+                  return (
+                    <div key={cat.category} className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium">
+                          {cat.category}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground tabular-nums">
+                            {cat.qty} sold
+                          </span>
+                          <span className="text-sm font-semibold tabular-nums text-emerald-600">
+                            {formatMoney(cat.revenue, currency)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="bg-emerald-500"
+                          style={{ width: `${Math.max(2, barWidth)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </div>
       )}
 
       {/* Sales table */}
