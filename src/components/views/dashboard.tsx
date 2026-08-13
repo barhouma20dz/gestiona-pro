@@ -19,6 +19,7 @@ import {
   ShoppingCart,
   Trophy,
   PieChart,
+  Clock,
 } from "lucide-react";
 
 import { productsApi, salesApi, shopApi } from "@/lib/api";
@@ -454,6 +455,23 @@ export function Dashboard({
       percent: total > 0 ? (data.count / total) * 100 : 0,
     }));
   }, [sales]);
+
+  // Sales by hour (last 7 days, 24 buckets) for the heatmap
+  const hourlyBuckets = useMemo(() => {
+    const buckets = new Array(24).fill(0) as number[];
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    sales.forEach((sale) => {
+      const d = new Date(sale.createdAt);
+      if (d >= cutoff) {
+        buckets[d.getHours()] += sale.total;
+      }
+    });
+    return buckets;
+  }, [sales]);
+  const maxHourly = Math.max(1, ...hourlyBuckets);
+  const peakHour = hourlyBuckets.indexOf(Math.max(...hourlyBuckets));
+  const totalHourly = hourlyBuckets.reduce((a, b) => a + b, 0);
 
   /* greeting */
   const now = new Date();
@@ -999,6 +1017,87 @@ export function Dashboard({
           )}
         </Card>
       </div>
+
+      {/* 3.75. Sales by Hour Heatmap */}
+      <Card className="gap-0 p-0">
+        <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
+          <div>
+            <h2 className="text-sm font-semibold">Sales by Hour</h2>
+            <p className="text-xs text-muted-foreground">
+              Last 7 days · {formatMoney(totalHourly, currency)} total
+              {peakHour > 0 && totalHourly > 0 && (
+                <>
+                  {" · "}
+                  <span className="font-medium text-emerald-600">
+                    Peak at {peakHour}:00
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
+          <Clock className="h-4 w-4 text-muted-foreground" />
+        </div>
+
+        {salesQuery.isLoading ? (
+          <div className="px-4 py-8 sm:px-6">
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : totalHourly === 0 ? (
+          <div className="flex flex-col items-center gap-3 px-4 py-12 text-center sm:px-6">
+            <div className="grid size-12 place-items-center rounded-full bg-slate-500/10 text-slate-500">
+              <Clock className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">No hourly data yet</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Sales by hour will appear here as you make sales.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="px-4 py-5 sm:px-6">
+            {/* Heatmap bars: 24 hours */}
+            <div className="flex items-end gap-[3px] sm:gap-1" style={{ height: "120px" }}>
+              {hourlyBuckets.map((value, hour) => {
+                const pct = (value / maxHourly) * 100;
+                const hasSales = value > 0;
+                const isPeak = hour === peakHour && hasSales;
+                return (
+                  <div
+                    key={hour}
+                    className="group relative flex flex-1 flex-col items-center justify-end"
+                    style={{ height: "100%" }}
+                    title={`${hour}:00 — ${hour + 1}:00 · ${formatMoney(
+                      value,
+                      currency
+                    )}`}
+                  >
+                    <div
+                      className={cn(
+                        "w-full rounded-t-sm transition-all",
+                        isPeak
+                          ? "bg-emerald-500"
+                          : hasSales
+                          ? "bg-emerald-500/40 hover:bg-emerald-500/60"
+                          : "bg-muted"
+                      )}
+                      style={{ height: `${Math.max(2, pct)}%` }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            {/* Hour labels */}
+            <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
+              <span>0h</span>
+              <span>6h</span>
+              <span>12h</span>
+              <span>18h</span>
+              <span>23h</span>
+            </div>
+          </div>
+        )}
+      </Card>
 
       {/* 4. Quick actions */}
       <div>

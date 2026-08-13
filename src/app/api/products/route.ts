@@ -27,6 +27,10 @@ export async function POST(request: Request) {
     const barcode =
       typeof body?.barcode === "string" ? body.barcode.trim() : "";
     const price = Number(body?.price);
+    const costPrice =
+      body?.costPrice === undefined || body?.costPrice === null
+        ? 0
+        : Number(body?.costPrice);
     const stock =
       body?.stock === undefined || body?.stock === null
         ? 0
@@ -55,6 +59,12 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    if (Number.isNaN(costPrice) || costPrice < 0) {
+      return NextResponse.json(
+        { error: "Cost price must be a number >= 0" },
+        { status: 400 }
+      );
+    }
     if (Number.isNaN(stock) || stock < 0) {
       return NextResponse.json(
         { error: "Stock must be an integer >= 0" },
@@ -76,6 +86,7 @@ export async function POST(request: Request) {
         name,
         barcode,
         price,
+        costPrice,
         stock: Math.floor(stock),
         category,
       } satisfies Prisma.ProductCreateInput,

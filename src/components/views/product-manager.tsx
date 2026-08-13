@@ -16,6 +16,7 @@ import {
   ScanLine,
   X,
   Copy,
+  TrendingUp,
 } from "lucide-react";
 
 import { productsApi } from "@/lib/api";
@@ -101,6 +102,7 @@ interface FormState {
   name: string;
   barcode: string;
   price: string;
+  costPrice: string;
   stock: string;
   category: string;
 }
@@ -109,6 +111,7 @@ const emptyForm: FormState = {
   name: "",
   barcode: "",
   price: "",
+  costPrice: "0",
   stock: "0",
   category: "General",
 };
@@ -118,6 +121,7 @@ function toForm(p: Product): FormState {
     name: p.name,
     barcode: p.barcode,
     price: String(p.price),
+    costPrice: String(p.costPrice ?? 0),
     stock: String(p.stock),
     category: p.category,
   };
@@ -149,11 +153,21 @@ export function ProductManager() {
   const stats = useMemo(() => {
     const list = products ?? [];
     const totalValue = list.reduce((sum, p) => sum + p.price * p.stock, 0);
+    const totalCost = list.reduce(
+      (sum, p) => sum + (p.costPrice ?? 0) * p.stock,
+      0
+    );
+    const potentialProfit = totalValue - totalCost;
+    const avgMargin =
+      totalValue > 0 ? (potentialProfit / totalValue) * 100 : 0;
     const lowStock = list.filter((p) => p.stock >= 1 && p.stock <= 5).length;
     const outStock = list.filter((p) => p.stock === 0).length;
     return {
       total: list.length,
       totalValue,
+      totalCost,
+      potentialProfit,
+      avgMargin,
       lowStock,
       outStock,
     };
@@ -253,6 +267,9 @@ export function ProductManager() {
     const price = Number(form.price);
     if (form.price === "" || Number.isNaN(price) || price < 0)
       errs.price = "Price must be 0 or more";
+    const costPrice = Number(form.costPrice);
+    if (form.costPrice === "" || Number.isNaN(costPrice) || costPrice < 0)
+      errs.costPrice = "Cost must be 0 or more";
     const stock = Number(form.stock);
     if (form.stock === "" || Number.isNaN(stock) || stock < 0)
       errs.stock = "Stock must be 0 or more";
@@ -267,6 +284,7 @@ export function ProductManager() {
       name: form.name.trim(),
       barcode: form.barcode.trim(),
       price: Number(form.price),
+      costPrice: Number(form.costPrice),
       stock: Number(form.stock),
       category: form.category.trim() || "General",
     };
@@ -293,16 +311,17 @@ export function ProductManager() {
       tint: "bg-emerald-500/15 text-emerald-600",
     },
     {
-      label: "Low Stock",
-      value: String(stats.lowStock),
-      icon: AlertTriangle,
-      tint: "bg-amber-500/15 text-amber-600",
+      label: "Potential Profit",
+      value: formatMoney(stats.potentialProfit, "₹"),
+      sub: `${stats.avgMargin.toFixed(1)}% avg margin`,
+      icon: TrendingUp,
+      tint: "bg-emerald-500/15 text-emerald-600",
     },
     {
-      label: "Out of Stock",
-      value: String(stats.outStock),
-      icon: PackageX,
-      tint: "bg-red-500/15 text-red-600",
+      label: "Low / Out of Stock",
+      value: `${stats.lowStock} / ${stats.outStock}`,
+      icon: AlertTriangle,
+      tint: "bg-amber-500/15 text-amber-600",
     },
   ];
 
@@ -328,6 +347,11 @@ export function ProductManager() {
                     <p className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">
                       {s.value}
                     </p>
+                    {s.sub && (
+                      <p className="mt-0.5 text-[11px] font-medium text-emerald-600">
+                        {s.sub}
+                      </p>
+                    )}
                   </div>
                   <div
                     className={cn(
@@ -586,9 +610,9 @@ export function ProductManager() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
-                <Label htmlFor="p-price">Price</Label>
+                <Label htmlFor="p-price">Selling Price</Label>
                 <div className="relative">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                     ₹
@@ -612,6 +636,30 @@ export function ProductManager() {
                 )}
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="p-cost">Cost Price</Label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    ₹
+                  </span>
+                  <Input
+                    id="p-cost"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    inputMode="decimal"
+                    value={form.costPrice}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, costPrice: e.target.value }))
+                    }
+                    placeholder="0.00"
+                    className="pl-7 tabular-nums"
+                  />
+                </div>
+                {formErrors.costPrice && (
+                  <p className="text-xs text-red-600">{formErrors.costPrice}</p>
+                )}
+              </div>
+              <div className="col-span-2 space-y-1.5 sm:col-span-1">
                 <Label htmlFor="p-stock">Stock</Label>
                 <Input
                   id="p-stock"
@@ -630,6 +678,44 @@ export function ProductManager() {
                 )}
               </div>
             </div>
+
+            {/* Live profit margin indicator */}
+            {Number(form.price) > 0 && Number(form.costPrice) >= 0 && (
+              <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">Profit margin:</span>
+                {(() => {
+                  const price = Number(form.price);
+                  const cost = Number(form.costPrice);
+                  const profit = price - cost;
+                  const margin = price > 0 ? (profit / price) * 100 : 0;
+                  const positive = profit >= 0;
+                  return (
+                    <>
+                      <span
+                        className={cn(
+                          "font-semibold tabular-nums",
+                          positive ? "text-emerald-600" : "text-red-600"
+                        )}
+                      >
+                        {positive ? "+" : ""}
+                        {formatMoney(profit, "₹")} ({margin.toFixed(1)}%)
+                      </span>
+                      <div className="ml-auto h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={cn(
+                            "h-full rounded-full",
+                            positive ? "bg-emerald-500" : "bg-red-500"
+                          )}
+                          style={{
+                            width: `${Math.min(100, Math.max(0, Math.abs(margin)))}%`,
+                          }}
+                        />
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="p-category">Category</Label>

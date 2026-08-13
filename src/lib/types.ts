@@ -5,6 +5,7 @@ export interface Product {
   name: string;
   barcode: string;
   price: number;
+  costPrice: number;
   stock: number;
   category: string;
   createdAt: string;
@@ -15,6 +16,7 @@ export interface NewProduct {
   name: string;
   barcode: string;
   price: number;
+  costPrice?: number;
   stock: number;
   category?: string;
 }
