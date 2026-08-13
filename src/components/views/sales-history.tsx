@@ -858,27 +858,31 @@ export function SalesHistory() {
                 </TableRow>
               ) : (
                 sales.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="pl-6">
-                      <span className="font-mono text-[13px] font-medium">
+                  <TableRow
+                    key={s.id}
+                    className="group transition-colors hover:bg-emerald-500/5"
+                  >
+                    <TableCell className="pl-6 py-3.5">
+                      <span className="font-mono text-[13px] font-medium transition-colors group-hover:text-primary">
                         {s.receiptNo}
                       </span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="py-3.5 text-muted-foreground">
                       {formatDateTime(s.createdAt)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="py-3.5 text-right tabular-nums">
                       {s.itemCount}
                     </TableCell>
-                    <TableCell>{paymentBadge(s.paymentMethod)}</TableCell>
-                    <TableCell className="text-right font-bold tabular-nums">
+                    <TableCell className="py-3.5">{paymentBadge(s.paymentMethod)}</TableCell>
+                    <TableCell className="py-3.5 text-right font-bold tabular-nums transition-colors group-hover:text-primary">
                       {formatMoney(s.total, currency)}
                     </TableCell>
-                    <TableCell className="pr-6 text-right">
+                    <TableCell className="pr-6 py-3.5 text-right">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => openReceipt(s.id)}
+                        className="transition-all group-hover:border-primary/40 group-hover:text-primary"
                       >
                         <Eye className="h-4 w-4" />
                         View
