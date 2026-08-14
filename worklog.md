@@ -1116,3 +1116,36 @@ Task: Fix mobile sidebar to open from right + add currency selector in Settings
   * No console errors.
 
 Project Status: Arabic RTL sidebar fixed + currency selector working. All verified via agent-browser.
+
+---
+Task ID: AR-3
+Agent: orchestrator (currency sync fix)
+Task: Fix currency not updating in Product Manager view
+
+## Work Log:
+- User reported currency change not reflecting in all views.
+- Investigation: Dashboard, POS Terminal, Sales History, Shop Details all used `shop.currency` dynamically. Product Manager was using hardcoded `"₹"` in 6 places.
+- Fixed `src/components/views/product-manager.tsx`:
+  * Added `shopApi` import + `useQuery({ queryKey: ["shop"] })` to fetch shop data.
+  * Added `const currency = shop?.currency ?? "₹";`.
+  * Replaced all 6 hardcoded `"₹"` with `currency`:
+    - `formatMoney(stats.totalValue, "₹")` → `currency`
+    - `formatMoney(stats.potentialProfit, "₹")` → `currency`
+    - `formatMoney(stats.totalValue, "₹")` in header subtitle → `currency`
+    - `formatMoney(p.price, "₹")` × 2 (desktop table + mobile card) → `currency`
+    - `formatMoney(profit, "₹")` in profit margin indicator → `currency`
+    - Two `₹` symbols in price/cost input field prefixes → `{currency}`
+
+## Verification results:
+- `bun run lint`: clean (exit 0).
+- agent-browser QA:
+  * Changed currency to $ → Products page showed $45.00, $480.00, $90,738.00 ✅
+  * Changed currency to د.ج → ALL views updated:
+    - Dashboard: د.ج507.00, د.ج90,738.00 ✅
+    - POS Terminal: د.ج45.00, د.ج480.00 ✅
+    - Products: د.ج90,738.00, د.ج20,922.00 ✅
+    - Sales History: د.ج507.00, د.ج1,177.00 ✅
+    - Shop Details: د.ج45.00, د.ج120.00 ✅
+  * No console errors.
+
+Project Status: Currency now updates in ALL views automatically when changed in Settings. Bug was Product Manager using hardcoded ₹ — now fixed.
