@@ -1,6 +1,22 @@
 // API client helpers for SwiftBill POS
 
-import type { Product, NewProduct, Shop, Sale, DailyStats } from "./types";
+import type {
+  Product,
+  NewProduct,
+  Shop,
+  Sale,
+  DailyStats,
+  Supplier,
+  NewSupplier,
+  SupplierInvoice,
+  NewSupplierInvoice,
+  ExpiryData,
+  SubscriptionInfo,
+  AdminStats,
+  AdminStore,
+  LicenseKey,
+  SubscriptionPlan,
+} from "./types";
 
 async function request<T>(
   url: string,
@@ -63,4 +79,96 @@ export const salesApi = {
       body: JSON.stringify(data),
     }),
   stats: () => request<DailyStats>("/api/sales/stats"),
+};
+
+/* ---------------- Suppliers ---------------- */
+export const suppliersApi = {
+  list: () => request<Supplier[]>("/api/suppliers"),
+  create: (data: NewSupplier) =>
+    request<Supplier>("/api/suppliers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<NewSupplier>) =>
+    request<Supplier>(`/api/suppliers/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<void>(`/api/suppliers/${id}`, { method: "DELETE" }),
+  invoices: (id: string) =>
+    request<{ supplier: { id: string; name: string }; invoices: SupplierInvoice[] }>(
+      `/api/suppliers/${id}/invoices`
+    ),
+};
+
+/* ---------------- Supplier Invoices ---------------- */
+export const supplierInvoicesApi = {
+  list: () => request<SupplierInvoice[]>("/api/supplier-invoices"),
+  create: (data: NewSupplierInvoice) =>
+    request<SupplierInvoice>("/api/supplier-invoices", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  get: (id: string) => request<SupplierInvoice>(`/api/supplier-invoices/${id}`),
+  update: (
+    id: string,
+    data: Partial<{
+      invoiceNo: string;
+      paidAmount: number;
+      status: "PAID" | "PARTIAL" | "UNPAID";
+      notes: string;
+    }>
+  ) =>
+    request<SupplierInvoice>(`/api/supplier-invoices/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<void>(`/api/supplier-invoices/${id}`, { method: "DELETE" }),
+};
+
+/* ---------------- Expiry tracking ---------------- */
+export const expiryApi = {
+  list: () => request<ExpiryData>("/api/products/expiry"),
+};
+
+/* ---------------- Subscription (current store) ---------------- */
+export const subscriptionApi = {
+  get: () => request<SubscriptionInfo>("/api/subscription"),
+  activate: (key: string) =>
+    request<{
+      message: string;
+      subscription: SubscriptionInfo["subscription"];
+      plan: SubscriptionPlan;
+      durationDays: number;
+    }>("/api/subscription/activate", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    }),
+};
+
+/* ---------------- Super Admin ---------------- */
+export const adminApi = {
+  stats: () => request<AdminStats>("/api/admin/stats"),
+  stores: () => request<AdminStore[]>("/api/admin/stores"),
+  generateLicense: (plan: SubscriptionPlan) =>
+    request<{
+      id: string;
+      key: string;
+      signature: string;
+      plan: SubscriptionPlan;
+      durationDays: number;
+      status: string;
+      createdAt: string;
+    }>("/api/admin/licenses", {
+      method: "POST",
+      body: JSON.stringify({ plan }),
+    }),
+  licenses: () => request<LicenseKey[]>("/api/admin/licenses"),
+  suspendStore: (id: string) =>
+    request<{ id: string; name: string; status: string; message: string }>(
+      `/api/admin/stores/${id}/suspend`,
+      { method: "POST" }
+    ),
 };

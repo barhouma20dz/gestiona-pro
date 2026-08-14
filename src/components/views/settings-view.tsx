@@ -5,23 +5,29 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
+  CalendarClock,
+  CheckCircle2,
   Database,
   Download,
   Info,
+  KeyRound,
   Loader2,
   Printer,
   Save,
   Settings as SettingsIcon,
   ShieldAlert,
+  ShieldCheck,
   Store,
   Tag,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { productsApi, shopApi } from "@/lib/api";
+import { productsApi, shopApi, subscriptionApi } from "@/lib/api";
+import type { Product, Shop, SubscriptionInfo } from "@/lib/types";
 import { initialsOf } from "@/lib/format";
-import type { Product, Shop } from "@/lib/types";
+import { formatDate } from "@/lib/format";
 import { useLanguage } from "@/lib/language-context";
+import type { TranslationKey } from "@/lib/i18n";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +38,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -73,6 +80,35 @@ export function SettingsView() {
     queryKey: ["shop"],
     queryFn: shopApi.get,
   });
+  const { data: subscription, isLoading: subLoading } = useQuery({
+    queryKey: ["subscription"],
+    queryFn: subscriptionApi.get,
+  });
+  const [licenseKey, setLicenseKey] = useState("");
+
+  const activateMutation = useMutation({
+    mutationFn: (key: string) => subscriptionApi.activate(key),
+    onSuccess: () => {
+      toast.success(t("licenseActivated"));
+      setLicenseKey("");
+      queryClient.invalidateQueries({ queryKey: ["subscription"] });
+      queryClient.invalidateQueries({ queryKey: ["auth-me"] });
+    },
+    onError: (err: unknown) => {
+      const msg =
+        err instanceof Error ? err.message : t("failedActivateLicense");
+      toast.error(msg);
+    },
+  });
+
+  const handleActivate = () => {
+    const key = licenseKey.trim().toUpperCase();
+    if (!key) {
+      toast.error(t("enterLicenseKey"));
+      return;
+    }
+    activateMutation.mutate(key);
+  };
 
   const autoPrint = useSyncExternalStore(
     subscribeAutoPrint,
@@ -171,6 +207,17 @@ export function SettingsView() {
         <SettingsIcon className="h-5 w-5 text-primary" />
         <h2 className="text-xl font-semibold tracking-tight">{t("settings")}</h2>
       </div>
+
+      {/* 0. Subscription */}
+      <SubscriptionCard
+        subscription={subscription}
+        loading={subLoading}
+        licenseKey={licenseKey}
+        onLicenseKeyChange={setLicenseKey}
+        onActivate={handleActivate}
+        activating={activateMutation.isPending}
+        t={t}
+      />
 
       {/* 1. App Profile */}
       <motion.div {...cardMotion} transition={{ duration: 0.25 }}>
@@ -547,6 +594,217 @@ export function SettingsView() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- Subscription card ---------- */
+
+function SubscriptionCard({
+  subscription,
+  loading,
+  licenseKey,
+  onLicenseKeyChange,
+  onActivate,
+  activating,
+  t,
+}: {
+  subscription: SubscriptionInfo | undefined;
+  loading: boolean;
+  licenseKey: string;
+  onLicenseKeyChange: (v: string) => void;
+  onActivate: () => void;
+  activating: boolean;
+  t: (k: TranslationKey) => string;
+}) {
+  const sub = subscription?.subscription;
+  const status = sub?.status ?? "NONE";
+  const plan = sub?.plan ?? "MONTHLY";
+  const daysRemaining = subscription?.daysRemaining ?? 0;
+  const endDate = sub?.endDate;
+  const startDate = sub?.startDate;
+
+  // Total duration of the current plan in days, used for the progress bar.
+  // Heuristic: MONTHLY=30, QUARTERLY=90, YEARLY=365 (falls back to a 30-day window).
+  const totalDays = plan === "MONTHLY" ? 30 : plan === "QUARTERLY" ? 90 : 365;
+  const progress = Math.min(100, Math.max(0, (daysRemaining / totalDays) * 100));
+
+  const planLabel = (p: string) => {
+    if (p === "MONTHLY") return t("planMonthly");
+    if (p === "QUARTERLY") return t("planQuarterly");
+    return t("planYearly");
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-primary" />
+            {t("subscription")}
+          </CardTitle>
+          <CardDescription>{t("subscriptionStatus")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : !sub ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 rounded-lg border border-muted bg-muted/30 px-3 py-2">
+                <Info className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  {t("subscriptionNone")}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Status badge + plan */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {status === "ACTIVE" && (
+                    <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 dark:text-emerald-400 gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {t("subscriptionActive")}
+                    </Badge>
+                  )}
+                  {status === "TRIAL" && (
+                    <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30 dark:text-amber-400 gap-1">
+                      <CalendarClock className="h-3.5 w-3.5" />
+                      {t("trialActive")}
+                    </Badge>
+                  )}
+                  {status === "EXPIRED" && (
+                    <Badge className="bg-red-500/15 text-red-700 border-red-500/30 dark:text-red-400 gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      {t("subscriptionExpired")}
+                    </Badge>
+                  )}
+                  {status === "SUSPENDED" && (
+                    <Badge className="bg-red-500/15 text-red-700 border-red-500/30 dark:text-red-400 gap-1">
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      {t("storeStatusSuspended")}
+                    </Badge>
+                  )}
+                  <Badge variant="outline">{planLabel(plan)}</Badge>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">
+                    {t("daysLeft")}
+                  </p>
+                  <p
+                    className={
+                      "text-2xl font-bold tabular-nums " +
+                      (status === "EXPIRED"
+                        ? "text-red-600"
+                        : status === "TRIAL"
+                          ? "text-amber-600"
+                          : "text-emerald-600")
+                    }
+                  >
+                    {daysRemaining}
+                  </p>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <div className="space-y-1.5">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={
+                      "h-full rounded-full transition-all " +
+                      (status === "EXPIRED"
+                        ? "bg-red-500"
+                        : status === "TRIAL"
+                          ? "bg-amber-500"
+                          : "bg-emerald-500")
+                    }
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>
+                    {startDate
+                      ? `${t("subscriptionStart")}: ${formatDate(startDate)}`
+                      : ""}
+                  </span>
+                  <span>
+                    {endDate
+                      ? `${t("subscriptionEnd")}: ${formatDate(endDate)}`
+                      : ""}
+                  </span>
+                </div>
+              </div>
+
+              {/* Status-specific message */}
+              {status === "ACTIVE" && (
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
+                  <ShieldCheck className="h-4 w-4 shrink-0" />
+                  {t("subscriptionActiveDesc")}
+                </div>
+              )}
+              {status === "TRIAL" && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {t("trialWarning")}
+                </div>
+              )}
+              {status === "EXPIRED" && (
+                <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-700 dark:text-red-400">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {t("expiredWarning")}
+                </div>
+              )}
+            </>
+          )}
+
+          <Separator />
+
+          {/* License key activation */}
+          <div className="space-y-2">
+            <Label htmlFor="license-key" className="text-sm font-medium">
+              {t("activateLicense")}
+            </Label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                id="license-key"
+                value={licenseKey}
+                onChange={(e) => onLicenseKeyChange(e.target.value)}
+                placeholder={t("licenseKeyPlaceholder")}
+                className="font-mono uppercase sm:flex-1"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onActivate();
+                  }
+                }}
+              />
+              <Button
+                onClick={onActivate}
+                disabled={activating}
+                className="shrink-0"
+              >
+                {activating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <KeyRound className="h-4 w-4" />
+                )}
+                {activating ? t("activating") : t("activate")}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t("contactSuperAdmin")}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
 

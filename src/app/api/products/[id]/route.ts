@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireStoreOwner } from "@/lib/session";
+import { handleRouteError } from "@/lib/api-error";
 
-// PUT /api/products/:id — update a product
+// PUT /api/products/:id — update a product within the current store
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await requireStoreOwner();
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.product.findUnique({ where: { id } });
+    // Verify the product belongs to this store
+    const existing = await db.product.findFirst({
+      where: { id, storeId: session.storeId },
+    });
     if (!existing) {
       return NextResponse.json(
         { error: "Product not found" },
@@ -39,12 +45,14 @@ export async function PUT(
           { status: 400 }
         );
       }
-      // Check uniqueness if it's being changed
       if (barcode !== existing.barcode) {
-        const dup = await db.product.findUnique({ where: { barcode } });
-        if (dup) {
+        const dup = await db.product.findFirst({
+          where: { storeId: session.storeId, barcode },
+          select: { id: true },
+        });
+        if (dup && dup.id !== existing.id) {
           return NextResponse.json(
-            { error: `Product with barcode '${barcode}' already exists` },
+            { error: `Product with barcode '${barcode}' already exists in your store` },
             { status: 409 }
           );
         }
@@ -89,6 +97,47 @@ export async function PUT(
       data.category = body.category.trim();
     }
 
+    if (body?.expiryDate !== undefined) {
+      if (body.expiryDate === null || body.expiryDate === "") {
+        data.expiryDate = null;
+      } else if (typeof body.expiryDate === "string") {
+        const d = new Date(body.expiryDate);
+        if (Number.isNaN(d.getTime())) {
+          return NextResponse.json(
+            { error: "expiryDate must be a valid ISO date string" },
+            { status: 400 }
+          );
+        }
+        data.expiryDate = d;
+      }
+    }
+
+    if (body?.supplierId !== undefined) {
+      if (body.supplierId === null || body.supplierId === "") {
+        data.supplierId = null;
+      } else if (typeof body.supplierId === "string") {
+        const supplier = await db.supplier.findFirst({
+          where: { id: body.supplierId, storeId: session.storeId },
+          select: { id: true },
+        });
+        if (!supplier) {
+          return NextResponse.json(
+            { error: "Supplier not found in your store" },
+            { status: 400 }
+          );
+        }
+        data.supplierId = body.supplierId;
+      }
+    }
+
+    if (body?.imageUrl !== undefined) {
+      if (body.imageUrl === null || body.imageUrl === "") {
+        data.imageUrl = null;
+      } else if (typeof body.imageUrl === "string") {
+        data.imageUrl = body.imageUrl.trim();
+      }
+    }
+
     const updated = await db.product.update({
       where: { id },
       data,
@@ -96,23 +145,23 @@ export async function PUT(
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error("[PUT /api/products/:id]", error);
-    return NextResponse.json(
-      { error: "Failed to update product" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "PUT /api/products/:id");
   }
 }
 
-// DELETE /api/products/:id — delete a product
+// DELETE /api/products/:id — delete a product within the current store
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await requireStoreOwner();
     const { id } = await params;
 
-    const existing = await db.product.findUnique({ where: { id } });
+    const existing = await db.product.findFirst({
+      where: { id, storeId: session.storeId },
+      select: { id: true },
+    });
     if (!existing) {
       return NextResponse.json(
         { error: "Product not found" },
@@ -124,10 +173,6 @@ export async function DELETE(
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {
-    console.error("[DELETE /api/products/:id]", error);
-    return NextResponse.json(
-      { error: "Failed to delete product" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "DELETE /api/products/:id");
   }
 }

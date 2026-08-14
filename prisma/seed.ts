@@ -1,166 +1,68 @@
+import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 
-// Note: run via `bun prisma/seed.ts`. Bun executes TS natively.
-// For `prisma db seed` compatibility we also export it as the default function.
+// SwiftBill POS — primary seed script.
+//
+// In the multi-tenant model, the Store + User + Subscription are created
+// at runtime via `/api/auth/register`. The default shop and sample products
+// seeded by an older version of this file are no longer appropriate (they
+// were not tied to any tenant).
+//
+// This script simply ensures the SUPER_ADMIN account exists so the admin
+// dashboard can be accessed. For the dedicated admin-only seeding entrypoint
+// see `prisma/seed-superadmin.ts`.
+//
+// Run via `bun prisma/seed.ts` (alias: `bun run db:seed`).
 
-const SEED_SHOP = {
-  name: "SwiftMart Grocery",
-  addressLine1: "123 Market Street",
-  addressLine2: "",
-  phoneNumber: "+919876543210",
-  upiId: "shop@upi",
-  footerText: "Thank you, visit again!",
-  currency: "₹",
-  taxRate: 0,
-};
+const ADMIN_EMAIL = "admin@swiftbill.pos";
+const ADMIN_PASSWORD = "admin123";
 
-interface SeedProduct {
-  name: string;
-  barcode: string;
-  price: number;
-  costPrice: number;
-  stock: number;
-  category: string;
+async function ensureSuperAdmin() {
+  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+
+  const existing = await db.user.findUnique({
+    where: { email: ADMIN_EMAIL },
+  });
+
+  if (existing) {
+    await db.user.update({
+      where: { id: existing.id },
+      data: {
+        password: passwordHash,
+        role: "SUPER_ADMIN",
+        storeId: null,
+        name: existing.name ?? "Super Admin",
+      },
+    });
+    console.log(
+      `✓ Super admin already existed — updated (id=${existing.id}, email=${existing.email}).`
+    );
+    return;
+  }
+
+  const admin = await db.user.create({
+    data: {
+      email: ADMIN_EMAIL,
+      password: passwordHash,
+      name: "Super Admin",
+      role: "SUPER_ADMIN",
+      storeId: null,
+    },
+  });
+  console.log(
+    `✓ Created super admin (id=${admin.id}, email=${admin.email}, role=${admin.role}).`
+  );
+  console.log("   Login with:");
+  console.log(`     email:    ${ADMIN_EMAIL}`);
+  console.log(`     password: ${ADMIN_PASSWORD}`);
 }
 
-const SEED_PRODUCTS: SeedProduct[] = [
-  // Beverages
-  {
-    name: "Coca-Cola 750ml",
-    barcode: "8901030867531",
-    price: 45,
-    costPrice: 32,
-    stock: 120,
-    category: "Beverages",
-  },
-  {
-    name: "Tata Tea Gold 1kg",
-    barcode: "8901058859123",
-    price: 480,
-    costPrice: 380,
-    stock: 40,
-    category: "Beverages",
-  },
-  {
-    name: "Nescafe Classic Coffee 100g",
-    barcode: "8901058521098",
-    price: 320,
-    costPrice: 245,
-    stock: 60,
-    category: "Beverages",
-  },
-  // Snacks
-  {
-    name: "Lay's Classic Salted 52g",
-    barcode: "8901491502227",
-    price: 20,
-    costPrice: 14,
-    stock: 200,
-    category: "Snacks",
-  },
-  {
-    name: "Britannia Marie Gold 250g",
-    barcode: "8901063165021",
-    price: 35,
-    costPrice: 26,
-    stock: 80,
-    category: "Snacks",
-  },
-  {
-    name: "Haldiram's Aloo Bhujia 200g",
-    barcode: "8904004400123",
-    price: 52,
-    costPrice: 38,
-    stock: 75,
-    category: "Snacks",
-  },
-  // Dairy
-  {
-    name: "Amul Taaza Toned Milk 500ml",
-    barcode: "8901107000234",
-    price: 27,
-    costPrice: 22,
-    stock: 150,
-    category: "Dairy",
-  },
-  {
-    name: "Amul Butter 500g",
-    barcode: "8901107023456",
-    price: 265,
-    costPrice: 235,
-    stock: 35,
-    category: "Dairy",
-  },
-  {
-    name: "Mother Dairy Curd 400g",
-    barcode: "8901030456789",
-    price: 40,
-    costPrice: 30,
-    stock: 90,
-    category: "Dairy",
-  },
-  // Bakery
-  {
-    name: "Britannia Brown Bread 400g",
-    barcode: "8901063556781",
-    price: 45,
-    costPrice: 32,
-    stock: 50,
-    category: "Bakery",
-  },
-  // Household
-  {
-    name: "Surf Excel Easy Wash Detergent 1kg",
-    barcode: "8901030789012",
-    price: 120,
-    costPrice: 92,
-    stock: 65,
-    category: "Household",
-  },
-  {
-    name: "Colgate Strong Teeth Toothpaste 200g",
-    barcode: "8901314010232",
-    price: 95,
-    costPrice: 68,
-    stock: 110,
-    category: "Household",
-  },
-];
-
 async function main() {
-  console.log("Seeding SwiftBill POS database...");
-
-  // --- Upsert default shop (idempotent: only create if none exists) ---
-  const existingShop = await db.shop.findFirst();
-  if (!existingShop) {
-    await db.shop.create({ data: SEED_SHOP });
-    console.log(`✓ Created default shop: ${SEED_SHOP.name}`);
-  } else {
-    console.log(
-      `• Shop already exists (id=${existingShop.id}, name=${existingShop.name}) — skipping.`
-    );
-  }
-
-  // --- Upsert sample products (only create if products table is empty) ---
-  const productCount = await db.product.count();
-  if (productCount > 0) {
-    console.log(
-      `• Products table already has ${productCount} rows — skipping product seeding.`
-    );
-  } else {
-    const result = await db.product.createMany({
-      data: SEED_PRODUCTS.map((p) => ({
-        name: p.name,
-        barcode: p.barcode,
-        price: p.price,
-        costPrice: p.costPrice,
-        stock: p.stock,
-        category: p.category,
-      })),
-    });
-    console.log(`✓ Created ${result.count} sample products.`);
-  }
-
+  console.log("Seeding SwiftBill POS (multi-tenant)...");
+  console.log(
+    "Note: stores, users, products and sales are created per-tenant at registration time."
+  );
+  await ensureSuperAdmin();
   console.log("Seeding complete.");
 }
 
