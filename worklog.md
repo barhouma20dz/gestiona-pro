@@ -1081,3 +1081,38 @@ Task: Verify full Arabic RTL localization
 - Receipt text uses shop data (name, address, footer) which are DB values — translating the receipt template strings (headers/labels) would need the Receipt component updated too.
 
 Project Status: ARABIC LOCALIZATION COMPLETE — 100% Arabic UI with RTL layout, language toggle (AR/EN), 250+ translated strings across all views. Verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+
+---
+Task ID: AR-2
+Agent: orchestrator (sidebar RTL fix + currency selector)
+Task: Fix mobile sidebar to open from right + add currency selector in Settings
+
+## Work Log:
+- Read worklog, checked dev server (200) + lint (clean).
+- **Mobile sidebar RTL fix** (`app-shell.tsx`):
+  * Added `isRTL` from `useLanguage()`.
+  * Changed mobile Sheet `side="left"` to `side={isRTL ? "right" : "left"}`.
+  * In RTL (Arabic) mode, the mobile sidebar now opens from the RIGHT side.
+  * Desktop sidebar was already on the right due to `dir="rtl"` flex reversal (confirmed: left=1024, right=1280).
+- **Currency selector in Settings** (`settings-view.tsx` + `i18n.ts`):
+  * Added 6 new translation keys (currencyConfig, currencyConfigDesc, currentCurrency, saveCurrency, currencyUpdated, selectCurrency) to both ar + en.
+  * Added `currencyValue` state + `currencyMutation` (calls `shopApi.update({ currency })`).
+  * New "تغيير العملة / Change Currency" Card (between Tax Config and Printer sections):
+    - Shows current currency + selected currency.
+    - 12 quick-pick currency chips: ₹, $, €, £, ¥, د.ج (DZD), ر.س (SAR), د.إ (AED), ج.م (EGP), د.ك (KWD), د.ل (LYD), د.ت (TND).
+    - Custom currency input (maxLength 5) for manual entry.
+    - "حفظ العملة / Save Currency" button (disabled when unchanged).
+    - On save: toast "تم تحديث العملة" + invalidates shop query → currency updates app-wide.
+  * Syncs `currencyValue` from server shop data on load.
+
+## Verification results:
+- `bun run lint`: clean (exit 0).
+- Dev server: compiles cleanly, no runtime errors.
+- agent-browser QA:
+  * Mobile sidebar: opens from the right (sheet rect: left=119, right=375 = right edge of 375px viewport).
+  * Currency card: renders in Settings with 12 currency chips + custom input + save button.
+  * Changed currency ₹→$: toast "تم تحديث العملة" appeared.
+  * Currency applied app-wide: Dashboard shows $670.00, $91,245.00 (confirmed via DOM).
+  * No console errors.
+
+Project Status: Arabic RTL sidebar fixed + currency selector working. All verified via agent-browser.

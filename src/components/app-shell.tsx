@@ -157,7 +157,7 @@ function SidebarContent({
 }
 
 export function AppShell() {
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const [view, setView] = useState<ViewKey>("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -242,9 +242,9 @@ export function AppShell() {
         <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} />
       </aside>
 
-      {/* Mobile sidebar */}
+      {/* Mobile sidebar — opens from the right in RTL, left in LTR */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-64 p-0">
+        <SheetContent side={isRTL ? "right" : "left"} className="w-64 p-0">
           <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} />
         </SheetContent>
       </Sheet>
