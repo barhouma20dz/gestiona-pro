@@ -81,12 +81,14 @@ export function SettingsView() {
   );
 
   const [taxValue, setTaxValue] = useState(0);
+  const [currencyValue, setCurrencyValue] = useState("₹");
   const [syncedShopId, setSyncedShopId] = useState<string | null>(null);
 
-  // Sync tax slider from server when the loaded shop changes.
+  // Sync tax slider + currency from server when the loaded shop changes.
   if (shop && shop.id !== syncedShopId) {
     setSyncedShopId(shop.id);
     setTaxValue(Math.min(20, Math.max(0, shop.taxRate ?? 0)));
+    setCurrencyValue(shop.currency ?? "₹");
   }
 
   const taxMutation = useMutation({
@@ -105,6 +107,23 @@ export function SettingsView() {
   const handleSaveTax = () => {
     const rate = Math.min(100, Math.max(0, taxValue));
     taxMutation.mutate(rate);
+  };
+
+  const currencyMutation = useMutation({
+    mutationFn: (currency: string) => shopApi.update({ currency }),
+    onSuccess: () => {
+      toast.success(t("currencyUpdated"));
+      void queryClient.invalidateQueries({ queryKey: ["shop"] });
+    },
+    onError: (err: unknown) => {
+      const msg =
+        err instanceof Error ? err.message : t("failedUpdateTax");
+      toast.error(msg);
+    },
+  });
+
+  const handleSaveCurrency = () => {
+    currencyMutation.mutate(currencyValue);
   };
 
   const handleAutoPrintChange = (checked: boolean) => {
@@ -257,6 +276,95 @@ export function SettingsView() {
                   <Save className="h-4 w-4" />
                 )}
                 {t("saveTaxRate")}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* 2.5. Currency Config */}
+      <motion.div
+        {...cardMotion}
+        transition={{ duration: 0.25, delay: 0.075 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Store className="h-4 w-4 text-primary" />
+              {t("currencyConfig")}
+            </CardTitle>
+            <CardDescription>
+              {t("currencyConfigDesc")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                  {t("currentCurrency")}
+                </p>
+                <p className="text-2xl font-bold text-primary">
+                  {shop.currency ?? "₹"}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                  {t("selectCurrency")}
+                </p>
+                <p className="text-2xl font-bold">{currencyValue}</p>
+              </div>
+            </div>
+
+            {/* Currency quick-pick chips */}
+            <div className="flex flex-wrap gap-2">
+              {["₹", "$", "€", "£", "¥", "د.ج", "ر.س", "د.إ", "ج.م", "د.ك", "د.ل", "د.ت"].map(
+                (cur) => (
+                  <button
+                    key={cur}
+                    onClick={() => setCurrencyValue(cur)}
+                    className={
+                      "min-w-[3rem] rounded-lg border px-3 py-2 text-sm font-bold transition-all " +
+                      (currencyValue === cur
+                        ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                        : "border-border bg-card text-foreground hover:bg-accent hover:border-primary/40")
+                    }
+                  >
+                    {cur}
+                  </button>
+                )
+              )}
+            </div>
+
+            {/* Custom currency input */}
+            <div className="space-y-1.5">
+              <Label htmlFor="custom-currency">{t("currencySymbol")}</Label>
+              <input
+                id="custom-currency"
+                type="text"
+                maxLength={5}
+                value={currencyValue}
+                onChange={(e) => setCurrencyValue(e.target.value)}
+                className="flex h-9 w-24 rounded-md border border-input bg-transparent px-3 py-1 text-sm font-bold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                placeholder="₹"
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <Button
+                onClick={handleSaveCurrency}
+                disabled={
+                  !shop ||
+                  (shop.currency ?? "₹") === currencyValue ||
+                  currencyMutation.isPending
+                }
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                {currencyMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {t("saveCurrency")}
               </Button>
             </div>
           </CardContent>
