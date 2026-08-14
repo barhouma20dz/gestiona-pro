@@ -19,7 +19,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-import { productsApi } from "@/lib/api";
+import { productsApi, shopApi } from "@/lib/api";
 import type { Product, NewProduct } from "@/lib/types";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -137,6 +137,11 @@ export function ProductManager() {
     queryKey: ["products"],
     queryFn: productsApi.list,
   });
+  const { data: shop } = useQuery({
+    queryKey: ["shop"],
+    queryFn: shopApi.get,
+  });
+  const currency = shop?.currency ?? "₹";
 
   // Filter state
   const [search, setSearch] = useState("");
@@ -308,13 +313,13 @@ export function ProductManager() {
     },
     {
       label: t("inventoryValue"),
-      value: formatMoney(stats.totalValue, "₹"),
+      value: formatMoney(stats.totalValue, currency),
       icon: Wallet,
       tint: "bg-emerald-500/15 text-emerald-600",
     },
     {
       label: t("potentialProfit"),
-      value: formatMoney(stats.potentialProfit, "₹"),
+      value: formatMoney(stats.potentialProfit, currency),
       sub: `${stats.avgMargin.toFixed(1)}% ${t("margin")}`,
       icon: TrendingUp,
       tint: "bg-emerald-500/15 text-emerald-600",
@@ -338,7 +343,7 @@ export function ProductManager() {
               {t("inventoryManagement")}
             </h2>
             <p className="mt-0.5 text-sm text-emerald-50/80">
-              {stats.total} {t("productsLabel")} · {formatMoney(stats.totalValue, "₹")} {t("inventoryValue").toLowerCase()}
+              {stats.total} {t("productsLabel")} · {formatMoney(stats.totalValue, currency)} {t("inventoryValue").toLowerCase()}
             </p>
           </div>
           <Button
@@ -482,7 +487,7 @@ export function ProductManager() {
                     </TableCell>
                     <TableCell>{categoryBadge(p.category)}</TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
-                      {formatMoney(p.price, "₹")}
+                      {formatMoney(p.price, currency)}
                     </TableCell>
                     <TableCell>{stockBadge(p.stock, t)}</TableCell>
                     <TableCell className="pr-6 text-right">
@@ -552,7 +557,7 @@ export function ProductManager() {
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <span className="font-semibold tabular-nums">
-                        {formatMoney(p.price, "₹")}
+                        {formatMoney(p.price, currency)}
                       </span>
                       <div className="flex gap-1">
                         <Button
@@ -644,7 +649,7 @@ export function ProductManager() {
                 <Label htmlFor="p-price">{t("sellingPrice")}</Label>
                 <div className="relative">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    ₹
+                    {currency}
                   </span>
                   <Input
                     id="p-price"
@@ -668,7 +673,7 @@ export function ProductManager() {
                 <Label htmlFor="p-cost">{t("costPrice")}</Label>
                 <div className="relative">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    ₹
+                    {currency}
                   </span>
                   <Input
                     id="p-cost"
@@ -727,7 +732,7 @@ export function ProductManager() {
                         )}
                       >
                         {positive ? "+" : ""}
-                        {formatMoney(profit, "₹")} ({margin.toFixed(1)}%)
+                        {formatMoney(profit, currency)} ({margin.toFixed(1)}%)
                       </span>
                       <div className="ml-auto h-1.5 w-20 overflow-hidden rounded-full bg-muted">
                         <div
