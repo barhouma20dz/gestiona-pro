@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireStoreOwner } from "@/lib/session";
+import { handleRouteError } from "@/lib/api-error";
 
 type PaymentMethod = "Cash" | "UPI" | "Card";
 const VALID_PAYMENT_METHODS: PaymentMethod[] = ["Cash", "UPI", "Card"];
@@ -26,34 +28,28 @@ function dateStamp(d: Date): string {
   return `${y}${m}${day}`;
 }
 
-// GET /api/sales — list all sales newest first, include items
+// GET /api/sales — list sales for the current store (newest first), include items
 export async function GET() {
   try {
+    const session = await requireStoreOwner();
     const sales = await db.sale.findMany({
+      where: { storeId: session.storeId },
       include: { items: true },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(sales);
   } catch (error) {
-    console.error("[GET /api/sales]", error);
-    return NextResponse.json(
-      { error: "Failed to fetch sales" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "GET /api/sales");
   }
 }
 
-// POST /api/sales — create a sale (atomic transaction)
+// POST /api/sales — create a sale (atomic transaction, store-scoped)
 export async function POST(request: Request) {
   try {
+    const session = await requireStoreOwner();
     const body = (await request.json()) as CreateSaleBody;
 
-    // --- Validation ---
-    if (
-      !body ||
-      !Array.isArray(body.items) ||
-      body.items.length === 0
-    ) {
+    if (!body || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json(
         { error: "Sale must contain at least one item" },
         { status: 400 }
@@ -78,7 +74,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate quantities up-front
     for (const item of body.items) {
       const qty = Number(item.quantity);
       if (
@@ -98,30 +93,27 @@ export async function POST(request: Request) {
       }
     }
 
-    // --- Resolve shop (auto-create default if missing) ---
-    let shop = await db.shop.findFirst();
-    if (!shop) {
-      shop = await db.shop.create({
-        data: {
-          name: "My Store",
-          footerText: "Thank you for shopping with us!",
-          currency: "₹",
-          taxRate: 0,
-        },
-      });
+    const storeId = session.storeId;
+
+    // Fetch store (for taxRate) — outside transaction to avoid extra locks
+    const store = await db.store.findUnique({
+      where: { id: storeId },
+      select: { taxRate: true },
+    });
+    if (!store) {
+      return NextResponse.json(
+        { error: "Store not found" },
+        { status: 404 }
+      );
     }
 
-    // --- Run everything atomically ---
     const created = await db.$transaction(async (tx) => {
-      // Fetch all products by id
       const productIds = body.items.map((i) => i.productId);
       const products = await tx.product.findMany({
-        where: { id: { in: productIds } },
+        where: { id: { in: productIds }, storeId },
       });
-
       const productMap = new Map(products.map((p) => [p.id, p]));
 
-      // Validate each line item against DB state
       const saleItemLines: {
         product: (typeof products)[number];
         quantity: number;
@@ -132,7 +124,7 @@ export async function POST(request: Request) {
         const product = productMap.get(item.productId);
         if (!product) {
           throw new Error(
-            `Product with id '${item.productId}' not found`
+            `Product with id '${item.productId}' not found in your store`
           );
         }
         const qty = Number(item.quantity);
@@ -146,7 +138,7 @@ export async function POST(request: Request) {
       );
       const effectiveDiscount = Math.min(discount, subtotal);
       const taxableBase = Math.max(0, subtotal - effectiveDiscount);
-      const taxRate = shop!.taxRate ?? 0;
+      const taxRate = store.taxRate ?? 0;
       const taxAmount = (taxableBase * taxRate) / 100;
       const total = taxableBase + taxAmount;
       const itemCount = saleItemLines.reduce(
@@ -154,7 +146,7 @@ export async function POST(request: Request) {
         0
       );
 
-      // Generate receipt number: INV-YYYYMMDD-XXXX based on today's count
+      // Generate receipt number unique per store: INV-YYYYMMDD-XXXX
       const today = new Date();
       const datePrefix = dateStamp(today);
       const startOfDay = new Date(
@@ -170,15 +162,12 @@ export async function POST(request: Request) {
 
       const todayCount = await tx.sale.count({
         where: {
-          createdAt: {
-            gte: startOfDay,
-            lt: endOfDay,
-          },
+          storeId,
+          createdAt: { gte: startOfDay, lt: endOfDay },
         },
       });
       const receiptNo = `INV-${datePrefix}-${pad(todayCount + 1, 4)}`;
 
-      // Create the sale + items, and decrement stock atomically
       const sale = await tx.sale.create({
         data: {
           receiptNo,
@@ -188,7 +177,7 @@ export async function POST(request: Request) {
           total,
           paymentMethod,
           itemCount,
-          shopId: shop!.id,
+          store: { connect: { id: storeId } },
           items: {
             create: saleItemLines.map((l) => ({
               productId: l.product.id,
@@ -202,7 +191,6 @@ export async function POST(request: Request) {
         include: { items: true },
       });
 
-      // Decrement stock (clamp at 0)
       for (const l of saleItemLines) {
         const newStock = Math.max(0, l.product.stock - l.quantity);
         await tx.product.update({
@@ -218,13 +206,9 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to create sale";
-
-    // Distinguish "not found" validation errors from server errors
     if (/not found/i.test(message)) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
-
-    console.error("[POST /api/sales]", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return handleRouteError(error, "POST /api/sales");
   }
 }

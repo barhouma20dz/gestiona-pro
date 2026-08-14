@@ -1,5 +1,5 @@
-// Prisma schema for Billing / POS Web App
-// Offline-first retail Point of Sale system
+// SwiftBill POS — Multi-Tenant SaaS Store Management System
+// Architecture: Row-level data isolation via storeId on all tenant tables
 
 generator client {
   provider = "prisma-client-js"
@@ -10,51 +10,132 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Product {
+// ─── Authentication & Users ───────────────────────────────────────────────────
+
+model User {
   id        String   @id @default(cuid())
-  name      String
-  barcode   String   @unique
-  price     Float
-  costPrice Float    @default(0) // purchase cost for profit margin calculation
-  stock     Int      @default(0)
-  category  String   @default("General")
+  email     String   @unique
+  password  String   // bcrypt hashed
+  name      String?
+  role      String   @default("OWNER") // OWNER | STAFF | SUPER_ADMIN
+  storeId   String?
+  store     Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  saleItems SaleItem[]
 
-  @@index([barcode])
-  @@index([name])
+  licenseKeys LicenseKey[] // created by super admin
 }
 
-model Shop {
-  id           String   @id @default(cuid())
-  name         String   @default("My Store")
-  addressLine1 String   @default("")
-  addressLine2 String   @default("")
-  phoneNumber  String   @default("")
-  upiId        String   @default("")
-  footerText   String   @default("Thank you, visit again!")
-  currency     String   @default("₹")
-  taxRate      Float    @default(0.0) // percentage e.g. 5 = 5%
-  updatedAt    DateTime @updatedAt
-  sales        Sale[]
+// ─── Store (Tenant) ──────────────────────────────────────────────────────────
+
+model Store {
+  id            String   @id @default(cuid())
+  name          String
+  businessType  String   @default("General")
+  phone         String   @default("")
+  email         String   @default("")
+  addressLine1  String   @default("")
+  addressLine2  String   @default("")
+  upiId         String   @default("")
+  footerText    String   @default("Thank you, visit again!")
+  currency      String   @default("₹")
+  taxRate       Float    @default(0.0)
+  logoUrl       String?
+  timezone      String   @default("UTC")
+  status        String   @default("ACTIVE") // ACTIVE | SUSPENDED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users         User[]
+  products      Product[]
+  sales         Sale[]
+  suppliers     Supplier[]
+  invoices      SupplierInvoice[]
+  licenseKeys   LicenseKey[]
+  subscription  Subscription?
 }
+
+// ─── Subscription & Licensing ────────────────────────────────────────────────
+
+model Subscription {
+  id          String   @id @default(cuid())
+  storeId     String   @unique
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  status      String   @default("TRIAL") // TRIAL | ACTIVE | EXPIRED | SUSPENDED
+  plan        String   @default("MONTHLY") // MONTHLY | QUARTERLY | YEARLY
+  startDate   DateTime @default(now())
+  endDate     DateTime
+  trialEndsAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model LicenseKey {
+  id           String    @id @default(cuid())
+  key          String    @unique
+  signature    String    // HMAC signature for server-side validation
+  plan         String    // MONTHLY | QUARTERLY | YEARLY
+  durationDays Int
+  status       String    @default("UNUSED") // UNUSED | USED | EXPIRED | CANCELLED
+  storeId      String?
+  store        Store?    @relation(fields: [storeId], references: [id])
+  createdById  String
+  createdBy    User      @relation(fields: [createdById], references: [id])
+  activatedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+  @@index([plan])
+}
+
+// ─── Products ────────────────────────────────────────────────────────────────
+
+model Product {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name        String
+  barcode     String
+  price       Float
+  costPrice   Float     @default(0)
+  stock       Int       @default(0)
+  category    String    @default("General")
+  expiryDate  DateTime?
+  imageUrl    String?
+  supplierId  String?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  saleItems    SaleItem[]
+  invoiceItems SupplierInvoiceItem[]
+
+  @@unique([storeId, barcode])
+  @@index([storeId])
+  @@index([storeId, name])
+  @@index([storeId, expiryDate])
+}
+
+// ─── Sales ──────────────────────────────────────────────────────────────────
 
 model Sale {
-  id           String     @id @default(cuid())
-  receiptNo    String     @unique
-  subtotal     Float
-  taxAmount    Float      @default(0)
-  discount      Float      @default(0)
-  total        Float
-  paymentMethod String    @default("Cash") // Cash | UPI | Card
-  itemCount    Int
-  createdAt    DateTime   @default(now())
-  shopId       String
-  shop         Shop       @relation(fields: [shopId], references: [id])
-  items        SaleItem[]
+  id            String    @id @default(cuid())
+  storeId       String
+  store         Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  receiptNo     String
+  subtotal      Float
+  taxAmount     Float     @default(0)
+  discount      Float     @default(0)
+  total         Float
+  paymentMethod String    @default("Cash")
+  itemCount     Int
+  createdAt     DateTime  @default(now())
 
-  @@index([createdAt])
+  items SaleItem[]
+
+  @@unique([storeId, receiptNo])
+  @@index([storeId, createdAt])
 }
 
 model SaleItem {
@@ -69,4 +150,58 @@ model SaleItem {
   total       Float
 
   @@index([saleId])
+}
+
+// ─── Suppliers & Purchase Invoices ───────────────────────────────────────────
+
+model Supplier {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String   @default("")
+  email     String   @default("")
+  address   String   @default("")
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices SupplierInvoice[]
+  products Product[]
+}
+
+model SupplierInvoice {
+  id            String   @id @default(cuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplierId    String
+  supplier      Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  invoiceNo     String
+  invoiceDate   DateTime @default(now())
+  totalAmount   Float
+  paidAmount    Float    @default(0)
+  status        String   @default("UNPAID") // PAID | PARTIAL | UNPAID
+  attachmentUrl String?
+  notes         String   @default("")
+  createdAt     DateTime @default(now())
+
+  items SupplierInvoiceItem[]
+
+  @@unique([storeId, invoiceNo])
+  @@index([storeId])
+  @@index([supplierId])
+}
+
+model SupplierInvoiceItem {
+  id          String           @id @default(cuid())
+  invoiceId   String
+  invoice     SupplierInvoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?          @relation(fields: [productId], references: [id])
+  productName String
+  quantity    Int
+  unitPrice   Float
+  total       Float
+
+  @@index([invoiceId])
 }

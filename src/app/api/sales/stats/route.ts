@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireStoreOwner } from "@/lib/session";
+import { handleRouteError } from "@/lib/api-error";
 
-// GET /api/sales/stats — today's stats:
-// totalSales, transactionCount, itemsSold, avgTicket
+// GET /api/sales/stats — today's stats scoped to the current store
 export async function GET() {
   try {
+    const session = await requireStoreOwner();
+
     const now = new Date();
     const startOfDay = new Date(
       now.getFullYear(),
@@ -19,10 +22,8 @@ export async function GET() {
 
     const sales = await db.sale.findMany({
       where: {
-        createdAt: {
-          gte: startOfDay,
-          lt: endOfDay,
-        },
+        storeId: session.storeId,
+        createdAt: { gte: startOfDay, lt: endOfDay },
       },
       include: { items: true },
     });
@@ -32,7 +33,6 @@ export async function GET() {
     const itemsSold = sales.reduce((sum, s) => sum + s.itemCount, 0);
     const avgTicket = transactionCount > 0 ? totalSales / transactionCount : 0;
 
-    // Round to 2 decimals for cleaner client display
     const round2 = (n: number) => Math.round(n * 100) / 100;
 
     return NextResponse.json({
@@ -42,10 +42,6 @@ export async function GET() {
       avgTicket: round2(avgTicket),
     });
   } catch (error) {
-    console.error("[GET /api/sales/stats]", error);
-    return NextResponse.json(
-      { error: "Failed to fetch sales stats" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "GET /api/sales/stats");
   }
 }

@@ -1,56 +1,68 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireStoreOwner } from "@/lib/session";
+import { handleRouteError } from "@/lib/api-error";
 
-const DEFAULT_SHOP = {
-  name: "My Store",
-  addressLine1: "",
-  addressLine2: "",
-  phoneNumber: "",
-  upiId: "",
-  footerText: "Thank you for shopping with us!",
-  currency: "₹",
-  taxRate: 0,
-};
-
-// GET /api/shop — return first shop row, auto-create a default if none exists
+// GET /api/shop — return the current user's store (with subscription)
 export async function GET() {
   try {
-    let shop = await db.shop.findFirst();
+    const session = await requireStoreOwner();
 
-    if (!shop) {
-      shop = await db.shop.create({ data: DEFAULT_SHOP });
+    const store = await db.store.findUnique({
+      where: { id: session.storeId },
+      include: { subscription: true },
+    });
+    if (!store) {
+      return NextResponse.json(
+        { error: "Store not found" },
+        { status: 404 }
+      );
     }
 
-    return NextResponse.json(shop);
+    return NextResponse.json(store);
   } catch (error) {
-    console.error("[GET /api/shop]", error);
-    return NextResponse.json(
-      { error: "Failed to fetch shop" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "GET /api/shop");
   }
 }
 
-// PUT /api/shop — upsert the single shop row
+// PUT /api/shop — update the current user's store fields
 export async function PUT(request: Request) {
   try {
+    const session = await requireStoreOwner();
     const body = await request.json();
-
-    // Fetch existing (or create default) to ensure singleton exists
-    const existing = await db.shop.findFirst();
 
     const data: Record<string, unknown> = {};
 
-    if (typeof body?.name === "string") data.name = body.name.trim();
-    if (typeof body?.addressLine1 === "string")
+    if (typeof body?.name === "string" && body.name.trim()) {
+      data.name = body.name.trim();
+    }
+    if (typeof body?.addressLine1 === "string") {
       data.addressLine1 = body.addressLine1;
-    if (typeof body?.addressLine2 === "string")
+    }
+    if (typeof body?.addressLine2 === "string") {
       data.addressLine2 = body.addressLine2;
-    if (typeof body?.phoneNumber === "string")
-      data.phoneNumber = body.phoneNumber;
-    if (typeof body?.upiId === "string") data.upiId = body.upiId;
-    if (typeof body?.footerText === "string") data.footerText = body.footerText;
-    if (typeof body?.currency === "string") data.currency = body.currency;
+    }
+    if (typeof body?.phone === "string") {
+      data.phone = body.phone;
+    }
+    if (typeof body?.upiId === "string") {
+      data.upiId = body.upiId;
+    }
+    if (typeof body?.footerText === "string") {
+      data.footerText = body.footerText;
+    }
+    if (typeof body?.currency === "string") {
+      data.currency = body.currency;
+    }
+    if (typeof body?.businessType === "string") {
+      data.businessType = body.businessType;
+    }
+    if (typeof body?.logoUrl === "string") {
+      data.logoUrl = body.logoUrl.trim() === "" ? null : body.logoUrl.trim();
+    }
+    if (typeof body?.timezone === "string") {
+      data.timezone = body.timezone;
+    }
 
     if (body?.taxRate !== undefined) {
       const taxRate = Number(body.taxRate);
@@ -63,24 +75,14 @@ export async function PUT(request: Request) {
       data.taxRate = taxRate;
     }
 
-    let shop;
-    if (existing) {
-      shop = await db.shop.update({
-        where: { id: existing.id },
-        data,
-      });
-    } else {
-      shop = await db.shop.create({
-        data: { ...DEFAULT_SHOP, ...(data as object) },
-      });
-    }
+    const updated = await db.store.update({
+      where: { id: session.storeId },
+      data,
+      include: { subscription: true },
+    });
 
-    return NextResponse.json(shop);
+    return NextResponse.json(updated);
   } catch (error) {
-    console.error("[PUT /api/shop]", error);
-    return NextResponse.json(
-      { error: "Failed to update shop" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "PUT /api/shop");
   }
 }

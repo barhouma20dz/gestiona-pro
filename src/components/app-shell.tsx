@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard,
@@ -12,6 +12,9 @@ import {
   ShoppingCart,
   Menu,
   Command as CommandIcon,
+  Truck,
+  CalendarClock,
+  ShieldCheck,
 } from "lucide-react";
 import type { ViewKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -21,6 +24,7 @@ import { useQuery } from "@tanstack/react-query";
 import { shopApi, productsApi } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
 import { useLanguage } from "@/lib/language-context";
+import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { PosTerminal } from "@/components/views/pos-terminal";
 import { ProductManager } from "@/components/views/product-manager";
@@ -28,6 +32,9 @@ import { SalesHistory } from "@/components/views/sales-history";
 import { ShopDetails } from "@/components/views/shop-details";
 import { SettingsView } from "@/components/views/settings-view";
 import { Dashboard } from "@/components/views/dashboard";
+import { Suppliers } from "@/components/views/suppliers";
+import { ExpiryTracking } from "@/components/views/expiry-tracking";
+import { AdminDashboard } from "@/components/views/admin-dashboard";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { CommandPalette } from "@/components/command-palette";
@@ -39,16 +46,23 @@ interface NavItem {
     | "posTerminal"
     | "products"
     | "salesHistory"
+    | "suppliers"
+    | "expiryTracking"
     | "shopDetails"
-    | "settings";
+    | "settings"
+    | "adminDashboard";
   descKey:
     | "storeOverview"
     | "scanBillCheckout"
     | "manageInventory"
     | "pastBills"
+    | "suppliersSubtitle"
+    | "expiryTrackingSubtitle"
     | "businessInformation"
-    | "appConfiguration";
+    | "appConfiguration"
+    | "adminSubtitle";
   icon: typeof ScanLine;
+  superAdminOnly?: boolean;
 }
 
 const NAV: NavItem[] = [
@@ -56,8 +70,11 @@ const NAV: NavItem[] = [
   { key: "pos", labelKey: "posTerminal", descKey: "scanBillCheckout", icon: ScanLine },
   { key: "products", labelKey: "products", descKey: "manageInventory", icon: Package },
   { key: "sales", labelKey: "salesHistory", descKey: "pastBills", icon: ReceiptText },
+  { key: "suppliers", labelKey: "suppliers", descKey: "suppliersSubtitle", icon: Truck },
+  { key: "expiry", labelKey: "expiryTracking", descKey: "expiryTrackingSubtitle", icon: CalendarClock },
   { key: "shop", labelKey: "shopDetails", descKey: "businessInformation", icon: Store },
   { key: "settings", labelKey: "settings", descKey: "appConfiguration", icon: Settings },
+  { key: "admin", labelKey: "adminDashboard", descKey: "adminSubtitle", icon: ShieldCheck, superAdminOnly: true },
 ];
 
 function SidebarContent({
@@ -65,11 +82,13 @@ function SidebarContent({
   onSelect,
   shopName,
   lowStockCount,
+  isSuperAdmin,
 }: {
   view: ViewKey;
   onSelect: (v: ViewKey) => void;
   shopName?: string;
   lowStockCount: number;
+  isSuperAdmin: boolean;
 }) {
   const { t } = useLanguage();
   return (
@@ -90,7 +109,7 @@ function SidebarContent({
         <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
           {t("menu")}
         </p>
-        {NAV.map((item) => {
+        {NAV.filter((item) => !item.superAdminOnly || isSuperAdmin).map((item) => {
           const active = view === item.key;
           const Icon = item.icon;
           // Show low-stock badge on Products nav item
@@ -126,7 +145,20 @@ function SidebarContent({
                   {lowStockCount}
                 </span>
               )}
-              {active && !showStockBadge && (
+              {item.superAdminOnly && (
+                <span
+                  className={cn(
+                    "grid h-5 min-w-5 place-items-center rounded-full px-1 text-[10px] font-bold",
+                    active
+                      ? "bg-primary-foreground/20 text-primary-foreground"
+                      : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                  )}
+                  title="SUPER_ADMIN"
+                >
+                  <ShieldCheck className="h-3 w-3" />
+                </span>
+              )}
+              {active && !showStockBadge && !item.superAdminOnly && (
                 <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground/80" />
               )}
             </button>
@@ -158,6 +190,8 @@ function SidebarContent({
 
 export function AppShell() {
   const { t, isRTL } = useLanguage();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const [view, setView] = useState<ViewKey>("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -210,7 +244,14 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const current = NAV.find((n) => n.key === view)!;
+  // The admin nav item is filtered out of the sidebar for non-super-admins
+  // via the `superAdminOnly` flag, and `renderView` re-checks the role before
+  // rendering the admin surface — so we don't need a setState-in-effect here.
+
+  const current = useMemo(
+    () => NAV.find((n) => n.key === view) ?? NAV[0],
+    [view]
+  );
   const CurrentIcon = current.icon;
 
   const select = (v: ViewKey) => {
@@ -228,10 +269,19 @@ export function AppShell() {
         return <ProductManager />;
       case "sales":
         return <SalesHistory />;
+      case "suppliers":
+        return <Suppliers />;
+      case "expiry":
+        return <ExpiryTracking />;
       case "shop":
         return <ShopDetails />;
       case "settings":
         return <SettingsView />;
+      case "admin":
+        // Final guard: never render the admin surface without the role.
+        return isSuperAdmin ? <AdminDashboard /> : <Dashboard onNavigate={select} />;
+      default:
+        return <Dashboard onNavigate={select} />;
     }
   };
 
@@ -239,13 +289,13 @@ export function AppShell() {
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Desktop sidebar */}
       <aside className="hidden md:block w-64 shrink-0">
-        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} />
+        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} />
       </aside>
 
       {/* Mobile sidebar — opens from the right in RTL, left in LTR */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side={isRTL ? "right" : "left"} className="w-64 p-0">
-          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} />
+          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} />
         </SheetContent>
       </Sheet>
 

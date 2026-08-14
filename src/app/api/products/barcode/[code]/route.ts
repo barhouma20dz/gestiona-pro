@@ -1,17 +1,20 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireStoreOwner } from "@/lib/session";
+import { handleRouteError } from "@/lib/api-error";
 
-// GET /api/products/barcode/:code — find a product by barcode
+// GET /api/products/barcode/:code — find a product by barcode within the store
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
+    const session = await requireStoreOwner();
     const { code } = await params;
     const decoded = decodeURIComponent(code);
 
-    const product = await db.product.findUnique({
-      where: { barcode: decoded },
+    const product = await db.product.findFirst({
+      where: { storeId: session.storeId, barcode: decoded },
     });
 
     if (!product) {
@@ -23,10 +26,6 @@ export async function GET(
 
     return NextResponse.json(product);
   } catch (error) {
-    console.error("[GET /api/products/barcode/:code]", error);
-    return NextResponse.json(
-      { error: "Failed to fetch product by barcode" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "GET /api/products/barcode/:code");
   }
 }
