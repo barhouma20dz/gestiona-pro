@@ -1620,3 +1620,38 @@ The `request()` function in `src/lib/api.ts` did NOT send the `Authorization: Be
   * License activation: generated key via admin → activated on store → status changed to ACTIVE ✅
   * No 401 errors in console ✅
   * No console errors ✅
+
+---
+Task ID: MULTI-CART-QR
+Agent: orchestrator (multi-cart panel + receipt QR scanner)
+Task: Add visible held carts panel in POS + QR receipt scanner in Sales History
+
+## Features
+
+### 1. Held Carts Panel (POS Terminal)
+- Added a **visible amber-bordered panel** at the top of the cart column showing all held/waiting customer carts.
+- Each held cart shows: numbered badge, product label, item count, total price, time held (e.g. "2m"), and a "استئناف / Resume" button.
+- Panel is scrollable (max 120px height) for many waiting customers.
+- Only appears when there are held carts (hidden when empty).
+- Uses the existing `useHeldOrdersStore` (localStorage persisted).
+- F6 keyboard shortcut still works to hold current cart.
+- Clicking "Resume" on any held cart restores it into the current cart.
+
+### 2. Receipt QR Scanner (Sales History)
+- Added **"مسح إيصال QR / Scan Receipt QR"** button in the Sales History gradient header.
+- Opens the BarcodeScannerDialog (same component used for product barcode scanning).
+- When a receipt QR is scanned, it parses the `swiftbill://receipt/{id}` payload:
+  - Extracts the sale ID from the URL.
+  - Falls back to matching by receipt number if the scanned value isn't a URL.
+  - If sale found in current list → opens receipt dialog directly.
+  - If not in current filter → fetches by ID via API → opens receipt dialog.
+  - Shows success toast with receipt number, or error toast if not found.
+- Useful for: customer disputes, confirming purchases, verifying sales.
+
+## Verification:
+- `bun run lint`: clean.
+- agent-browser QA:
+  * POS held carts panel: added milk to cart → held via F6 → panel appeared "سلات في الانتظار (1)" with "زبائن ينتظرون — اضغط لاستئناف" ✅
+  * Sales History QR button: "مسح إيصال QR" button visible in header ✅
+  * localStorage confirmed held order was persisted ✅
+  * No console errors ✅

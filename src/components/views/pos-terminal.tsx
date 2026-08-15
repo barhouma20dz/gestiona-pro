@@ -24,6 +24,7 @@ import {
   History,
   Clock,
   Calculator,
+  Users,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
@@ -851,7 +852,65 @@ export function PosTerminal() {
       </div>
 
       {/* ---------------- Right column: cart ---------------- */}
-      <div className="w-full lg:w-[380px] lg:shrink-0">
+      <div className="w-full lg:w-[380px] lg:shrink-0 space-y-3">
+        {/* Held carts panel — visible strip of waiting customers */}
+        {heldOrders.length > 0 && (
+          <Card className="gap-0 p-0 overflow-hidden border-amber-500/30 bg-amber-500/5">
+            <div className="flex items-center justify-between gap-2 border-b border-amber-500/20 px-3 py-2">
+              <div className="flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-amber-600" />
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                  {t("heldCarts")} ({heldOrders.length})
+                </p>
+              </div>
+              <p className="text-[10px] text-muted-foreground">{t("heldCartsDesc")}</p>
+            </div>
+            <div className="max-h-[120px] overflow-y-auto scrollbar-emerald p-2 space-y-1.5">
+              {heldOrders.map((order, idx) => {
+                const orderTotal = order.items.reduce(
+                  (s, i) => s + i.product.price * i.quantity,
+                  0
+                );
+                const orderCount = order.items.reduce(
+                  (s, i) => s + i.quantity,
+                  0
+                );
+                const heldAgo = Math.round(
+                  (Date.now() - order.heldAt) / 60000
+                );
+                return (
+                  <div
+                    key={order.id}
+                    className="group flex items-center gap-2 rounded-lg border border-amber-500/20 bg-card p-2 transition-colors hover:border-amber-500/40 hover:bg-amber-500/5"
+                  >
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-500 text-[10px] font-bold text-white">
+                      {idx + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium">
+                        {order.label}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {orderCount} {t("items2")} · {formatMoney(orderTotal, currency)} ·{" "}
+                        {heldAgo < 1 ? t("now") : `${heldAgo}m`}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 shrink-0 px-2 text-[10px] border-amber-500/30 text-amber-700 hover:bg-amber-500/10 hover:text-amber-700"
+                      onClick={() => handleResumeOrder(order.id)}
+                    >
+                      <Play className="h-2.5 w-2.5" />
+                      {t("resumeCart")}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
         <Card className="sticky top-0 flex flex-col gap-0 overflow-hidden p-0 lg:top-0">
           {/* Header */}
           <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
