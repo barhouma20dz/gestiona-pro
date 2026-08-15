@@ -254,6 +254,8 @@ export const translations = {
     systemOperational: "النظام يعمل",
     activeStore: "المتجر النشط",
     live: "مباشر",
+    logout: "تسجيل الخروج",
+    superAdmin: "مدير عام",
     menu: "القائمة",
     // Search command
     searchActionsPages: "ابحث عن إجراءات، صفحات، منتجات...",
@@ -823,6 +825,8 @@ export const translations = {
     systemOperational: "System operational",
     activeStore: "Active Store",
     live: "Live",
+    logout: "Logout",
+    superAdmin: "Super Admin",
     menu: "Menu",
     searchActionsPages: "Search actions, pages, products…",
     quickActions_: "Quick Actions",
