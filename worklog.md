@@ -1579,3 +1579,44 @@ Task: Add logout button + fix super admin broken pages
   * Store owner login → sees all 8 store pages + logout ✅
   * Store pages work correctly (POS, Products, Settings) ✅
   * No console errors ✅
+
+---
+Task ID: API-AUTH-FIX
+Agent: orchestrator (API auth + subscription badge)
+Task: Fix all pages returning 401 + add subscription counter + verify license activation
+
+## Root Cause
+The `request()` function in `src/lib/api.ts` did NOT send the `Authorization: Bearer` header from localStorage. Only `/api/auth/me` sent it (via auth-context). All other API calls (shop, products, sales, subscription, suppliers) relied on cookies only, which don't work in cross-origin preview environments. Result: every API call returned 401, breaking Settings, Shop Details, and all data-dependent pages.
+
+## Fixes
+
+### 1. API client auth header (`src/lib/api.ts`)
+- Added `getAuthToken()` that reads JWT from `localStorage`.
+- Modified `request()` to inject `Authorization: Bearer <token>` header on ALL API calls.
+- Added `credentials: "same-origin"` to all fetch calls.
+- This fixes ALL pages (Settings, Shop Details, Products, Sales, Suppliers, etc.)
+
+### 2. Subscription days counter badge (`src/components/app-shell.tsx`)
+- Added `subscriptionApi.get()` query in AppShell.
+- Computed `subDaysRemaining` (days until endDate) and `subStatus` (TRIAL/ACTIVE/EXPIRED).
+- Added subscription status badge in sidebar between nav and user card:
+  - **Green** (emerald) when ACTIVE with CheckCircle2 icon + "نشط" + days count.
+  - **Amber** when TRIAL with ≤3 days remaining + Clock icon + "تجريبي نشط".
+  - **Red** when EXPIRED/SUSPENDED + AlertCircle icon.
+  - Clicking the badge navigates to Settings (for license activation).
+- Passes `subDaysRemaining` + `subStatus` to both desktop and mobile SidebarContent.
+
+### 3. License key activation verified
+- Settings page already had the activation card (subscription status + license input + activate button).
+- Now it works because the API auth header fix allows `/api/subscription` and `/api/subscription/activate` to authenticate properly.
+- Verified: generated key `SB-ERJC-EEV7-XDYU` via admin API → activated on nour@store.com → status changed from TRIAL to ACTIVE, endDate extended +30 days, sidebar badge updated from "تجريبي نشط 14 يوم" to "نشط 30 يوم".
+
+## Verification:
+- `bun run lint`: clean.
+- agent-browser QA:
+  * Settings page: loads fully, shows subscription status (ACTIVE, 30 days, dates, activation input) ✅
+  * Shop Details page: loads fully, shows store form fields ✅
+  * Sidebar badge: shows "نشط 30 يوم" in green with checkmark (VLM confirmed) ✅
+  * License activation: generated key via admin → activated on store → status changed to ACTIVE ✅
+  * No 401 errors in console ✅
+  * No console errors ✅

@@ -16,6 +16,9 @@ import {
   CalendarClock,
   ShieldCheck,
   LogOut,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import type { ViewKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -85,6 +88,8 @@ function SidebarContent({
   isSuperAdmin,
   onLogout,
   userEmail,
+  subDaysRemaining,
+  subStatus,
 }: {
   view: ViewKey;
   onSelect: (v: ViewKey) => void;
@@ -93,6 +98,8 @@ function SidebarContent({
   isSuperAdmin: boolean;
   onLogout: () => void;
   userEmail?: string;
+  subDaysRemaining: number | null;
+  subStatus: string;
 }) {
   const { t } = useLanguage();
   // Filter nav items: super admin sees only admin dashboard; store owners see everything except admin
@@ -175,6 +182,48 @@ function SidebarContent({
         })}
       </nav>
 
+      {/* Subscription status badge (store owners only) */}
+      {!isSuperAdmin && subDaysRemaining !== null && (
+        <div className="px-3 pb-2">
+          <button
+            onClick={() => onSelect("settings")}
+            className={cn(
+              "flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+              subStatus === "EXPIRED" || subStatus === "SUSPENDED"
+                ? "border-red-500/30 bg-red-500/10 text-red-600 hover:bg-red-500/15"
+                : subDaysRemaining <= 3
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-600 hover:bg-amber-500/15"
+                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15"
+            )}
+            title={t("activateLicense")}
+          >
+            <div className="flex items-center gap-1.5">
+              {subStatus === "TRIAL" && (
+                <Clock className="h-3.5 w-3.5" />
+              )}
+              {subStatus === "ACTIVE" && (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+              {(subStatus === "EXPIRED" || subStatus === "SUSPENDED") && (
+                <AlertCircle className="h-3.5 w-3.5" />
+              )}
+              <span>
+                {subStatus === "TRIAL"
+                  ? t("trialActive")
+                  : subStatus === "ACTIVE"
+                  ? t("activeLabel")
+                  : t("expiredLabel")}
+              </span>
+            </div>
+            <span className="font-bold tabular-nums">
+              {subDaysRemaining > 0
+                ? `${subDaysRemaining} ${t("days")}`
+                : t("expiredLabel")}
+            </span>
+          </button>
+        </div>
+      )}
+
       {/* User info + Logout */}
       <div className="border-t border-sidebar-border p-3">
         <div className="rounded-lg bg-sidebar-accent/60 p-3">
@@ -239,6 +288,26 @@ export function AppShell() {
     queryFn: shopApi.get,
     enabled: !isSuperAdmin, // super admin has no store
   });
+
+  // Subscription query — for days remaining badge
+  const { data: subscription } = useQuery({
+    queryKey: ["subscription"],
+    queryFn: () =>
+      import("@/lib/api").then((m) =>
+        m.subscriptionApi.get()
+      ),
+    enabled: !isSuperAdmin,
+  });
+
+  // Compute days remaining
+  const subDaysRemaining = (() => {
+    if (!subscription?.subscription) return null;
+    const end = new Date(subscription.subscription.endDate);
+    const now = new Date();
+    const diff = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return diff;
+  })();
+  const subStatus = subscription?.subscription?.status ?? "TRIAL";
 
   // Products query — used to compute the low-stock badge on the Products nav item
   const { data: products = [] } = useQuery({
@@ -333,13 +402,13 @@ export function AppShell() {
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Desktop sidebar */}
       <aside className="hidden md:block w-64 shrink-0">
-        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} onLogout={handleLogout} userEmail={user?.email} />
+        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
       </aside>
 
       {/* Mobile sidebar — opens from the right in RTL, left in LTR */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side={isRTL ? "right" : "left"} className="w-64 p-0">
-          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} onLogout={handleLogout} userEmail={user?.email} />
+          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
         </SheetContent>
       </Sheet>
 
