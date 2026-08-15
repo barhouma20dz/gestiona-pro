@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { BarcodeScannerDialog } from "@/components/barcode-scanner";
 import {
   Table,
   TableBody,
@@ -150,6 +151,7 @@ export function ProductManager() {
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
@@ -626,15 +628,28 @@ export function ProductManager() {
 
             <div className="space-y-1.5">
               <Label htmlFor="p-barcode">{t("barcode")}</Label>
-              <Input
-                id="p-barcode"
-                value={form.barcode}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, barcode: e.target.value }))
-                }
-                placeholder="e.g. 8901030867531"
-                className="font-mono"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="p-barcode"
+                  value={form.barcode}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, barcode: e.target.value }))
+                  }
+                  placeholder="e.g. 8901030867531"
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0 text-primary hover:text-primary"
+                  onClick={() => setScannerOpen(true)}
+                  aria-label={t("scanBarcode")}
+                  title={t("scanBarcode")}
+                >
+                  <ScanLine className="h-4 w-4" />
+                </Button>
+              </div>
               <p className="flex items-center gap-1 text-xs text-muted-foreground">
                 <ScanLine className="h-3 w-3" />
                 {t("tipUseScanner")}
@@ -794,6 +809,16 @@ export function ProductManager() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Barcode scanner dialog */}
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onScan={(code) => {
+          setForm((f) => ({ ...f, barcode: code }));
+          toast.success(t("barcodeScanned"));
+        }}
+      />
 
       {/* Delete confirmation */}
       <AlertDialog
