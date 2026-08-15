@@ -15,6 +15,7 @@ import {
   Truck,
   CalendarClock,
   ShieldCheck,
+  LogOut,
 } from "lucide-react";
 import type { ViewKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -25,7 +26,6 @@ import { shopApi, productsApi } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
 import { useLanguage } from "@/lib/language-context";
 import { useAuth } from "@/lib/auth-context";
-import { toast } from "sonner";
 import { PosTerminal } from "@/components/views/pos-terminal";
 import { ProductManager } from "@/components/views/product-manager";
 import { SalesHistory } from "@/components/views/sales-history";
@@ -83,14 +83,23 @@ function SidebarContent({
   shopName,
   lowStockCount,
   isSuperAdmin,
+  onLogout,
+  userEmail,
 }: {
   view: ViewKey;
   onSelect: (v: ViewKey) => void;
   shopName?: string;
   lowStockCount: number;
   isSuperAdmin: boolean;
+  onLogout: () => void;
+  userEmail?: string;
 }) {
   const { t } = useLanguage();
+  // Filter nav items: super admin sees only admin dashboard; store owners see everything except admin
+  const visibleNav = NAV.filter((item) => {
+    if (isSuperAdmin) return item.superAdminOnly;
+    return !item.superAdminOnly;
+  });
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       {/* Brand */}
@@ -109,7 +118,7 @@ function SidebarContent({
         <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
           {t("menu")}
         </p>
-        {NAV.filter((item) => !item.superAdminOnly || isSuperAdmin).map((item) => {
+        {visibleNav.map((item) => {
           const active = view === item.key;
           const Icon = item.icon;
           // Show low-stock badge on Products nav item
@@ -166,21 +175,45 @@ function SidebarContent({
         })}
       </nav>
 
-      {/* Shop card */}
+      {/* User info + Logout */}
       <div className="border-t border-sidebar-border p-3">
         <div className="rounded-lg bg-sidebar-accent/60 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
-            {t("activeStore")}
-          </p>
-          <p className="mt-1 truncate text-sm font-semibold text-sidebar-accent-foreground">
-            {shopName || "—"}
-          </p>
-          <div className="mt-2 flex items-center gap-1.5">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            </span>
-            <span className="text-[11px] text-sidebar-foreground/60">{t("live")}</span>
+          {isSuperAdmin ? (
+            <>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+                {t("superAdmin")}
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-sidebar-accent-foreground">
+                {userEmail || "admin"}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+                {t("activeStore")}
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-sidebar-accent-foreground">
+                {shopName || "—"}
+              </p>
+            </>
+          )}
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
+              <span className="text-[11px] text-sidebar-foreground/60">{t("live")}</span>
+            </div>
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-sidebar-foreground/60 transition-colors hover:bg-red-500/10 hover:text-red-500"
+              aria-label={t("logout")}
+              title={t("logout")}
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t("logout")}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -190,22 +223,28 @@ function SidebarContent({
 
 export function AppShell() {
   const { t, isRTL } = useLanguage();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
-  const [view, setView] = useState<ViewKey>("dashboard");
+  const [view, setView] = useState<ViewKey>(isSuperAdmin ? "admin" : "dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const cartCount = useCartStore((s) => s.totalItems());
 
+  const handleLogout = () => {
+    logout();
+  };
+
   const { data: shop } = useQuery({
     queryKey: ["shop"],
     queryFn: shopApi.get,
+    enabled: !isSuperAdmin, // super admin has no store
   });
 
   // Products query — used to compute the low-stock badge on the Products nav item
   const { data: products = [] } = useQuery({
     queryKey: ["products"],
     queryFn: productsApi.list,
+    enabled: !isSuperAdmin, // super admin has no products
   });
   const lowStockProducts = products.filter((p) => p.stock >= 0 && p.stock <= 5);
   const lowStockCount = lowStockProducts.length;
@@ -213,7 +252,7 @@ export function AppShell() {
 
   // Low-stock alert toast on app load (fires once when products first load)
   useEffect(() => {
-    if (notifiedRef.current || products.length === 0) return;
+    if (isSuperAdmin || notifiedRef.current || products.length === 0) return;
     notifiedRef.current = true;
     if (lowStockCount > 0) {
       const outOfStock = products.filter((p) => p.stock === 0).length;
@@ -230,7 +269,7 @@ export function AppShell() {
         },
       });
     }
-  }, [products, lowStockCount, t]);
+  }, [products, lowStockCount, t, isSuperAdmin]);
 
   // Cmd+K / Ctrl+K to open command palette
   useEffect(() => {
@@ -249,17 +288,23 @@ export function AppShell() {
   // rendering the admin surface — so we don't need a setState-in-effect here.
 
   const current = useMemo(
-    () => NAV.find((n) => n.key === view) ?? NAV[0],
-    [view]
+    () => NAV.find((n) => n.key === view) ?? (isSuperAdmin ? NAV.find((n) => n.key === "admin")! : NAV[0]),
+    [view, isSuperAdmin]
   );
   const CurrentIcon = current.icon;
 
   const select = (v: ViewKey) => {
+    // Super admin can only navigate to admin dashboard
+    if (isSuperAdmin && v !== "admin") return;
     setView(v);
     setMobileOpen(false);
   };
 
   const renderView = () => {
+    // Super admin only sees the admin dashboard
+    if (isSuperAdmin) {
+      return <AdminDashboard />;
+    }
     switch (view) {
       case "dashboard":
         return <Dashboard onNavigate={select} />;
@@ -278,8 +323,7 @@ export function AppShell() {
       case "settings":
         return <SettingsView />;
       case "admin":
-        // Final guard: never render the admin surface without the role.
-        return isSuperAdmin ? <AdminDashboard /> : <Dashboard onNavigate={select} />;
+        return <Dashboard onNavigate={select} />;
       default:
         return <Dashboard onNavigate={select} />;
     }
@@ -289,13 +333,13 @@ export function AppShell() {
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Desktop sidebar */}
       <aside className="hidden md:block w-64 shrink-0">
-        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} />
+        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} onLogout={handleLogout} userEmail={user?.email} />
       </aside>
 
       {/* Mobile sidebar — opens from the right in RTL, left in LTR */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side={isRTL ? "right" : "left"} className="w-64 p-0">
-          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} />
+          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} onLogout={handleLogout} userEmail={user?.email} />
         </SheetContent>
       </Sheet>
 
@@ -353,26 +397,40 @@ export function AppShell() {
             <ThemeToggle />
             <LanguageToggle />
 
-            {/* Cart pill */}
-            <button
-              onClick={() => setView("pos")}
-              className="relative flex items-center gap-2 rounded-full border bg-card px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent"
-              aria-label={`${t("cart")}${cartCount > 0 ? ` (${cartCount} ${t("items")})` : ""}`}
+            {/* Logout button in header */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-muted-foreground hover:text-red-600 hover:bg-red-500/10"
+              onClick={handleLogout}
+              aria-label={t("logout")}
+              title={t("logout")}
             >
-              <ShoppingCart className="h-4 w-4 text-primary" />
-              <span className="hidden sm:inline">{t("cart")}</span>
-              {cartCount > 0 && (
-                <motion.span
-                  key={cartCount}
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: [0.5, 1.3, 1], opacity: 1 }}
-                  transition={{ duration: 0.35, ease: "easeOut" }}
-                  className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground shadow"
-                >
-                  {cartCount}
-                </motion.span>
-              )}
-            </button>
+              <LogOut className="h-[18px] w-[18px]" />
+            </Button>
+
+            {/* Cart pill — hidden for super admin */}
+            {!isSuperAdmin && (
+              <button
+                onClick={() => setView("pos")}
+                className="relative flex items-center gap-2 rounded-full border bg-card px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent"
+                aria-label={`${t("cart")}${cartCount > 0 ? ` (${cartCount} ${t("items")})` : ""}`}
+              >
+                <ShoppingCart className="h-4 w-4 text-primary" />
+                <span className="hidden sm:inline">{t("cart")}</span>
+                {cartCount > 0 && (
+                  <motion.span
+                    key={cartCount}
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: [0.5, 1.3, 1], opacity: 1 }}
+                    transition={{ duration: 0.35, ease: "easeOut" }}
+                    className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground shadow"
+                  >
+                    {cartCount}
+                  </motion.span>
+                )}
+              </button>
+            )}
           </div>
         </header>
 
@@ -387,7 +445,7 @@ export function AppShell() {
             <span className="font-medium text-foreground/70">{t("appName")} POS</span>
             <span className="hidden sm:inline">·</span>
             <span className="hidden sm:inline">
-              {shop?.name || t("noStoreConfigured")}
+              {isSuperAdmin ? t("superAdmin") : (shop?.name || t("noStoreConfigured"))}
             </span>
           </div>
           <div className="flex items-center gap-3">

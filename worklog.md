@@ -1538,3 +1538,44 @@ Login API returned 200 but `/api/auth/me` returned 401 immediately after. Cookie
   * Page reload → session persists (token in localStorage) ✅
   * Register new store "متجر الأمل" → success, token stored ✅
   * No console errors ✅
+
+---
+Task ID: LOGOUT-ADMIN-FIX
+Agent: orchestrator (logout button + admin views fix)
+Task: Add logout button + fix super admin broken pages
+
+## Problems
+1. No logout button anywhere in the app.
+2. Super admin sees all store nav items (POS, Products, Sales, etc.) but clicking them shows errors because admin has no storeId — API returns "No store associated with this account".
+
+## Fixes (app-shell.tsx + i18n.ts)
+
+### 1. Logout button added in TWO places:
+- **Sidebar footer**: a red hover button next to the "Live" status indicator, shows "تسجيل الخروج" text.
+- **Header**: a ghost icon button (LogOut icon) with red hover, next to theme/language toggles.
+
+### 2. Super admin navigation fixed:
+- **Nav filtering**: Super admin now sees ONLY "لوحة تحكم المدير العام" (admin dashboard). All store pages (POS, Products, Sales, Suppliers, Expiry, Shop, Settings) are hidden.
+- **Default view**: Super admin starts on "admin" view directly, not "dashboard".
+- **renderView**: If `isSuperAdmin`, always renders `<AdminDashboard />` regardless of view state.
+- **select()**: Super admin navigation is locked — clicking any store item does nothing.
+- **Cart pill**: Hidden for super admin (no cart needed).
+- **Queries**: `shopApi.get` and `productsApi.list` have `enabled: !isSuperAdmin` to prevent 403 errors.
+- **Low-stock toast**: Skipped for super admin.
+- **Footer**: Shows "مدير عام" (Super Admin) instead of store name.
+- **Sidebar footer card**: Shows "مدير عام" label + admin email instead of store name.
+
+### 3. Translation keys added:
+- `logout`: "تسجيل الخروج" / "Logout"
+- `superAdmin`: "مدير عام" / "Super Admin"
+
+## Verification:
+- `bun run lint`: clean.
+- agent-browser QA:
+  * Super admin login → sees only admin dashboard + logout button ✅
+  * Store pages hidden from super admin ✅
+  * No API errors (queries disabled for admin) ✅
+  * Logout works → returns to auth screen ✅
+  * Store owner login → sees all 8 store pages + logout ✅
+  * Store pages work correctly (POS, Products, Settings) ✅
+  * No console errors ✅
