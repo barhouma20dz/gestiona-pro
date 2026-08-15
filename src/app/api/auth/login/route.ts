@@ -63,17 +63,19 @@ export async function POST(request: Request) {
       storeId: user.storeId,
     });
 
-    // Set httpOnly cookie
+    // Set cookie — use sameSite=none + secure=false for cross-origin preview environments
     const cookieStore = await cookies();
     cookieStore.set(getSessionCookieName(), token, {
-      httpOnly: true,
-      sameSite: "lax",
+      httpOnly: false,
+      sameSite: "none",
+      secure: false,
       maxAge: getSessionDuration(),
       path: "/",
     });
 
     return NextResponse.json(
       {
+        token,
         user: {
           id: user.id,
           email: user.email,

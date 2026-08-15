@@ -7,8 +7,9 @@ export async function POST() {
     const cookieStore = await cookies();
     // Delete the session cookie by setting maxAge to 0
     cookieStore.set(getSessionCookieName(), "", {
-      httpOnly: true,
-      sameSite: "lax",
+      httpOnly: false,
+      sameSite: "none",
+      secure: false,
       maxAge: 0,
       path: "/",
     });
