@@ -112,6 +112,21 @@ export async function PUT(
       }
     }
 
+    if (body?.expiryDate2 !== undefined) {
+      if (body.expiryDate2 === null || body.expiryDate2 === "") {
+        data.expiryDate2 = null;
+      } else if (typeof body.expiryDate2 === "string") {
+        const d2 = new Date(body.expiryDate2);
+        if (Number.isNaN(d2.getTime())) {
+          return NextResponse.json(
+            { error: "expiryDate2 must be a valid ISO date string" },
+            { status: 400 }
+          );
+        }
+        data.expiryDate2 = d2;
+      }
+    }
+
     if (body?.supplierId !== undefined) {
       if (body.supplierId === null || body.supplierId === "") {
         data.supplierId = null;

@@ -7,8 +7,10 @@ import { handleRouteError } from "@/lib/api-error";
 export const NEAR_EXPIRY_DAYS = 30;
 
 // GET /api/products/expiry — return expired + near-expiry products for the store
-//   expired:     expiryDate < now
+// Checks BOTH expiryDate and expiryDate2 (for dual-batch products).
+//   expired:     expiryDate < now OR expiryDate2 < now
 //   nearExpiry:  now <= expiryDate <= now + NEAR_EXPIRY_DAYS
+//                OR now <= expiryDate2 <= now + NEAR_EXPIRY_DAYS
 export async function GET() {
   try {
     const session = await requireStoreOwner();
@@ -17,22 +19,29 @@ export async function GET() {
       now.getTime() + NEAR_EXPIRY_DAYS * 24 * 60 * 60 * 1000
     );
 
-    const [expired, nearExpiry] = await Promise.all([
-      db.product.findMany({
-        where: {
-          storeId: session.storeId,
-          expiryDate: { lt: now },
-        },
-        orderBy: { expiryDate: "asc" },
-      }),
-      db.product.findMany({
-        where: {
-          storeId: session.storeId,
-          expiryDate: { gte: now, lte: threshold },
-        },
-        orderBy: { expiryDate: "asc" },
-      }),
-    ]);
+    // Expired: either expiryDate or expiryDate2 is in the past
+    const expired = await db.product.findMany({
+      where: {
+        storeId: session.storeId,
+        OR: [
+          { expiryDate: { lt: now, not: null } },
+          { expiryDate2: { lt: now, not: null } },
+        ],
+      },
+      orderBy: { expiryDate: "asc" },
+    });
+
+    // Near expiry: either date is within the threshold window
+    const nearExpiry = await db.product.findMany({
+      where: {
+        storeId: session.storeId,
+        OR: [
+          { expiryDate: { gte: now, lte: threshold, not: null } },
+          { expiryDate2: { gte: now, lte: threshold, not: null } },
+        ],
+      },
+      orderBy: { expiryDate: "asc" },
+    });
 
     return NextResponse.json({
       expired,

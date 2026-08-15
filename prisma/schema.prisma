@@ -102,6 +102,7 @@ model Product {
   stock       Int       @default(0)
   category    String    @default("General")
   expiryDate  DateTime?
+  expiryDate2 DateTime?
   imageUrl    String?
   supplierId  String?
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
