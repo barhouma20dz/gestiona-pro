@@ -9,6 +9,8 @@ export interface Product {
   stock: number;
   category: string;
   expiryDate?: string | null;
+  expiryDate2?: string | null;
+  imageUrl?: string | null;
   supplierId?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -21,6 +23,9 @@ export interface NewProduct {
   costPrice?: number;
   stock: number;
   category?: string;
+  expiryDate?: string | null;
+  expiryDate2?: string | null;
+  imageUrl?: string | null;
 }
 
 export interface Shop {

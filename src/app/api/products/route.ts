@@ -48,6 +48,10 @@ export async function POST(request: Request) {
       typeof body?.expiryDate === "string" && body.expiryDate.trim()
         ? new Date(body.expiryDate)
         : null;
+    const expiryDate2 =
+      typeof body?.expiryDate2 === "string" && body.expiryDate2.trim()
+        ? new Date(body.expiryDate2)
+        : null;
     const supplierId =
       typeof body?.supplierId === "string" && body.supplierId.trim()
         ? body.supplierId.trim()
@@ -130,6 +134,7 @@ export async function POST(request: Request) {
       store: { connect: { id: session.storeId } },
     };
     if (expiryDate) data.expiryDate = expiryDate;
+    if (expiryDate2) data.expiryDate2 = expiryDate2;
     if (supplierId) data.supplier = { connect: { id: supplierId } };
     if (imageUrl) data.imageUrl = imageUrl;
 

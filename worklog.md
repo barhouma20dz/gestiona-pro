@@ -1655,3 +1655,44 @@ Task: Add visible held carts panel in POS + QR receipt scanner in Sales History
   * Sales History QR button: "مسح إيصال QR" button visible in header ✅
   * localStorage confirmed held order was persisted ✅
   * No console errors ✅
+
+---
+Task ID: PRODUCT-IMAGE-EXPIRY
+Agent: orchestrator (product image + dual expiry dates + expiry tracking)
+Task: Add product image (upload/camera) + dual expiry dates + expiry tracking
+
+## Features
+
+### 1. Product Image Upload & Camera Capture
+- Added `imageUrl` field to product form (already in schema).
+- **Two upload buttons**: "اختر ملف / Choose File" (file picker) + "التقاط من الكاميرا / Capture from Camera" (camera capture with `capture="environment"` attribute).
+- **Image preview**: 80×80px rounded box showing the uploaded image with an X button to remove.
+- Images stored as base64 data URLs (max 2MB validation).
+- Hidden `<input type="file">` elements triggered by buttons.
+- Works on both desktop (file picker) and mobile (camera opens automatically).
+
+### 2. Dual Expiry Dates (expiryDate + expiryDate2)
+- Added `expiryDate2` field to Prisma schema + database (pushed successfully).
+- Added to FormState, emptyForm, toForm, handleSubmit.
+- Added to API routes: POST `/api/products` and PUT `/api/products/[id]`.
+- Added to types: Product + NewProduct interfaces.
+- Form shows two date pickers:
+  - **"تاريخ نهاية الصلاحية 1"** — for current stock, with hint "alerts 30 days before"
+  - **"تاريخ نهاية الصلاحية 2"** — for new stock/batch, with hint "for new stock when additional batch arrives"
+- Both are optional (can be empty).
+
+### 3. Expiry Tracking with Both Dates
+- Updated `/api/products/expiry` API to check BOTH expiryDate AND expiryDate2:
+  - **Expired**: either date is in the past.
+  - **Near expiry**: either date is within 30 days.
+- Expiry tracking page already existed (tabs for expired/near-expiry with color coding).
+- Now picks up products with expiryDate2 as well.
+
+## Verification:
+- `bun run lint`: clean.
+- agent-browser QA + VLM:
+  * Product form: shows "صورة المنتج" section with "اختر ملف" + "التقاط من الكاميرا" buttons ✅
+  * Image preview area visible (empty placeholder with icon) ✅
+  * Two expiry date fields: "تاريخ انتهاء الصلاحية 1" + "تاريخ انتهاء الصلاحية 2" ✅
+  * Expiry tracking page: shows counts (expired/near-expiry), empty states ✅
+  * No console errors ✅

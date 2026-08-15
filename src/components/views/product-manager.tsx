@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -17,6 +17,10 @@ import {
   X,
   Copy,
   TrendingUp,
+  ImagePlus,
+  Camera,
+  Calendar,
+  Trash,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
@@ -107,6 +111,9 @@ interface FormState {
   costPrice: string;
   stock: string;
   category: string;
+  expiryDate: string;
+  expiryDate2: string;
+  imageUrl: string;
 }
 
 const emptyForm: FormState = {
@@ -116,6 +123,9 @@ const emptyForm: FormState = {
   costPrice: "0",
   stock: "0",
   category: "General",
+  expiryDate: "",
+  expiryDate2: "",
+  imageUrl: "",
 };
 
 function toForm(p: Product): FormState {
@@ -126,6 +136,9 @@ function toForm(p: Product): FormState {
     costPrice: String(p.costPrice ?? 0),
     stock: String(p.stock),
     category: p.category,
+    expiryDate: p.expiryDate ? new Date(p.expiryDate).toISOString().split("T")[0] : "",
+    expiryDate2: p.expiryDate2 ? new Date(p.expiryDate2).toISOString().split("T")[0] : "",
+    imageUrl: p.imageUrl ?? "",
   };
 }
 
@@ -152,6 +165,23 @@ export function ProductManager() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Convert file to base64 data URL for storage
+  const handleFileUpload = (file: File) => {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("حجم الصورة كبير جداً (الحد 2MB)");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setForm((f) => ({ ...f, imageUrl: result }));
+    };
+    reader.readAsDataURL(file);
+  };
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
@@ -296,6 +326,9 @@ export function ProductManager() {
       costPrice: Number(form.costPrice),
       stock: Number(form.stock),
       category: form.category.trim() || "General",
+      expiryDate: form.expiryDate || null,
+      expiryDate2: form.expiryDate2 || null,
+      imageUrl: form.imageUrl || null,
     };
     if (editing) {
       updateMutation.mutate({ id: editing.id, data: payload });
@@ -785,6 +818,122 @@ export function ProductManager() {
               <p className="text-xs text-muted-foreground">
                 {t("pickExistingOrNew")}
               </p>
+            </div>
+
+            {/* Product Image */}
+            <div className="space-y-2">
+              <Label>{t("productImage")}</Label>
+              <div className="flex items-start gap-3">
+                {/* Preview */}
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                  {form.imageUrl ? (
+                    <>
+                      <img
+                        src={form.imageUrl}
+                        alt={t("imagePreview")}
+                        className="h-full w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}
+                        className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                        aria-label={t("removeImage")}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </>
+                  ) : (
+                    <div className="grid h-full w-full place-items-center text-muted-foreground">
+                      <ImagePlus className="h-7 w-7" />
+                    </div>
+                  )}
+                </div>
+                {/* Upload + Camera buttons */}
+                <div className="flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <ImagePlus className="h-4 w-4" />
+                    {t("chooseFile")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => cameraInputRef.current?.click()}
+                  >
+                    <Camera className="h-4 w-4" />
+                    {t("captureFromCamera")}
+                  </Button>
+                </div>
+                {/* Hidden file inputs */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileUpload(file);
+                    e.target.value = "";
+                  }}
+                />
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileUpload(file);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Expiry Dates */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="p-expiry1" className="flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-amber-600" />
+                  {t("expiryDate1")}
+                </Label>
+                <Input
+                  id="p-expiry1"
+                  type="date"
+                  value={form.expiryDate}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, expiryDate: e.target.value }))
+                  }
+                  className="tabular-nums"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {t("expiryDateHint")}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="p-expiry2" className="flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-amber-600" />
+                  {t("expiryDate2")}
+                </Label>
+                <Input
+                  id="p-expiry2"
+                  type="date"
+                  value={form.expiryDate2}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, expiryDate2: e.target.value }))
+                  }
+                  className="tabular-nums"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {t("expiryDate2Hint")}
+                </p>
+              </div>
             </div>
 
             <DialogFooter className="gap-2 pt-2">
