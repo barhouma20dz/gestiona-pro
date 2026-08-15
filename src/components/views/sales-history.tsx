@@ -18,6 +18,7 @@ import {
   Wallet,
   Percent,
   Share2,
+  ScanLine,
 } from "lucide-react";
 
 import { salesApi, shopApi, productsApi } from "@/lib/api";
@@ -47,6 +48,7 @@ import {
 } from "@/components/ui/dialog";
 import { Receipt as ReceiptComponent } from "@/components/receipt";
 import { AnimatedNumber } from "@/components/animated-number";
+import { BarcodeScannerDialog } from "@/components/barcode-scanner";
 
 /* ---------- helpers ---------- */
 
@@ -110,6 +112,7 @@ export function SalesHistory() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptSize, setReceiptSize] = useState<"80mm" | "58mm">("80mm");
+  const [receiptScannerOpen, setReceiptScannerOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "7d" | "30d">(
     "all"
   );
@@ -297,6 +300,47 @@ export function SalesHistory() {
     setReceiptOpen(true);
   };
 
+  // Handle receipt QR scan — parse swiftbill://receipt/{id} and look up the sale
+  const handleReceiptScan = (scannedValue: string) => {
+    // Try to parse the QR data: swiftbill://receipt/{id}?no=...&total=...
+    let saleId: string | null = null;
+
+    // Match swiftbill://receipt/{id}
+    const match = scannedValue.match(/receipt\/([^?]+)/);
+    if (match) {
+      saleId = match[1];
+    }
+
+    // If not a QR URL, try to match by receipt number directly
+    if (!saleId) {
+      const byReceiptNo = allSales.find(
+        (s) => s.receiptNo === scannedValue.trim()
+      );
+      if (byReceiptNo) {
+        saleId = byReceiptNo.id;
+      }
+    }
+
+    if (saleId) {
+      // Verify the sale exists
+      const sale = allSales.find((s) => s.id === saleId);
+      if (sale) {
+        openReceipt(saleId);
+        toast.success(`${t("receipt")}: ${sale.receiptNo}`);
+      } else {
+        // Sale not in current filter — try fetching by ID
+        salesApi.get(saleId).then(() => {
+          openReceipt(saleId);
+          toast.success(`${t("receipt")}: ${saleId.slice(-8)}`);
+        }).catch(() => {
+          toast.error(t("receiptNotFound"));
+        });
+      }
+    } else {
+      toast.error(t("receiptNotFound"));
+    }
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -411,6 +455,16 @@ export function SalesHistory() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReceiptScannerOpen(true)}
+              className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+              title={t("scanReceiptDesc")}
+            >
+              <ScanLine className="h-4 w-4" />
+              {t("scanReceiptQR")}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -1057,6 +1111,13 @@ export function SalesHistory() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Receipt QR scanner dialog */}
+      <BarcodeScannerDialog
+        open={receiptScannerOpen}
+        onOpenChange={setReceiptScannerOpen}
+        onScan={handleReceiptScan}
+      />
     </div>
   );
 }
