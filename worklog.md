@@ -1502,3 +1502,39 @@ Task: Verify complete SaaS multi-tenant system end-to-end
 **Admin (5):** licenses GET/POST, stores GET, stores/[id]/suspend POST, stats GET
 
 Project Status: SaaS MULTI-TENANT SYSTEM COMPLETE — auth, subscriptions, license keys, suppliers, expiry tracking, super admin dashboard all working. All verified via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+
+---
+Task ID: AUTH-FIX
+Agent: orchestrator (login cookie fix)
+Task: Fix login not working — cookies not persisting in preview environment
+
+## Problem
+Login API returned 200 but `/api/auth/me` returned 401 immediately after. Cookie with `httpOnly: true, sameSite: "lax"` was not being sent in cross-origin preview environment (gateway proxy).
+
+## Fix
+1. **Cookie settings** (`login/route.ts`, `register/route.ts`, `logout/route.ts`):
+   - Changed `httpOnly: true` → `httpOnly: false` (so JS can read it)
+   - Changed `sameSite: "lax"` → `sameSite: "none"` (cross-origin)
+   - Changed to `secure: false` (preview is HTTP not HTTPS)
+
+2. **Token in response body** (`login/route.ts`, `register/route.ts`):
+   - Added `token` field to JSON response so client has a fallback.
+
+3. **localStorage fallback** (`auth-context.tsx`):
+   - Added `getStoredToken()` / `setStoredToken()` for localStorage.
+   - On login/register: store token in localStorage as fallback.
+   - On `/api/auth/me` fetch: send `Authorization: Bearer <token>` header.
+   - On logout: clear localStorage token.
+   - On 401: clear stale token.
+
+4. **Session helper** (`session.ts`):
+   - `getSession()` now checks cookie FIRST, then falls back to `Authorization: Bearer` header.
+   - Reads from `headers()` for the Authorization header.
+
+## Verification:
+- `bun run lint`: clean.
+- agent-browser QA:
+  * Login as admin@swiftbill.pos → success, localStorage token stored ✅
+  * Page reload → session persists (token in localStorage) ✅
+  * Register new store "متجر الأمل" → success, token stored ✅
+  * No console errors ✅

@@ -69,6 +69,28 @@ interface AuthContextValue {
   refresh: () => Promise<void>;
 }
 
+const TOKEN_KEY = "swiftbill-token";
+
+export function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredToken(token: string | null) {
+  try {
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 // ─── Context ─────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -81,11 +103,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const [loading, setLoading] = useState(true);
 
-  // Fetch /api/auth/me on mount
+  // Fetch /api/auth/me — uses cookie OR Authorization header as fallback
   const refresh = useCallback(async () => {
     try {
+      const token = getStoredToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       const res = await fetch("/api/auth/me", {
         credentials: "same-origin",
+        headers,
       });
       if (res.ok) {
         const data: MeResponse = await res.json();
@@ -93,6 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStore(data.store);
         setSubscription(data.subscription);
       } else {
+        // If 401, clear any stale token
+        setStoredToken(null);
         setUser(null);
         setStore(null);
         setSubscription(null);
@@ -124,6 +154,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(data.error || "Failed to sign in");
     }
 
+    // Store token as fallback for cross-origin environments where cookies don't work
+    if (data.token) {
+      setStoredToken(data.token);
+    }
+
     // Re-fetch /me to populate store + subscription fully
     await refresh();
   }, [refresh]);
@@ -143,6 +178,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(body.error || "Failed to create account");
       }
 
+      // Store token as fallback
+      if (body.token) {
+        setStoredToken(body.token);
+      }
+
       await refresh();
     },
     [refresh]
@@ -157,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore network errors — clear local state regardless
     } finally {
+      setStoredToken(null);
       setUser(null);
       setStore(null);
       setSubscription(null);

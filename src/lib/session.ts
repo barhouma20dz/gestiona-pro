@@ -1,12 +1,27 @@
-// Server-side session helper — reads JWT from cookies
+// Server-side session helper — reads JWT from cookies OR Authorization header
 import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import { verifyToken, getSessionCookieName, type SessionPayload } from "./auth";
 
 export async function getSession(): Promise<SessionPayload | null> {
+  // 1. Try cookie first
   const cookieStore = await cookies();
-  const token = cookieStore.get(getSessionCookieName())?.value;
-  if (!token) return null;
-  return verifyToken(token);
+  const cookieToken = cookieStore.get(getSessionCookieName())?.value;
+  if (cookieToken) {
+    const session = await verifyToken(cookieToken);
+    if (session) return session;
+  }
+
+  // 2. Fallback: try Authorization: Bearer <token> header
+  const headerStore = await headers();
+  const authHeader = headerStore.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const bearerToken = authHeader.slice(7);
+    const session = await verifyToken(bearerToken);
+    if (session) return session;
+  }
+
+  return null;
 }
 
 export async function requireAuth(): Promise<SessionPayload> {
