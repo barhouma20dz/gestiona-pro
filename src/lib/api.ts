@@ -18,13 +18,31 @@ import type {
   SubscriptionPlan,
 } from "./types";
 
+// Read stored JWT token from localStorage (set by auth-context on login)
+function getAuthToken(): string | null {
+  try {
+    return localStorage.getItem("swiftbill-token");
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(
   url: string,
   options?: RequestInit
 ): Promise<T> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((options?.headers as Record<string, string>) ?? {}),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
+    headers,
+    credentials: "same-origin",
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "Request failed");
