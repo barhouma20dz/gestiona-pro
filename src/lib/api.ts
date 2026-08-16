@@ -193,6 +193,14 @@ export const adminApi = {
       `/api/admin/stores/${id}/suspend`,
       { method: "POST" }
     ),
+  activateSubscription: (id: string, durationDays: number, plan?: string) =>
+    request<{ message: string; subscription: SubscriptionInfo["subscription"] }>(
+      `/api/admin/stores/${id}/activate-subscription`,
+      {
+        method: "POST",
+        body: JSON.stringify({ durationDays, plan }),
+      }
+    ),
 };
 
 /* ---------------- Sellers (Staff) ---------------- */
