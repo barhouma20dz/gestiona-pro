@@ -1763,3 +1763,39 @@ Task: Build seller/staff accounts with limited permissions, earnings tracking, a
 - Store owner: nour@store.com / 123456
 - Seller: ahmed@nour.store / 123456
 - Super admin: admin@swiftbill.pos / admin123
+
+---
+Task ID: AUTO-SUPPLIER + AUTH-COLORS
+Agent: orchestrator
+Task: Auto-create supplier from invoice info + fix auth screen text colors
+
+## Changes
+
+### 1. Auto-Create Supplier from Invoice (API)
+Updated `src/app/api/supplier-invoices/route.ts` POST handler:
+- Now accepts either `supplierId` (existing supplier) OR `supplierName` + `supplierPhone` + `supplierEmail` + `supplierAddress` (new supplier info from invoice).
+- If `supplierId` is not provided:
+  1. Checks if a supplier with the same name exists in the store.
+  2. If found → uses existing supplier ID (no duplicate).
+  3. If not found → **auto-creates a new supplier** with the provided info (name, phone, email, address).
+  4. Links the invoice to the supplier.
+- If `supplierId` is provided → validates it belongs to the store (unchanged).
+- Response includes the supplier object so the UI can display it.
+
+### 2. Auth Screen Text Colors
+Updated `src/components/auth-screen.tsx`:
+- Changed `text-foreground` → `text-black` for the heading.
+- Changed `text-muted-foreground` → `text-gray-700` for the toggle link.
+- Changed `text-muted-foreground` → `text-gray-600` for the trial features hint.
+- Changed `text-muted-foreground` → `text-gray-500` for field icons.
+- Added `text-black` to all Label components (storeName, businessType, phone, email, password).
+- VLM confirmed: "text is clearly readable, excellent accessibility, no readability issues detected."
+
+## Verification:
+- `bun run lint`: clean.
+- Auto-supplier test via API:
+  * Created invoice with `supplierName: "مورد تجريبي جديد"` → supplier auto-created ✅
+  * Created second invoice with same supplier name → reused existing supplier (no duplicate) ✅
+  * Suppliers count stayed at 1 (dedup working) ✅
+- Auth screen VLM: "Dark text on white card: ~17:1 contrast ratio (well above 4.5:1 minimum)" ✅
+- No console errors ✅

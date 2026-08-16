@@ -97,7 +97,7 @@ function ModeToggle({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void 
 
 function FieldIcon({ icon: Icon }: { icon: typeof Mail }) {
   return (
-    <div className="pointer-events-none absolute inset-y-0 start-0 flex items-center ps-3 text-muted-foreground">
+    <div className="pointer-events-none absolute inset-y-0 start-0 flex items-center ps-3 text-gray-500">
       <Icon className="h-4 w-4" />
     </div>
   );
@@ -206,7 +206,7 @@ export function AuthScreen() {
             <div className="p-6 sm:p-8">
               {/* Heading */}
               <div className="mb-6 text-center">
-                <h2 className="text-xl font-bold text-foreground">
+                <h2 className="text-xl font-bold text-black">
                   {mode === "login" ? t("authWelcomeBack") : t("authCreateAccount")}
                 </h2>
                 {mode === "register" && (
@@ -232,7 +232,7 @@ export function AuthScreen() {
                       transition={{ duration: 0.25 }}
                       className="space-y-1.5 overflow-hidden"
                     >
-                      <Label htmlFor="storeName" className="text-sm font-medium">
+                      <Label htmlFor="storeName" className="text-sm font-medium text-black">
                         {t("authStoreName")}
                       </Label>
                       <div className="relative">
@@ -262,7 +262,7 @@ export function AuthScreen() {
                       transition={{ duration: 0.25 }}
                       className="space-y-1.5 overflow-hidden"
                     >
-                      <Label htmlFor="businessType" className="text-sm font-medium">
+                      <Label htmlFor="businessType" className="text-sm font-medium text-black">
                         {t("authBusinessType")}
                       </Label>
                       <Select
@@ -298,7 +298,7 @@ export function AuthScreen() {
                       transition={{ duration: 0.25 }}
                       className="space-y-1.5 overflow-hidden"
                     >
-                      <Label htmlFor="phone" className="text-sm font-medium">
+                      <Label htmlFor="phone" className="text-sm font-medium text-black">
                         {t("authPhone")}
                       </Label>
                       <div className="relative">
@@ -320,7 +320,7 @@ export function AuthScreen() {
                 </AnimatePresence>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-sm font-medium">
+                  <Label htmlFor="email" className="text-sm font-medium text-black">
                     {t("authEmail")}
                   </Label>
                   <div className="relative">
@@ -340,7 +340,7 @@ export function AuthScreen() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="password" className="text-sm font-medium">
+                  <Label htmlFor="password" className="text-sm font-medium text-black">
                     {t("authPassword")}
                   </Label>
                   <div className="relative">
@@ -402,7 +402,7 @@ export function AuthScreen() {
                 </Button>
 
                 {/* Toggle link */}
-                <div className="pt-2 text-center text-sm text-muted-foreground">
+                <div className="pt-2 text-center text-sm text-gray-700">
                   {mode === "login" ? (
                     <>
                       {t("authNoAccount")}{" "}
@@ -431,7 +431,7 @@ export function AuthScreen() {
 
               {/* Trial features hint in register mode */}
               {mode === "register" && (
-                <p className="mt-5 text-center text-xs text-muted-foreground">
+                <p className="mt-5 text-center text-xs text-gray-600">
                   {t("authTrialFeatures")}
                 </p>
               )}
