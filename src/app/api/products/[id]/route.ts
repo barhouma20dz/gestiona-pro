@@ -82,15 +82,31 @@ export async function PUT(
       data.costPrice = costPrice;
     }
 
+    if (body?.unitType !== undefined) {
+      if (typeof body.unitType === "string") {
+        const ut = body.unitType.trim();
+        if (ut !== "count" && ut !== "kg") {
+          return NextResponse.json(
+            { error: "unitType must be 'count' or 'kg'" },
+            { status: 400 }
+          );
+        }
+        data.unitType = ut;
+      }
+    }
+
     if (body?.stock !== undefined) {
       const stock = Number(body.stock);
       if (Number.isNaN(stock) || stock < 0) {
         return NextResponse.json(
-          { error: "Stock must be an integer >= 0" },
+          { error: "Stock must be a number >= 0" },
           { status: 400 }
         );
       }
-      data.stock = Math.floor(stock);
+      // Decide stock type based on incoming unitType or existing unitType.
+      const effectiveUnit =
+        (data.unitType as string | undefined) ?? existing.unitType;
+      data.stock = effectiveUnit === "kg" ? stock : Math.floor(stock);
     }
 
     if (typeof body?.category === "string" && body.category.trim()) {

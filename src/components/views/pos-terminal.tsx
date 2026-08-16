@@ -25,10 +25,11 @@ import {
   Clock,
   Calculator,
   Users,
+  Scale,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
-import { useCartStore } from "@/lib/cart-store";
+import { useCartStore, isKgProduct } from "@/lib/cart-store";
 import { useHeldOrdersStore } from "@/lib/held-orders-store";
 import { useLanguage } from "@/lib/language-context";
 import { cn } from "@/lib/utils";
@@ -68,7 +69,12 @@ const PAYMENT_METHODS = [
   { key: "Card", labelKey: "card" as const, icon: CreditCard },
 ] as const;
 
-function stockBadge(stock: number, t: (k: "out" | "left" | "inStock") => string) {
+function stockBadge(
+  stock: number,
+  unitType: string,
+  t: (k: "out" | "left" | "inStock" | "kg" | "inStockKg") => string
+) {
+  const isKg = unitType === "kg";
   if (stock <= 0)
     return (
       <Badge
@@ -84,7 +90,9 @@ function stockBadge(stock: number, t: (k: "out" | "left" | "inStock") => string)
         variant="secondary"
         className="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
       >
-        {stock} {t("left")}
+        {isKg
+          ? `${stock.toFixed(stock % 1 === 0 ? 0 : 3)} ${t("kg")}`
+          : `${stock} ${t("left")}`}
       </Badge>
     );
   return (
@@ -92,8 +100,202 @@ function stockBadge(stock: number, t: (k: "out" | "left" | "inStock") => string)
       variant="secondary"
       className="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
     >
-      {stock} {t("inStock")}
+      {isKg
+        ? `${stock.toFixed(stock % 1 === 0 ? 0 : 3)} ${t("inStockKg")}`
+        : `${stock} ${t("inStock")}`}
     </Badge>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Weight dialog — for kg (weighted) products                                  */
+/* -------------------------------------------------------------------------- */
+
+type WeightDialogT = (
+  k:
+    | "weighProduct"
+    | "enterWeight"
+    | "weight"
+    | "pricePerKg"
+    | "totalPrice"
+    | "kg"
+    | "perKg"
+    | "cancel"
+    | "add"
+    | "out"
+    | "left"
+    | "inStock"
+    | "inStockKg"
+) => string;
+
+function WeightDialog({
+  open,
+  product,
+  currency,
+  onOpenChange,
+  onAdd,
+  t,
+}: {
+  open: boolean;
+  product: Product | null;
+  currency: string;
+  onOpenChange: (o: boolean) => void;
+  onAdd: (product: Product, weight: number) => void;
+  t: WeightDialogT;
+}) {
+  // Radix Dialog unmounts DialogContent on close (after exit animation), so the
+  // inner WeightDialogBody component is freshly mounted each time the dialog
+  // opens — its useState initializer fires again, giving a fresh 1.000 kg start.
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        {product && (
+          <WeightDialogBody
+            product={product}
+            currency={currency}
+            onOpenChange={onOpenChange}
+            onAdd={onAdd}
+            t={t}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WeightDialogBody({
+  product,
+  currency,
+  onOpenChange,
+  onAdd,
+  t,
+}: {
+  product: Product;
+  currency: string;
+  onOpenChange: (o: boolean) => void;
+  onAdd: (product: Product, weight: number) => void;
+  t: WeightDialogT;
+}) {
+  const [weightStr, setWeightStr] = useState("1.000");
+
+  const weight = Number(weightStr) || 0;
+  const pricePerKg = product.price;
+  const total = weight * pricePerKg;
+  const inStock = product.stock;
+  const exceedsStock = weight > inStock;
+  const invalid = weight <= 0 || exceedsStock;
+
+  const quickWeights = [0.25, 0.5, 1, 1.5, 2];
+
+  const handleAdd = () => {
+    if (weight <= 0) {
+      toast.error(t("enterWeight"));
+      return;
+    }
+    if (exceedsStock) {
+      toast.error(t("inStockKg"), {
+        description: `${inStock} ${t("kg")}`,
+      });
+      return;
+    }
+    onAdd(product, weight);
+    onOpenChange(false);
+  };
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <Scale className="h-5 w-5 text-amber-600" />
+          {t("weighProduct")}
+          <span className="text-muted-foreground">· {product.name}</span>
+        </DialogTitle>
+        <DialogDescription>{t("enterWeight")}</DialogDescription>
+      </DialogHeader>
+
+      <div className="space-y-4">
+        {/* Price per kg + stock info */}
+        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
+          <div>
+            <p className="text-[11px] text-muted-foreground">
+              {t("pricePerKg")}
+            </p>
+            <p className="text-sm font-bold tabular-nums text-amber-700 dark:text-amber-400">
+              {formatMoney(pricePerKg, currency)}
+              <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                {t("perKg")}
+              </span>
+            </p>
+          </div>
+          {stockBadge(inStock, "kg", t)}
+        </div>
+
+        {/* Big weight input */}
+        <div className="space-y-1.5">
+          <Label htmlFor="weight-input">
+            {t("weight")} ({t("kg")})
+          </Label>
+          <Input
+            id="weight-input"
+            type="number"
+            min={0}
+            step="0.001"
+            inputMode="decimal"
+            autoFocus
+            value={weightStr}
+            onChange={(e) => setWeightStr(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !invalid) handleAdd();
+            }}
+            className="text-center text-2xl font-bold tabular-nums"
+          />
+          {exceedsStock && (
+            <p className="text-xs text-red-600">
+              {t("inStockKg")}: {inStock} {t("kg")}
+            </p>
+          )}
+        </div>
+
+        {/* Quick weight buttons */}
+        <div className="grid grid-cols-5 gap-2">
+          {quickWeights.map((w) => (
+            <button
+              key={w}
+              type="button"
+              onClick={() => setWeightStr(w.toFixed(3))}
+              className={cn(
+                "rounded-lg border px-2 py-1.5 text-xs font-medium tabular-nums transition-colors",
+                Math.abs(weight - w) < 0.0001
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )}
+            >
+              {w.toFixed(3)}
+            </button>
+          ))}
+        </div>
+
+        {/* Calculated total */}
+        <div className="flex items-center justify-between rounded-lg border bg-primary/5 px-3 py-2.5">
+          <span className="text-sm font-medium text-muted-foreground">
+            {t("totalPrice")}
+          </span>
+          <span className="text-xl font-bold text-primary tabular-nums">
+            {formatMoney(total, currency)}
+          </span>
+        </div>
+      </div>
+
+      <DialogFooter className="gap-2">
+        <Button variant="outline" onClick={() => onOpenChange(false)}>
+          {t("cancel")}
+        </Button>
+        <Button onClick={handleAdd} disabled={invalid}>
+          <Plus className="h-4 w-4" />
+          {t("add")}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -294,9 +496,10 @@ function ProductTile({
   product: Product;
   currency: string;
   onAdd: (p: Product) => void;
-  t: (k: "out" | "left" | "inStock" | "outOfStockMsg") => string;
+  t: (k: "out" | "left" | "inStock" | "outOfStockMsg" | "kg" | "inStockKg" | "perKg" | "kgUnit") => string;
 }) {
   const outOfStock = product.stock <= 0;
+  const isKg = isKgProduct(product);
   return (
     <motion.button
       type="button"
@@ -331,6 +534,13 @@ function ProductTile({
           <span className="grid h-12 w-12 place-items-center rounded-full bg-white/70 text-sm font-bold text-foreground/80 backdrop-blur transition-transform duration-200 group-hover:scale-110">
             {initialsOf(product.name)}
           </span>
+          {/* Unit type badge — top-left */}
+          {isKg && (
+            <span className="absolute left-1 top-1 inline-flex items-center gap-0.5 rounded-full bg-amber-500/90 px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm">
+              <Scale className="h-2.5 w-2.5" />
+              {t("kgUnit")}
+            </span>
+          )}
           {/* Shine effect on hover */}
           {!outOfStock && (
             <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-500 group-hover:translate-x-full" />
@@ -341,10 +551,15 @@ function ProductTile({
             {product.name}
           </p>
           <div className="flex items-center justify-between gap-1">
-            <span className="text-sm font-bold text-primary transition-colors group-hover:text-primary/80">
+            <span className="text-sm font-bold text-primary transition-colors group-hover:text-primary/80 tabular-nums">
               {formatMoney(product.price, currency)}
+              {isKg && (
+                <span className="ml-0.5 text-[9px] font-normal text-muted-foreground">
+                  {t("perKg")}
+                </span>
+              )}
             </span>
-            {stockBadge(product.stock, t)}
+            {stockBadge(product.stock, product.unitType, t)}
           </div>
         </div>
       </Card>
@@ -369,8 +584,16 @@ function CartItemRow({
   onIncrement: () => void;
   onDecrement: () => void;
   onRemove: () => void;
-  t: (k: "each") => string;
+  t: (k: "each" | "kg" | "perKg" | "kgUnit") => string;
 }) {
+  const isKg = isKgProduct(item.product);
+  // For kg products, show weight with 3 decimal places; for count products, integer.
+  const qtyDisplay = isKg
+    ? item.quantity.toFixed(3)
+    : String(item.quantity);
+  // Unit suffix for the per-unit price: "/kg" for kg, "each" for count.
+  const unitSuffix = isKg ? t("perKg") : t("each");
+
   return (
     <motion.div
       layout
@@ -391,9 +614,14 @@ function CartItemRow({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium leading-tight">
             {item.product.name}
+            {isKg && (
+              <span className="ml-1 text-[10px] font-normal text-amber-700 dark:text-amber-400">
+                {t("kgUnit")}
+              </span>
+            )}
           </p>
-          <p className="text-xs text-muted-foreground">
-            {formatMoney(item.product.price, currency)} {t("each")}
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {formatMoney(item.product.price, currency)} {unitSuffix}
           </p>
         </div>
 
@@ -411,8 +639,8 @@ function CartItemRow({
             >
               <Minus className="h-3 w-3" />
             </Button>
-            <span className="w-7 text-center text-xs font-medium tabular-nums">
-              {item.quantity}
+            <span className="w-12 text-center text-xs font-medium tabular-nums">
+              {isKg ? `${qtyDisplay} ${t("kg")}` : `x${qtyDisplay}`}
             </span>
             <Button
               size="icon"
@@ -465,6 +693,7 @@ export function PosTerminal() {
   const discount = useCartStore((s) => s.discount);
   const paymentMethod = useCartStore((s) => s.paymentMethod);
   const addProduct = useCartStore((s) => s.addProduct);
+  const addWeightedProduct = useCartStore((s) => s.addWeightedProduct);
   const addByBarcode = useCartStore((s) => s.addByBarcode);
   const removeItem = useCartStore((s) => s.removeItem);
   const updateQuantity = useCartStore((s) => s.updateQuantity);
@@ -489,6 +718,9 @@ export function PosTerminal() {
   const [customItemOpen, setCustomItemOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customPrice, setCustomPrice] = useState("");
+  // Weight dialog state — opened when a kg product is clicked.
+  const [weighProduct, setWeighProduct] = useState<Product | null>(null);
+  const weighOpen = weighProduct !== null;
 
   const scanInputRef = useRef<HTMLInputElement>(null);
 
@@ -506,6 +738,7 @@ export function PosTerminal() {
       price,
       costPrice: 0,
       stock: 999999,
+      unitType: "count",
       category: "Custom",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -539,10 +772,17 @@ export function PosTerminal() {
       holdOrder({ items, discount, paymentMethod });
       toast.info(t("currentCartHeld"), { duration: 1500 });
     }
-    // Restore the held order into the cart
+    // Restore the held order into the cart.
+    // For kg products, we must add by weight (the quantity itself is the weight);
+    // for count products, we add one piece at a time to mirror the original count.
     order.items.forEach((ci) => {
-      for (let i = 0; i < ci.quantity; i++) {
-        addProduct(ci.product);
+      if (isKgProduct(ci.product)) {
+        addWeightedProduct(ci.product, ci.quantity);
+      } else {
+        const intQty = Math.max(0, Math.floor(ci.quantity));
+        for (let i = 0; i < intQty; i++) {
+          addProduct(ci.product);
+        }
       }
     });
     setDiscount(order.discount);
@@ -724,8 +964,29 @@ export function PosTerminal() {
       });
       return;
     }
+    // For kg (weighted) products, open the weight dialog instead of adding 1 piece.
+    if (isKgProduct(p)) {
+      setWeighProduct(p);
+      return;
+    }
     addProduct(p);
     toast.success(`${p.name} ${t("productAdded")}`, { duration: 1200 });
+  };
+
+  // Handler invoked by the WeightDialog's Add button.
+  const handleAddWeighted = (product: Product, weight: number) => {
+    const inCart = items.find((i) => i.product.id === product.id)?.quantity ?? 0;
+    if (inCart + weight > product.stock) {
+      toast.error(t("stockLimitReached"), {
+        description: `${t("only")} ${product.stock} ${t("kg")} ${t("of")} ${product.name} ${t("available")}`,
+      });
+      return;
+    }
+    addWeightedProduct(product, weight);
+    toast.success(
+      `${product.name} — ${weight.toFixed(3)} ${t("kg")}`,
+      { description: formatMoney(product.price * weight, currency), duration: 1500 }
+    );
   };
 
   return (
@@ -988,17 +1249,22 @@ export function PosTerminal() {
                     item={item}
                     currency={currency}
                     onIncrement={() => {
-                      if (item.quantity >= item.product.stock) {
+                      const step = isKgProduct(item.product) ? 0.25 : 1;
+                      const next = item.quantity + step;
+                      if (next > item.product.stock) {
                         toast.error(t("stockLimitReached"), {
-                          description: `${t("only")} ${item.product.stock} ${t("of")} ${item.product.name} ${t("available")}`,
+                          description: `${t("only")} ${item.product.stock} ${
+                            isKgProduct(item.product) ? t("kg") : ""
+                          } ${t("of")} ${item.product.name} ${t("available")}`.trim(),
                         });
                         return;
                       }
-                      updateQuantity(item.product.id, item.quantity + 1);
+                      updateQuantity(item.product.id, next);
                     }}
-                    onDecrement={() =>
-                      updateQuantity(item.product.id, item.quantity - 1)
-                    }
+                    onDecrement={() => {
+                      const step = isKgProduct(item.product) ? 0.25 : 1;
+                      updateQuantity(item.product.id, item.quantity - step);
+                    }}
                     onRemove={() => removeItem(item.product.id)}
                     t={t}
                   />
@@ -1113,6 +1379,18 @@ export function PosTerminal() {
         open={scannerOpen}
         onOpenChange={setScannerOpen}
         onScan={handleCameraScan}
+      />
+
+      {/* Weight dialog — opens when a kg product is clicked */}
+      <WeightDialog
+        open={weighOpen}
+        product={weighProduct}
+        currency={currency}
+        onOpenChange={(o) => {
+          if (!o) setWeighProduct(null);
+        }}
+        onAdd={handleAddWeighted}
+        t={t}
       />
 
       {/* Checkout dialog */}

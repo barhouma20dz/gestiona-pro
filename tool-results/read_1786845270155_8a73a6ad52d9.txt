@@ -1,0 +1,1337 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useMemo, useRef, useState } from "react";
+     4→import { useQuery } from "@tanstack/react-query";
+     5→import { motion, AnimatePresence } from "framer-motion";
+     6→import { toast } from "sonner";
+     7→import {
+     8→  ScanLine,
+     9→  Search,
+    10→  Plus,
+    11→  Camera,
+    12→  CameraOff,
+    13→  Trash2,
+    14→  Minus,
+    15→  ShoppingCart,
+    16→  PackageX,
+    17→  X,
+    18→  CheckCircle2,
+    19→  CreditCard,
+    20→  Banknote,
+    21→  QrCode,
+    22→  Pause,
+    23→  Play,
+    24→  History,
+    25→  Clock,
+    26→  Calculator,
+    27→  Users,
+    28→} from "lucide-react";
+    29→
+    30→import { productsApi, shopApi } from "@/lib/api";
+    31→import { useCartStore } from "@/lib/cart-store";
+    32→import { useHeldOrdersStore } from "@/lib/held-orders-store";
+    33→import { useLanguage } from "@/lib/language-context";
+    34→import { cn } from "@/lib/utils";
+    35→import { colorFromString, formatMoney, initialsOf } from "@/lib/format";
+    36→import type { Product } from "@/lib/types";
+    37→
+    38→import { Button } from "@/components/ui/button";
+    39→import { Card } from "@/components/ui/card";
+    40→import { Input } from "@/components/ui/input";
+    41→import { Label } from "@/components/ui/label";
+    42→import { Badge } from "@/components/ui/badge";
+    43→import { Separator } from "@/components/ui/separator";
+    44→import {
+    45→  Dialog,
+    46→  DialogContent,
+    47→  DialogDescription,
+    48→  DialogFooter,
+    49→  DialogHeader,
+    50→  DialogTitle,
+    51→} from "@/components/ui/dialog";
+    52→import {
+    53→  AlertDialog,
+    54→  AlertDialogAction,
+    55→  AlertDialogCancel,
+    56→  AlertDialogContent,
+    57→  AlertDialogDescription,
+    58→  AlertDialogFooter,
+    59→  AlertDialogHeader,
+    60→  AlertDialogTitle,
+    61→} from "@/components/ui/alert-dialog";
+    62→
+    63→import { CheckoutDialog } from "@/components/checkout-dialog";
+    64→
+    65→const PAYMENT_METHODS = [
+    66→  { key: "Cash", labelKey: "cash" as const, icon: Banknote },
+    67→  { key: "UPI", labelKey: "upi" as const, icon: QrCode },
+    68→  { key: "Card", labelKey: "card" as const, icon: CreditCard },
+    69→] as const;
+    70→
+    71→function stockBadge(stock: number, t: (k: "out" | "left" | "inStock") => string) {
+    72→  if (stock <= 0)
+    73→    return (
+    74→      <Badge
+    75→        variant="secondary"
+    76→        className="bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400"
+    77→      >
+    78→        {t("out")}
+    79→      </Badge>
+    80→    );
+    81→  if (stock <= 5)
+    82→    return (
+    83→      <Badge
+    84→        variant="secondary"
+    85→        className="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+    86→      >
+    87→        {stock} {t("left")}
+    88→      </Badge>
+    89→    );
+    90→  return (
+    91→    <Badge
+    92→      variant="secondary"
+    93→      className="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+    94→    >
+    95→      {stock} {t("inStock")}
+    96→    </Badge>
+    97→  );
+    98→}
+    99→
+   100→/* -------------------------------------------------------------------------- */
+   101→/* Camera scanner dialog                                                       */
+   102→/* -------------------------------------------------------------------------- */
+   103→
+   104→function CameraScannerDialog({
+   105→  open,
+   106→  onOpenChange,
+   107→  onScan,
+   108→}: {
+   109→  open: boolean;
+   110→  onOpenChange: (o: boolean) => void;
+   111→  onScan: (code: string) => void;
+   112→}) {
+   113→  // The inner body lives inside DialogContent. Radix mounts/unmounts its
+   114→  // children with the dialog lifecycle (after exit animation), so the body
+   115→  // component state (camera, manualCode) is naturally reset on each open.
+   116→  return (
+   117→    <Dialog open={open} onOpenChange={onOpenChange}>
+   118→      <DialogContent className="sm:max-w-md">
+   119→        <CameraScannerBody onScan={onScan} onOpenChange={onOpenChange} />
+   120→      </DialogContent>
+   121→    </Dialog>
+   122→  );
+   123→}
+   124→
+   125→function CameraScannerBody({
+   126→  onScan,
+   127→  onOpenChange,
+   128→}: {
+   129→  onScan: (code: string) => void;
+   130→  onOpenChange: (o: boolean) => void;
+   131→}) {
+   132→  const { t } = useLanguage();
+   133→  const videoRef = useRef<HTMLVideoElement>(null);
+   134→  const streamRef = useRef<MediaStream | null>(null);
+   135→  const [cameraReady, setCameraReady] = useState(false);
+   136→  const [cameraError, setCameraError] = useState<string | null>(null);
+   137→  const [manualCode, setManualCode] = useState("");
+   138→
+   139→  useEffect(() => {
+   140→    let cancelled = false;
+   141→
+   142→    async function startCamera() {
+   143→      try {
+   144→        if (!navigator.mediaDevices?.getUserMedia) {
+   145→          setCameraError("Camera API not supported in this browser.");
+   146→          return;
+   147→        }
+   148→        const stream = await navigator.mediaDevices.getUserMedia({
+   149→          video: { facingMode: "environment" },
+   150→          audio: false,
+   151→        });
+   152→        if (cancelled) {
+   153→          stream.getTracks().forEach((t) => t.stop());
+   154→          return;
+   155→        }
+   156→        streamRef.current = stream;
+   157→        if (videoRef.current) {
+   158→          videoRef.current.srcObject = stream;
+   159→          await videoRef.current.play().catch(() => {
+   160→            /* autoplay may be blocked — ignore */
+   161→          });
+   162→        }
+   163→        if (!cancelled) setCameraReady(true);
+   164→      } catch (err) {
+   165→        if (cancelled) return;
+   166→        const message =
+   167→          err instanceof Error ? err.message : "Unable to access camera.";
+   168→        setCameraError(message);
+   169→      }
+   170→    }
+   171→
+   172→    startCamera();
+   173→
+   174→    return () => {
+   175→      cancelled = true;
+   176→      if (streamRef.current) {
+   177→        streamRef.current.getTracks().forEach((t) => t.stop());
+   178→        streamRef.current = null;
+   179→      }
+   180→    };
+   181→  }, []);
+   182→
+   183→  const submitManual = () => {
+   184→    const code = manualCode.trim();
+   185→    if (!code) return;
+   186→    onScan(code);
+   187→    setManualCode("");
+   188→    onOpenChange(false);
+   189→  };
+   190→
+   191→  return (
+   192→    <>
+   193→      <DialogHeader>
+   194→        <DialogTitle className="flex items-center gap-2">
+   195→          <ScanLine className="h-5 w-5 text-primary" />
+   196→          {t("scanBarcode")}
+   197→        </DialogTitle>
+   198→        <DialogDescription>
+   199→          {t("cameraHint")}
+   200→        </DialogDescription>
+   201→      </DialogHeader>
+   202→
+   203→      {/* Camera preview */}
+   204→      <div className="relative aspect-video w-full overflow-hidden rounded-lg border bg-black">
+   205→        {cameraError ? (
+   206→          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
+   207→            <CameraOff className="h-8 w-8 text-muted-foreground" />
+   208→            <p className="text-sm font-medium text-foreground">
+   209→              {t("cameraNotAvailable")}
+   210→            </p>
+   211→            <p className="text-xs text-muted-foreground">
+   212→              {t("manualBarcodeHint")}
+   213→            </p>
+   214→          </div>
+   215→        ) : (
+   216→          <>
+   217→            <video
+   218→              ref={videoRef}
+   219→              autoPlay
+   220→              playsInline
+   221→              muted
+   222→              className="h-full w-full object-cover"
+   223→            />
+   224→            {/* Scan frame overlay */}
+   225→            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+   226→              <div className="relative h-24 w-3/4 max-w-[260px] rounded-md border-2 border-primary/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]">
+   227→                <span className="absolute -left-1 -top-1 h-4 w-4 border-l-4 border-t-4 border-primary" />
+   228→                <span className="absolute -right-1 -top-1 h-4 w-4 border-r-4 border-t-4 border-primary" />
+   229→                <span className="absolute -bottom-1 -left-1 h-4 w-4 border-b-4 border-l-4 border-primary" />
+   230→                <span className="absolute -bottom-1 -right-1 h-4 w-4 border-b-4 border-r-4 border-primary" />
+   231→                <motion.span
+   232→                  className="absolute inset-x-1 top-1/2 h-0.5 bg-primary"
+   233→                  initial={{ y: -40 }}
+   234→                  animate={{ y: 40 }}
+   235→                  transition={{
+   236→                    duration: 1.6,
+   237→                    repeat: Infinity,
+   238→                    repeatType: "reverse",
+   239→                    ease: "easeInOut",
+   240→                  }}
+   241→                />
+   242→              </div>
+   243→            </div>
+   244→            {!cameraReady && !cameraError && (
+   245→              <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
+   246→                {t("startingCamera")}
+   247→              </div>
+   248→            )}
+   249→          </>
+   250→        )}
+   251→      </div>
+   252→
+   253→      {/* Manual fallback — primary path */}
+   254→      <div className="space-y-2">
+   255→        <label className="text-xs font-medium text-muted-foreground">
+   256→          {t("enterBarcodeManually")}
+   257→        </label>
+   258→        <div className="flex gap-2">
+   259→          <Input
+   260→            autoFocus
+   261→            value={manualCode}
+   262→            placeholder="e.g. 8901030867531"
+   263→            onChange={(e) => setManualCode(e.target.value)}
+   264→            onKeyDown={(e) => {
+   265→              if (e.key === "Enter") submitManual();
+   266→            }}
+   267→          />
+   268→          <Button type="button" onClick={submitManual} disabled={!manualCode.trim()}>
+   269→            <Plus className="h-4 w-4" />
+   270→            {t("add")}
+   271→          </Button>
+   272→        </div>
+   273→      </div>
+   274→
+   275→      <DialogFooter>
+   276→        <Button variant="outline" onClick={() => onOpenChange(false)}>
+   277→          {t("close")}
+   278→        </Button>
+   279→      </DialogFooter>
+   280→    </>
+   281→  );
+   282→}
+   283→
+   284→/* -------------------------------------------------------------------------- */
+   285→/* Product tile                                                                */
+   286→/* -------------------------------------------------------------------------- */
+   287→
+   288→function ProductTile({
+   289→  product,
+   290→  currency,
+   291→  onAdd,
+   292→  t,
+   293→}: {
+   294→  product: Product;
+   295→  currency: string;
+   296→  onAdd: (p: Product) => void;
+   297→  t: (k: "out" | "left" | "inStock" | "outOfStockMsg") => string;
+   298→}) {
+   299→  const outOfStock = product.stock <= 0;
+   300→  return (
+   301→    <motion.button
+   302→      type="button"
+   303→      whileHover={outOfStock ? undefined : { y: -4, scale: 1.02 }}
+   304→      whileTap={outOfStock ? undefined : { scale: 0.96 }}
+   305→      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+   306→      disabled={outOfStock}
+   307→      onClick={() => {
+   308→        if (outOfStock) {
+   309→          toast.error(t("outOfStockMsg"), { description: product.name });
+   310→          return;
+   311→        }
+   312→        onAdd(product);
+   313→      }}
+   314→      className={cn(
+   315→        "group relative text-left",
+   316→        outOfStock && "cursor-not-allowed opacity-50 grayscale"
+   317→      )}
+   318→    >
+   319→      <Card
+   320→        className={cn(
+   321→          "h-full gap-0 overflow-hidden p-0 transition-all duration-200",
+   322→          outOfStock
+   323→            ? "bg-muted/40"
+   324→            : "group-hover:border-primary/50 group-hover:bg-accent/60 group-hover:shadow-lg group-hover:shadow-primary/10"
+   325→        )}
+   326→      >
+   327→        <div
+   328→          className="relative flex h-20 items-center justify-center text-xl font-bold transition-transform duration-200 group-hover:scale-105"
+   329→          style={{ backgroundColor: colorFromString(product.name) }}
+   330→        >
+   331→          <span className="grid h-12 w-12 place-items-center rounded-full bg-white/70 text-sm font-bold text-foreground/80 backdrop-blur transition-transform duration-200 group-hover:scale-110">
+   332→            {initialsOf(product.name)}
+   333→          </span>
+   334→          {/* Shine effect on hover */}
+   335→          {!outOfStock && (
+   336→            <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-500 group-hover:translate-x-full" />
+   337→          )}
+   338→        </div>
+   339→        <div className="space-y-1.5 p-2.5">
+   340→          <p className="line-clamp-2 text-xs font-medium leading-snug text-foreground min-h-[2rem]">
+   341→            {product.name}
+   342→          </p>
+   343→          <div className="flex items-center justify-between gap-1">
+   344→            <span className="text-sm font-bold text-primary transition-colors group-hover:text-primary/80">
+   345→              {formatMoney(product.price, currency)}
+   346→            </span>
+   347→            {stockBadge(product.stock, t)}
+   348→          </div>
+   349→        </div>
+   350→      </Card>
+   351→    </motion.button>
+   352→  );
+   353→}
+   354→
+   355→/* -------------------------------------------------------------------------- */
+   356→/* Cart item row                                                              */
+   357→/* -------------------------------------------------------------------------- */
+   358→
+   359→function CartItemRow({
+   360→  item,
+   361→  currency,
+   362→  onIncrement,
+   363→  onDecrement,
+   364→  onRemove,
+   365→  t,
+   366→}: {
+   367→  item: { product: Product; quantity: number };
+   368→  currency: string;
+   369→  onIncrement: () => void;
+   370→  onDecrement: () => void;
+   371→  onRemove: () => void;
+   372→  t: (k: "each") => string;
+   373→}) {
+   374→  return (
+   375→    <motion.div
+   376→      layout
+   377→      initial={{ opacity: 0, height: 0 }}
+   378→      animate={{ opacity: 1, height: "auto" }}
+   379→      exit={{ opacity: 0, height: 0 }}
+   380→      transition={{ duration: 0.2, ease: "easeInOut" }}
+   381→      className="overflow-hidden"
+   382→    >
+   383→      <div className="flex items-start gap-2 px-3 py-2.5">
+   384→        <div
+   385→          className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-md text-[10px] font-bold text-foreground/70"
+   386→          style={{ backgroundColor: colorFromString(item.product.name) }}
+   387→        >
+   388→          {initialsOf(item.product.name)}
+   389→        </div>
+   390→
+   391→        <div className="min-w-0 flex-1">
+   392→          <p className="truncate text-sm font-medium leading-tight">
+   393→            {item.product.name}
+   394→          </p>
+   395→          <p className="text-xs text-muted-foreground">
+   396→            {formatMoney(item.product.price, currency)} {t("each")}
+   397→          </p>
+   398→        </div>
+   399→
+   400→        <div className="flex flex-col items-end gap-1.5">
+   401→          <span className="text-sm font-semibold tabular-nums">
+   402→            {formatMoney(item.product.price * item.quantity, currency)}
+   403→          </span>
+   404→          <div className="flex items-center gap-1">
+   405→            <Button
+   406→              size="icon"
+   407→              variant="outline"
+   408→              className="h-6 w-6"
+   409→              onClick={onDecrement}
+   410→              aria-label="Decrease quantity"
+   411→            >
+   412→              <Minus className="h-3 w-3" />
+   413→            </Button>
+   414→            <span className="w-7 text-center text-xs font-medium tabular-nums">
+   415→              {item.quantity}
+   416→            </span>
+   417→            <Button
+   418→              size="icon"
+   419→              variant="outline"
+   420→              className="h-6 w-6"
+   421→              onClick={onIncrement}
+   422→              disabled={item.quantity >= item.product.stock}
+   423→              aria-label="Increase quantity"
+   424→            >
+   425→              <Plus className="h-3 w-3" />
+   426→            </Button>
+   427→            <Button
+   428→              size="icon"
+   429→              variant="ghost"
+   430→              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+   431→              onClick={onRemove}
+   432→              aria-label="Remove item"
+   433→            >
+   434→              <Trash2 className="h-3.5 w-3.5" />
+   435→            </Button>
+   436→          </div>
+   437→        </div>
+   438→      </div>
+   439→      <Separator />
+   440→    </motion.div>
+   441→  );
+   442→}
+   443→
+   444→/* -------------------------------------------------------------------------- */
+   445→/* Main POS Terminal view                                                      */
+   446→/* -------------------------------------------------------------------------- */
+   447→
+   448→export function PosTerminal() {
+   449→  const { t } = useLanguage();
+   450→  const { data: products = [], isLoading: productsLoading } = useQuery({
+   451→    queryKey: ["products"],
+   452→    queryFn: productsApi.list,
+   453→  });
+   454→
+   455→  const { data: shop } = useQuery({
+   456→    queryKey: ["shop"],
+   457→    queryFn: shopApi.get,
+   458→  });
+   459→
+   460→  const currency = shop?.currency || "₹";
+   461→  const taxRate = shop?.taxRate ?? 0;
+   462→
+   463→  // Cart store — select primitive slices to avoid re-render storms
+   464→  const items = useCartStore((s) => s.items);
+   465→  const discount = useCartStore((s) => s.discount);
+   466→  const paymentMethod = useCartStore((s) => s.paymentMethod);
+   467→  const addProduct = useCartStore((s) => s.addProduct);
+   468→  const addByBarcode = useCartStore((s) => s.addByBarcode);
+   469→  const removeItem = useCartStore((s) => s.removeItem);
+   470→  const updateQuantity = useCartStore((s) => s.updateQuantity);
+   471→  const clearCart = useCartStore((s) => s.clearCart);
+   472→  const setDiscount = useCartStore((s) => s.setDiscount);
+   473→  const setPaymentMethod = useCartStore((s) => s.setPaymentMethod);
+   474→
+   475→  // Held orders (parked sales) — persisted to localStorage
+   476→  const heldOrders = useHeldOrdersStore((s) => s.orders);
+   477→  const holdOrder = useHeldOrdersStore((s) => s.holdOrder);
+   478→  const resumeOrder = useHeldOrdersStore((s) => s.resumeOrder);
+   479→  const deleteHeldOrder = useHeldOrdersStore((s) => s.deleteOrder);
+   480→
+   481→  const [scanInput, setScanInput] = useState("");
+   482→  const [activeCategory, setActiveCategory] = useState<string>("All");
+   483→  const [searchTerm, setSearchTerm] = useState("");
+   484→  const [scannerOpen, setScannerOpen] = useState(false);
+   485→  const [checkoutOpen, setCheckoutOpen] = useState(false);
+   486→  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+   487→  const [shortcutsHintOpen, setShortcutsHintOpen] = useState(false);
+   488→  const [heldOrdersOpen, setHeldOrdersOpen] = useState(false);
+   489→  const [customItemOpen, setCustomItemOpen] = useState(false);
+   490→  const [customName, setCustomName] = useState("");
+   491→  const [customPrice, setCustomPrice] = useState("");
+   492→
+   493→  const scanInputRef = useRef<HTMLInputElement>(null);
+   494→
+   495→  const handleAddCustomItem = () => {
+   496→    const price = Number(customPrice);
+   497→    if (!customPrice || Number.isNaN(price) || price <= 0) {
+   498→      toast.error(t("enterValidPrice"));
+   499→      return;
+   500→    }
+   501→    const name = customName.trim() || t("customItemDefault");
+   502→    const customProduct: Product = {
+   503→      id: `custom-${Date.now()}`,
+   504→      name,
+   505→      barcode: `CUSTOM-${Date.now().toString().slice(-6)}`,
+   506→      price,
+   507→      costPrice: 0,
+   508→      stock: 999999,
+   509→      category: "Custom",
+   510→      createdAt: new Date().toISOString(),
+   511→      updatedAt: new Date().toISOString(),
+   512→    };
+   513→    addProduct(customProduct);
+   514→    toast.success(`${name} ${t("productAdded")}`, { description: formatMoney(price, currency) });
+   515→    setCustomName("");
+   516→    setCustomPrice("");
+   517→    setCustomItemOpen(false);
+   518→  };
+   519→
+   520→  const handleHoldOrder = () => {
+   521→    if (items.length === 0) return;
+   522→    holdOrder({ items, discount, paymentMethod });
+   523→    const count = items.reduce((s, i) => s + i.quantity, 0);
+   524→    toast.success(`${t("orderHeld")} (${count} ${t("orderHeldItems")})`, {
+   525→      description: t("pressF7Resume"),
+   526→      duration: 2500,
+   527→    });
+   528→    clearCart();
+   529→  };
+   530→
+   531→  const handleResumeOrder = (id: string) => {
+   532→    const order = resumeOrder(id);
+   533→    if (!order) {
+   534→      toast.error(t("orderNotFound"));
+   535→      return;
+   536→    }
+   537→    // If current cart is non-empty, hold it first
+   538→    if (items.length > 0) {
+   539→      holdOrder({ items, discount, paymentMethod });
+   540→      toast.info(t("currentCartHeld"), { duration: 1500 });
+   541→    }
+   542→    // Restore the held order into the cart
+   543→    order.items.forEach((ci) => {
+   544→      for (let i = 0; i < ci.quantity; i++) {
+   545→        addProduct(ci.product);
+   546→      }
+   547→    });
+   548→    setDiscount(order.discount);
+   549→    setPaymentMethod(order.paymentMethod);
+   550→    setHeldOrdersOpen(false);
+   551→    toast.success(t("orderResumed"), { duration: 1500 });
+   552→  };
+   553→
+   554→  const handleDeleteHeldOrder = (id: string) => {
+   555→    deleteHeldOrder(id);
+   556→    toast.success(t("heldOrderDiscarded"));
+   557→  };
+   558→
+   559→  // Keyboard shortcuts: F1 focus scan, F2/F3/F4 payment methods, F6 hold, F7 held, F9 checkout
+   560→  useEffect(() => {
+   561→    const handler = (e: KeyboardEvent) => {
+   562→      // Skip if a dialog is open or user is typing in a non-scan input
+   563→      const target = e.target as HTMLElement | null;
+   564→      const isTyping =
+   565→        target?.tagName === "INPUT" ||
+   566→        target?.tagName === "TEXTAREA" ||
+   567→        target?.isContentEditable;
+   568→
+   569→      // F1 — focus scan input (always works, even if typing)
+   570→      if (e.key === "F1") {
+   571→        e.preventDefault();
+   572→        scanInputRef.current?.focus();
+   573→        scanInputRef.current?.select();
+   574→        return;
+   575→      }
+   576→
+   577→      // F2/F3/F4 — payment method selection (only when cart non-empty)
+   578→      if (e.key === "F2" && items.length > 0) {
+   579→        e.preventDefault();
+   580→        setPaymentMethod("Cash");
+   581→        toast.success(`${t("paymentMethod")}: ${t("cash")}`, { duration: 1000 });
+   582→        return;
+   583→      }
+   584→      if (e.key === "F3" && items.length > 0) {
+   585→        e.preventDefault();
+   586→        setPaymentMethod("UPI");
+   587→        toast.success(`${t("paymentMethod")}: ${t("upi")}`, { duration: 1000 });
+   588→        return;
+   589→      }
+   590→      if (e.key === "F4" && items.length > 0) {
+   591→        e.preventDefault();
+   592→        setPaymentMethod("Card");
+   593→        toast.success(`${t("paymentMethod")}: ${t("card")}`, { duration: 1000 });
+   594→        return;
+   595→      }
+   596→
+   597→      // F9 — checkout (only when cart non-empty and not typing in scan input)
+   598→      if (e.key === "F9" && items.length > 0 && !isTyping) {
+   599→        e.preventDefault();
+   600→        setCheckoutOpen(true);
+   601→        return;
+   602→      }
+   603→
+   604→      // F6 — hold current order (only when cart non-empty and not typing)
+   605→      if (e.key === "F6" && items.length > 0 && !isTyping) {
+   606→        e.preventDefault();
+   607→        handleHoldOrder();
+   608→        return;
+   609→      }
+   610→
+   611→      // F7 — open held orders dialog (only when not typing)
+   612→      if (e.key === "F7" && !isTyping) {
+   613→        e.preventDefault();
+   614→        setHeldOrdersOpen(true);
+   615→        return;
+   616→      }
+   617→    };
+   618→    window.addEventListener("keydown", handler);
+   619→    return () => window.removeEventListener("keydown", handler);
+   620→  }, [items.length, setPaymentMethod, items, discount, paymentMethod, t]);
+   621→
+   622→  const categories = useMemo(() => {
+   623→    const set = new Set<string>();
+   624→    products.forEach((p) => p.category && set.add(p.category));
+   625→    return ["All", ...Array.from(set).sort()];
+   626→  }, [products]);
+   627→
+   628→  const filteredProducts = useMemo(() => {
+   629→    const term = searchTerm.trim().toLowerCase();
+   630→    return products.filter((p) => {
+   631→      const matchCat =
+   632→        activeCategory === "All" || p.category === activeCategory;
+   633→      const matchSearch =
+   634→        !term ||
+   635→        p.name.toLowerCase().includes(term) ||
+   636→        p.barcode.toLowerCase().includes(term);
+   637→      return matchCat && matchSearch;
+   638→    });
+   639→  }, [products, activeCategory, searchTerm]);
+   640→
+   641→  const subtotal = useMemo(
+   642→    () => items.reduce((sum, i) => sum + i.product.price * i.quantity, 0),
+   643→    [items]
+   644→  );
+   645→  const totalItems = useMemo(
+   646→    () => items.reduce((sum, i) => sum + i.quantity, 0),
+   647→    [items]
+   648→  );
+   649→  const taxableAmount = Math.max(0, subtotal - discount);
+   650→  const taxAmount = (taxableAmount * taxRate) / 100;
+   651→  const grandTotal = taxableAmount + taxAmount;
+   652→
+   653→  const handleScanSubmit = () => {
+   654→    const code = scanInput.trim();
+   655→    if (!code) return;
+   656→    // Try barcode first
+   657→    const added = addByBarcode(code, products);
+   658→    if (added) {
+   659→      const p = products.find(
+   660→        (x) => x.barcode.toLowerCase() === code.toLowerCase()
+   661→      );
+   662→      toast.success(`${p?.name ?? t("customItemDefault")} ${t("productAdded")}`);
+   663→      setScanInput("");
+   664→      return;
+   665→    }
+   666→    // Try name match (case-insensitive, exact or contains)
+   667→    const byName = products.find(
+   668→      (p) => p.name.toLowerCase() === code.toLowerCase()
+   669→    );
+   670→    if (byName) {
+   671→      addProduct(byName);
+   672→      toast.success(`${byName.name} ${t("productAdded")}`);
+   673→      setScanInput("");
+   674→      return;
+   675→    }
+   676→    // Partial name match
+   677→    const partial = products.find((p) =>
+   678→      p.name.toLowerCase().includes(code.toLowerCase())
+   679→    );
+   680→    if (partial) {
+   681→      addProduct(partial);
+   682→      toast.success(`${partial.name} ${t("productAdded")}`);
+   683→      setScanInput("");
+   684→      return;
+   685→    }
+   686→    toast.error(t("productNotFound"), {
+   687→      description: `${t("noProductMatches")} "${code}"`,
+   688→    });
+   689→  };
+   690→
+   691→  const handleCameraScan = (code: string) => {
+   692→    const added = addByBarcode(code, products);
+   693→    if (added) {
+   694→      const p = products.find(
+   695→        (x) => x.barcode.toLowerCase() === code.toLowerCase()
+   696→      );
+   697→      toast.success(`${p?.name ?? t("customItemDefault")} ${t("productAdded")}`);
+   698→    } else {
+   699→      // Try name match from camera input too
+   700→      const byName = products.find((p) =>
+   701→        p.name.toLowerCase().includes(code.toLowerCase())
+   702→      );
+   703→      if (byName) {
+   704→        addProduct(byName);
+   705→        toast.success(`${byName.name} ${t("productAdded")}`);
+   706→      } else {
+   707→        toast.error(t("productNotFound"), {
+   708→          description: `${t("noProductMatches")} "${code}"`,
+   709→        });
+   710→      }
+   711→    }
+   712→  };
+   713→
+   714→  const handleAddProduct = (p: Product) => {
+   715→    if (p.stock <= 0) {
+   716→      toast.error(t("outOfStockMsg"), { description: p.name });
+   717→      return;
+   718→    }
+   719→    // Prevent adding more than stock
+   720→    const inCart = items.find((i) => i.product.id === p.id)?.quantity ?? 0;
+   721→    if (inCart >= p.stock) {
+   722→      toast.error(t("stockLimitReached"), {
+   723→        description: `${t("only")} ${p.stock} ${t("of")} ${p.name} ${t("available")}`,
+   724→      });
+   725→      return;
+   726→    }
+   727→    addProduct(p);
+   728→    toast.success(`${p.name} ${t("productAdded")}`, { duration: 1200 });
+   729→  };
+   730→
+   731→  return (
+   732→    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+   733→      {/* ---------------- Left column: catalog & scan ---------------- */}
+   734→      <div className="flex-1 min-w-0 space-y-4">
+   735→        {/* Scan bar */}
+   736→        <Card className="gap-0 p-3 sm:p-4">
+   737→          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+   738→            <div className="relative flex-1">
+   739→              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   740→              <Input
+   741→                ref={scanInputRef}
+   742→                value={scanInput}
+   743→                onChange={(e) => {
+   744→                  setScanInput(e.target.value);
+   745→                  setSearchTerm(e.target.value);
+   746→                }}
+   747→                onKeyDown={(e) => {
+   748→                  if (e.key === "Enter") handleScanSubmit();
+   749→                }}
+   750→                placeholder={t("scanOrSearch")}
+   751→                className="pl-9 pr-10"
+   752→                aria-label={t("scanOrSearch")}
+   753→              />
+   754→              {scanInput ? (
+   755→                <button
+   756→                  onClick={() => {
+   757→                    setScanInput("");
+   758→                    setSearchTerm("");
+   759→                  }}
+   760→                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+   761→                  aria-label="Clear search"
+   762→                >
+   763→                  <X className="h-3.5 w-3.5" />
+   764→                </button>
+   765→              ) : (
+   766→                <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+   767→                  F1
+   768→                </kbd>
+   769→              )}
+   770→            </div>
+   771→            <div className="flex gap-2">
+   772→              <Button
+   773→                variant="outline"
+   774→                onClick={() => setCustomItemOpen(true)}
+   775→                className="shrink-0"
+   776→                title={t("addCustomItemTitle")}
+   777→              >
+   778→                <Calculator className="h-4 w-4" />
+   779→                <span className="hidden sm:inline">{t("custom")}</span>
+   780→              </Button>
+   781→              <Button
+   782→                variant="outline"
+   783→                onClick={() => setScannerOpen(true)}
+   784→                className="shrink-0"
+   785→              >
+   786→                <Camera className="h-4 w-4" />
+   787→                {t("scan")}
+   788→              </Button>
+   789→              <Button
+   790→                onClick={handleScanSubmit}
+   791→                disabled={!scanInput.trim()}
+   792→                className="shrink-0"
+   793→              >
+   794→                <Plus className="h-4 w-4" />
+   795→                {t("add")}
+   796→              </Button>
+   797→            </div>
+   798→          </div>
+   799→        </Card>
+   800→
+   801→        {/* Category chips */}
+   802→        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-emerald">
+   803→          {categories.map((cat) => (
+   804→            <button
+   805→              key={cat}
+   806→              onClick={() => setActiveCategory(cat)}
+   807→              className={cn(
+   808→                "shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
+   809→                activeCategory === cat
+   810→                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+   811→                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+   812→              )}
+   813→            >
+   814→              {cat}
+   815→            </button>
+   816→          ))}
+   817→        </div>
+   818→
+   819→        {/* Product grid */}
+   820→        {productsLoading ? (
+   821→          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+   822→            {Array.from({ length: 8 }).map((_, i) => (
+   823→              <div
+   824→                key={i}
+   825→                className="h-40 animate-pulse rounded-xl border bg-muted/50"
+   826→              />
+   827→            ))}
+   828→          </div>
+   829→        ) : filteredProducts.length === 0 ? (
+   830→          <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-16 text-center">
+   831→            <PackageX className="h-10 w-10 text-muted-foreground/60" />
+   832→            <div>
+   833→              <p className="text-sm font-medium">{t("noProductsFound")}</p>
+   834→              <p className="text-xs text-muted-foreground">
+   835→                {t("tryDifferentBarcode")}
+   836→              </p>
+   837→            </div>
+   838→          </div>
+   839→        ) : (
+   840→          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+   841→            {filteredProducts.map((p) => (
+   842→              <ProductTile
+   843→                key={p.id}
+   844→                product={p}
+   845→                currency={currency}
+   846→                onAdd={handleAddProduct}
+   847→                t={t}
+   848→              />
+   849→            ))}
+   850→          </div>
+   851→        )}
+   852→      </div>
+   853→
+   854→      {/* ---------------- Right column: cart ---------------- */}
+   855→      <div className="w-full lg:w-[380px] lg:shrink-0 space-y-3">
+   856→        {/* Held carts panel — visible strip of waiting customers */}
+   857→        {heldOrders.length > 0 && (
+   858→          <Card className="gap-0 p-0 overflow-hidden border-amber-500/30 bg-amber-500/5">
+   859→            <div className="flex items-center justify-between gap-2 border-b border-amber-500/20 px-3 py-2">
+   860→              <div className="flex items-center gap-1.5">
+   861→                <Users className="h-3.5 w-3.5 text-amber-600" />
+   862→                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+   863→                  {t("heldCarts")} ({heldOrders.length})
+   864→                </p>
+   865→              </div>
+   866→              <p className="text-[10px] text-muted-foreground">{t("heldCartsDesc")}</p>
+   867→            </div>
+   868→            <div className="max-h-[120px] overflow-y-auto scrollbar-emerald p-2 space-y-1.5">
+   869→              {heldOrders.map((order, idx) => {
+   870→                const orderTotal = order.items.reduce(
+   871→                  (s, i) => s + i.product.price * i.quantity,
+   872→                  0
+   873→                );
+   874→                const orderCount = order.items.reduce(
+   875→                  (s, i) => s + i.quantity,
+   876→                  0
+   877→                );
+   878→                const heldAgo = Math.round(
+   879→                  (Date.now() - order.heldAt) / 60000
+   880→                );
+   881→                return (
+   882→                  <div
+   883→                    key={order.id}
+   884→                    className="group flex items-center gap-2 rounded-lg border border-amber-500/20 bg-card p-2 transition-colors hover:border-amber-500/40 hover:bg-amber-500/5"
+   885→                  >
+   886→                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-500 text-[10px] font-bold text-white">
+   887→                      {idx + 1}
+   888→                    </span>
+   889→                    <div className="min-w-0 flex-1">
+   890→                      <p className="truncate text-xs font-medium">
+   891→                        {order.label}
+   892→                      </p>
+   893→                      <p className="text-[10px] text-muted-foreground">
+   894→                        {orderCount} {t("items2")} · {formatMoney(orderTotal, currency)} ·{" "}
+   895→                        {heldAgo < 1 ? t("now") : `${heldAgo}m`}
+   896→                      </p>
+   897→                    </div>
+   898→                    <Button
+   899→                      size="sm"
+   900→                      variant="outline"
+   901→                      className="h-6 shrink-0 px-2 text-[10px] border-amber-500/30 text-amber-700 hover:bg-amber-500/10 hover:text-amber-700"
+   902→                      onClick={() => handleResumeOrder(order.id)}
+   903→                    >
+   904→                      <Play className="h-2.5 w-2.5" />
+   905→                      {t("resumeCart")}
+   906→                    </Button>
+   907→                  </div>
+   908→                );
+   909→              })}
+   910→            </div>
+   911→          </Card>
+   912→        )}
+   913→
+   914→        <Card className="sticky top-0 flex flex-col gap-0 overflow-hidden p-0 lg:top-0">
+   915→          {/* Header */}
+   916→          <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+   917→            <div className="flex items-center gap-2">
+   918→              <ShoppingCart className="h-4 w-4 text-primary" />
+   919→              <h2 className="text-sm font-semibold">{t("currentOrder")}</h2>
+   920→              {totalItems > 0 && (
+   921→                <Badge className="ml-1 h-5 min-w-5 justify-center px-1.5 text-[11px]">
+   922→                  {totalItems}
+   923→                </Badge>
+   924→              )}
+   925→            </div>
+   926→            <div className="flex items-center gap-1">
+   927→              {/* Held orders button */}
+   928→              <Button
+   929→                size="sm"
+   930→                variant="ghost"
+   931→                className="relative h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+   932→                onClick={() => setHeldOrdersOpen(true)}
+   933→                title={`${t("heldOrders")} (F7)`}
+   934→              >
+   935→                <History className="h-3.5 w-3.5" />
+   936→                {t("held")}
+   937→                {heldOrders.length > 0 && (
+   938→                  <span className="ml-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+   939→                    {heldOrders.length}
+   940→                  </span>
+   941→                )}
+   942→              </Button>
+   943→              {items.length > 0 && (
+   944→                <>
+   945→                  <Button
+   946→                    size="sm"
+   947→                    variant="ghost"
+   948→                    className="h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+   949→                    onClick={handleHoldOrder}
+   950→                    title={`${t("hold")} (F6)`}
+   951→                  >
+   952→                    <Pause className="h-3.5 w-3.5" />
+   953→                    {t("hold")}
+   954→                  </Button>
+   955→                  <Button
+   956→                    size="sm"
+   957→                    variant="ghost"
+   958→                    className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+   959→                    onClick={() => setClearConfirmOpen(true)}
+   960→                  >
+   961→                    <Trash2 className="h-3.5 w-3.5" />
+   962→                    {t("clear")}
+   963→                  </Button>
+   964→                </>
+   965→              )}
+   966→            </div>
+   967→          </div>
+   968→
+   969→          {/* Cart items */}
+   970→          {items.length === 0 ? (
+   971→            <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+   972→              <div className="grid h-14 w-14 place-items-center rounded-full bg-accent text-muted-foreground">
+   973→                <ShoppingCart className="h-6 w-6" />
+   974→              </div>
+   975→              <div>
+   976→                <p className="text-sm font-medium">{t("cartIsEmpty")}</p>
+   977→                <p className="text-xs text-muted-foreground">
+   978→                  {t("scanOrTapProducts")}
+   979→                </p>
+   980→              </div>
+   981→            </div>
+   982→          ) : (
+   983→            <div className="max-h-[40vh] overflow-y-auto scrollbar-emerald">
+   984→              <AnimatePresence initial={false}>
+   985→                {items.map((item) => (
+   986→                  <CartItemRow
+   987→                    key={item.product.id}
+   988→                    item={item}
+   989→                    currency={currency}
+   990→                    onIncrement={() => {
+   991→                      if (item.quantity >= item.product.stock) {
+   992→                        toast.error(t("stockLimitReached"), {
+   993→                          description: `${t("only")} ${item.product.stock} ${t("of")} ${item.product.name} ${t("available")}`,
+   994→                        });
+   995→                        return;
+   996→                      }
+   997→                      updateQuantity(item.product.id, item.quantity + 1);
+   998→                    }}
+   999→                    onDecrement={() =>
+  1000→                      updateQuantity(item.product.id, item.quantity - 1)
+  1001→                    }
+  1002→                    onRemove={() => removeItem(item.product.id)}
+  1003→                    t={t}
+  1004→                  />
+  1005→                ))}
+  1006→              </AnimatePresence>
+  1007→            </div>
+  1008→          )}
+  1009→
+  1010→          {/* Totals + checkout */}
+  1011→          {items.length > 0 && (
+  1012→            <div className="space-y-3 border-t px-4 py-3">
+  1013→              <div className="space-y-1.5 text-sm">
+  1014→                <div className="flex justify-between text-muted-foreground">
+  1015→                  <span>{t("subtotal")}</span>
+  1016→                  <span className="tabular-nums">
+  1017→                    {formatMoney(subtotal, currency)}
+  1018→                  </span>
+  1019→                </div>
+  1020→
+  1021→                <div className="flex items-center justify-between gap-2">
+  1022→                  <span className="text-muted-foreground">{t("discount")}</span>
+  1023→                  <div className="flex items-center gap-1">
+  1024→                    <span className="text-xs text-muted-foreground">
+  1025→                      {currency}
+  1026→                    </span>
+  1027→                    <Input
+  1028→                      type="number"
+  1029→                      min={0}
+  1030→                      step="0.01"
+  1031→                      value={Number.isFinite(discount) ? discount : 0}
+  1032→                      onChange={(e) => {
+  1033→                        const v = parseFloat(e.target.value);
+  1034→                        setDiscount(Number.isNaN(v) ? 0 : v);
+  1035→                      }}
+  1036→                      className="h-7 w-24 text-right tabular-nums"
+  1037→                    />
+  1038→                  </div>
+  1039→                </div>
+  1040→
+  1041→                {taxRate > 0 && (
+  1042→                  <div className="flex justify-between text-muted-foreground">
+  1043→                    <span>{t("tax")} ({taxRate}%)</span>
+  1044→                    <span className="tabular-nums">
+  1045→                      {formatMoney(taxAmount, currency)}
+  1046→                    </span>
+  1047→                  </div>
+  1048→                )}
+  1049→              </div>
+  1050→
+  1051→              <Separator />
+  1052→
+  1053→              <div className="flex items-baseline justify-between">
+  1054→                <span className="text-sm font-semibold">{t("grandTotal")}</span>
+  1055→                <span className="text-xl font-bold text-primary tabular-nums">
+  1056→                  {formatMoney(grandTotal, currency)}
+  1057→                </span>
+  1058→              </div>
+  1059→
+  1060→              {/* Payment method */}
+  1061→              <div className="grid grid-cols-3 gap-2">
+  1062→                {PAYMENT_METHODS.map((m, idx) => {
+  1063→                  const Icon = m.icon;
+  1064→                  const active = paymentMethod === m.key;
+  1065→                  const fkey = idx + 2; // F2=Cash, F3=UPI, F4=Card
+  1066→                  return (
+  1067→                    <Button
+  1068→                      key={m.key}
+  1069→                      type="button"
+  1070→                      size="sm"
+  1071→                      variant={active ? "default" : "outline"}
+  1072→                      onClick={() => setPaymentMethod(m.key)}
+  1073→                      className={cn(
+  1074→                        "relative flex flex-col gap-0.5 h-auto py-2",
+  1075→                        active && "shadow-sm"
+  1076→                      )}
+  1077→                    >
+  1078→                      <Icon className="h-4 w-4" />
+  1079→                      <span className="text-[11px]">{t(m.labelKey)}</span>
+  1080→                      <kbd
+  1081→                        className={cn(
+  1082→                          "absolute right-1 top-1 rounded px-1 text-[9px] font-medium leading-tight",
+  1083→                          active
+  1084→                            ? "bg-primary-foreground/20 text-primary-foreground"
+  1085→                            : "bg-muted text-muted-foreground"
+  1086→                        )}
+  1087→                      >
+  1088→                        F{fkey}
+  1089→                      </kbd>
+  1090→                    </Button>
+  1091→                  );
+  1092→                })}
+  1093→              </div>
+  1094→
+  1095→              <Button
+  1096→                size="lg"
+  1097→                className="w-full"
+  1098→                onClick={() => setCheckoutOpen(true)}
+  1099→              >
+  1100→                <CheckCircle2 className="h-4 w-4" />
+  1101→                {t("checkout")} · {formatMoney(grandTotal, currency)}
+  1102→                <kbd className="ml-2 rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-medium">
+  1103→                  F9
+  1104→                </kbd>
+  1105→              </Button>
+  1106→            </div>
+  1107→          )}
+  1108→        </Card>
+  1109→      </div>
+  1110→
+  1111→      {/* Camera scanner dialog */}
+  1112→      <CameraScannerDialog
+  1113→        open={scannerOpen}
+  1114→        onOpenChange={setScannerOpen}
+  1115→        onScan={handleCameraScan}
+  1116→      />
+  1117→
+  1118→      {/* Checkout dialog */}
+  1119→      <CheckoutDialog open={checkoutOpen} onOpenChange={setCheckoutOpen} />
+  1120→
+  1121→      {/* Clear cart confirm */}
+  1122→      <AlertDialog
+  1123→        open={clearConfirmOpen}
+  1124→        onOpenChange={setClearConfirmOpen}
+  1125→      >
+  1126→        <AlertDialogContent>
+  1127→          <AlertDialogHeader>
+  1128→            <AlertDialogTitle>{t("clearCart")}</AlertDialogTitle>
+  1129→            <AlertDialogDescription>
+  1130→              {t("removeAllItems")} {totalItems} {t("items")}{" "}
+  1131→              {t("fromCurrentOrder")}
+  1132→            </AlertDialogDescription>
+  1133→          </AlertDialogHeader>
+  1134→          <AlertDialogFooter>
+  1135→            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+  1136→            <AlertDialogAction
+  1137→              className="bg-destructive text-white hover:bg-destructive/90"
+  1138→              onClick={() => {
+  1139→                clearCart();
+  1140→                setClearConfirmOpen(false);
+  1141→                toast.success(t("cartCleared"));
+  1142→              }}
+  1143→            >
+  1144→              {t("clear")}
+  1145→            </AlertDialogAction>
+  1146→          </AlertDialogFooter>
+  1147→        </AlertDialogContent>
+  1148→      </AlertDialog>
+  1149→
+  1150→      {/* Held orders dialog */}
+  1151→      <Dialog open={heldOrdersOpen} onOpenChange={setHeldOrdersOpen}>
+  1152→        <DialogContent className="sm:max-w-md">
+  1153→          <DialogHeader>
+  1154→            <DialogTitle className="flex items-center gap-2">
+  1155→              <History className="h-5 w-5 text-primary" />
+  1156→              {t("heldOrders")}
+  1157→              {heldOrders.length > 0 && (
+  1158→                <Badge className="h-5 min-w-5 justify-center px-1.5 text-[11px]">
+  1159→                  {heldOrders.length}
+  1160→                </Badge>
+  1161→              )}
+  1162→            </DialogTitle>
+  1163→            <DialogDescription>
+  1164→              {t("parkedOrdersResume")}
+  1165→            </DialogDescription>
+  1166→          </DialogHeader>
+  1167→
+  1168→          {heldOrders.length === 0 ? (
+  1169→            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+  1170→              <div className="grid h-12 w-12 place-items-center rounded-full bg-accent text-muted-foreground">
+  1171→                <Clock className="h-6 w-6" />
+  1172→              </div>
+  1173→              <div>
+  1174→                <p className="text-sm font-medium">{t("noHeldOrders")}</p>
+  1175→                <p className="mt-1 text-xs text-muted-foreground">
+  1176→                  {t("pressToHold")}
+  1177→                </p>
+  1178→              </div>
+  1179→            </div>
+  1180→          ) : (
+  1181→            <div className="max-h-[50vh] space-y-2 overflow-y-auto scrollbar-emerald">
+  1182→              {heldOrders.map((order) => {
+  1183→                const orderTotal = order.items.reduce(
+  1184→                  (s, i) => s + i.product.price * i.quantity,
+  1185→                  0
+  1186→                );
+  1187→                const orderCount = order.items.reduce(
+  1188→                  (s, i) => s + i.quantity,
+  1189→                  0
+  1190→                );
+  1191→                const heldAgo = Math.round(
+  1192→                  (Date.now() - order.heldAt) / 60000
+  1193→                );
+  1194→                return (
+  1195→                  <div
+  1196→                    key={order.id}
+  1197→                    className="rounded-lg border bg-card p-3 transition-colors hover:border-primary/30"
+  1198→                  >
+  1199→                    <div className="flex items-start justify-between gap-2">
+  1200→                      <div className="min-w-0 flex-1">
+  1201→                        <p className="truncate text-sm font-medium">
+  1202→                          {order.label}
+  1203→                        </p>
+  1204→                        <p className="mt-0.5 text-xs text-muted-foreground">
+  1205→                          {orderCount} {t("items")} ·{" "}
+  1206→                          {formatMoney(orderTotal, currency)} ·{" "}
+  1207→                          {heldAgo < 1
+  1208→                            ? t("justNow")
+  1209→                            : heldAgo < 60
+  1210→                            ? `${heldAgo} ${t("minutesAgo")}`
+  1211→                            : `${Math.round(heldAgo / 60)} ${t("hoursAgo")}`}
+  1212→                        </p>
+  1213→                      </div>
+  1214→                      <div className="flex shrink-0 items-center gap-1">
+  1215→                        <Button
+  1216→                          size="sm"
+  1217→                          variant="outline"
+  1218→                          className="h-7 px-2 text-xs"
+  1219→                          onClick={() => handleResumeOrder(order.id)}
+  1220→                        >
+  1221→                          <Play className="h-3 w-3" />
+  1222→                          {t("resume")}
+  1223→                        </Button>
+  1224→                        <Button
+  1225→                          size="sm"
+  1226→                          variant="ghost"
+  1227→                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+  1228→                          onClick={() => handleDeleteHeldOrder(order.id)}
+  1229→                          aria-label={t("discard")}
+  1230→                        >
+  1231→                          <Trash2 className="h-3.5 w-3.5" />
+  1232→                        </Button>
+  1233→                      </div>
+  1234→                    </div>
+  1235→                  </div>
+  1236→                );
+  1237→              })}
+  1238→            </div>
+  1239→          )}
+  1240→
+  1241→          <DialogFooter>
+  1242→            <Button
+  1243→              variant="outline"
+  1244→              onClick={() => setHeldOrdersOpen(false)}
+  1245→            >
+  1246→              {t("close")}
+  1247→            </Button>
+  1248→          </DialogFooter>
+  1249→        </DialogContent>
+  1250→      </Dialog>
+  1251→
+  1252→      {/* Custom item dialog */}
+  1253→      <Dialog open={customItemOpen} onOpenChange={setCustomItemOpen}>
+  1254→        <DialogContent className="sm:max-w-md">
+  1255→          <DialogHeader>
+  1256→            <DialogTitle className="flex items-center gap-2">
+  1257→              <Calculator className="h-5 w-5 text-primary" />
+  1258→              {t("quickCustomItem")}
+  1259→            </DialogTitle>
+  1260→            <DialogDescription>
+  1261→              {t("customItemDesc")}
+  1262→            </DialogDescription>
+  1263→          </DialogHeader>
+  1264→
+  1265→          <div className="space-y-4">
+  1266→            <div className="space-y-1.5">
+  1267→              <Label htmlFor="custom-name">{t("itemName")}</Label>
+  1268→              <Input
+  1269→                id="custom-name"
+  1270→                value={customName}
+  1271→                onChange={(e) => setCustomName(e.target.value)}
+  1272→                placeholder="e.g. Loose rice 2kg"
+  1273→                autoFocus
+  1274→              />
+  1275→            </div>
+  1276→            <div className="space-y-1.5">
+  1277→              <Label htmlFor="custom-price">{t("price")}</Label>
+  1278→              <div className="relative">
+  1279→                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+  1280→                  {currency}
+  1281→                </span>
+  1282→                <Input
+  1283→                  id="custom-price"
+  1284→                  type="number"
+  1285→                  min={0}
+  1286→                  step="0.01"
+  1287→                  inputMode="decimal"
+  1288→                  value={customPrice}
+  1289→                  onChange={(e) => setCustomPrice(e.target.value)}
+  1290→                  placeholder="0.00"
+  1291→                  className="pl-7 tabular-nums"
+  1292→                  onKeyDown={(e) => {
+  1293→                    if (e.key === "Enter") handleAddCustomItem();
+  1294→                  }}
+  1295→                />
+  1296→              </div>
+  1297→            </div>
+  1298→
+  1299→            {/* Quick price chips */}
+  1300→            <div className="flex flex-wrap gap-2">
+  1301→              <span className="self-center text-xs text-muted-foreground">
+  1302→                {t("quick")}:
+  1303→              </span>
+  1304→              {[10, 20, 50, 100, 500].map((amt) => (
+  1305→                <button
+  1306→                  key={amt}
+  1307→                  onClick={() => setCustomPrice(String(amt))}
+  1308→                  className="rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
+  1309→                >
+  1310→                  {currency}
+  1311→                  {amt}
+  1312→                </button>
+  1313→              ))}
+  1314→            </div>
+  1315→          </div>
+  1316→
+  1317→          <DialogFooter className="gap-2">
+  1318→            <Button
+  1319→              variant="outline"
+  1320→              onClick={() => setCustomItemOpen(false)}
+  1321→            >
+  1322→              {t("cancel")}
+  1323→            </Button>
+  1324→            <Button
+  1325→              onClick={handleAddCustomItem}
+  1326→              disabled={!customPrice || Number(customPrice) <= 0}
+  1327→            >
+  1328→              <Plus className="h-4 w-4" />
+  1329→              {t("addToCart")}
+  1330→            </Button>
+  1331→          </DialogFooter>
+  1332→        </DialogContent>
+  1333→      </Dialog>
+  1334→    </div>
+  1335→  );
+  1336→}
+  1337→
