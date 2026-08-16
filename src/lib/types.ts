@@ -7,6 +7,7 @@ export interface Product {
   price: number;
   costPrice: number;
   stock: number;
+  unitType: string; // "count" | "kg"
   category: string;
   expiryDate?: string | null;
   expiryDate2?: string | null;
@@ -22,6 +23,7 @@ export interface NewProduct {
   price: number;
   costPrice?: number;
   stock: number;
+  unitType?: string;
   category?: string;
   expiryDate?: string | null;
   expiryDate2?: string | null;

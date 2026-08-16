@@ -109,13 +109,12 @@ export async function POST(request: Request) {
         !item.productId ||
         typeof item.productId !== "string" ||
         Number.isNaN(qty) ||
-        !Number.isInteger(qty) ||
         qty <= 0
       ) {
         return NextResponse.json(
           {
             error:
-              "Each item must have a valid productId and an integer quantity > 0",
+              "Each item must have a valid productId and a quantity > 0",
           },
           { status: 400 }
         );
@@ -176,7 +175,11 @@ export async function POST(request: Request) {
             `Product with id '${item.productId}' not found in your store`
           );
         }
-        const qty = Number(item.quantity);
+        const rawQty = Number(item.quantity);
+        // For count products, quantity must be an integer.
+        // For kg products, quantity can be a float (e.g. 1.750).
+        const qty =
+          product.unitType === "kg" ? rawQty : Math.floor(rawQty);
         const lineTotal = product.price * qty;
         saleItemLines.push({ product, quantity: qty, lineTotal });
       }
@@ -190,10 +193,9 @@ export async function POST(request: Request) {
       const taxRate = store.taxRate ?? 0;
       const taxAmount = (taxableBase * taxRate) / 100;
       const total = taxableBase + taxAmount;
-      const itemCount = saleItemLines.reduce(
-        (sum, l) => sum + l.quantity,
-        0
-      );
+      // Each distinct line item counts as 1 toward itemCount,
+      // regardless of quantity (works for both count and kg products).
+      const itemCount = saleItemLines.length;
 
       // Generate receipt number unique per store: INV-YYYYMMDD-XXXX
       const today = new Date();

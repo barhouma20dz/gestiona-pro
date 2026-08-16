@@ -21,6 +21,7 @@ import {
   Camera,
   Calendar,
   Trash,
+  Scale,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
@@ -72,7 +73,20 @@ import {
 
 /* ---------- helpers ---------- */
 
-function stockBadge(stock: number, t: (k: "outOfStock" | "left" | "inStock" | "lowWithLeft") => string) {
+type StockBadgeKey =
+  | "outOfStock"
+  | "left"
+  | "inStock"
+  | "lowWithLeft"
+  | "kg"
+  | "inStockKg";
+
+function stockBadge(
+  stock: number,
+  unitType: string,
+  t: (k: StockBadgeKey) => string
+) {
+  const isKg = unitType === "kg";
   if (stock === 0) {
     return (
       <Badge className="bg-red-500/15 text-red-600 border-red-500/30 hover:bg-red-500/15">
@@ -83,13 +97,37 @@ function stockBadge(stock: number, t: (k: "outOfStock" | "left" | "inStock" | "l
   if (stock <= 5) {
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
-        {t("lowWithLeft")} {stock} {t("left")}
+        {t("lowWithLeft")}{" "}
+        {isKg ? `${stock.toFixed(stock % 1 === 0 ? 0 : 3)} ${t("kg")}` : stock}{" "}
+        {t("left")}
       </Badge>
     );
   }
   return (
     <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
-      {stock} {t("inStock")}
+      {isKg
+        ? `${stock.toFixed(stock % 1 === 0 ? 0 : 3)} ${t("inStockKg")}`
+        : `${stock} ${t("inStock")}`}
+    </Badge>
+  );
+}
+
+function unitBadge(
+  unitType: string,
+  t: (k: "countUnit" | "kgUnit") => string
+) {
+  const isKg = unitType === "kg";
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "font-medium",
+        isKg
+          ? "border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/10"
+          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10"
+      )}
+    >
+      {isKg ? t("kgUnit") : t("countUnit")}
     </Badge>
   );
 }
@@ -110,6 +148,7 @@ interface FormState {
   price: string;
   costPrice: string;
   stock: string;
+  unitType: string; // "count" | "kg"
   category: string;
   expiryDate: string;
   expiryDate2: string;
@@ -122,6 +161,7 @@ const emptyForm: FormState = {
   price: "",
   costPrice: "0",
   stock: "0",
+  unitType: "count",
   category: "General",
   expiryDate: "",
   expiryDate2: "",
@@ -135,6 +175,7 @@ function toForm(p: Product): FormState {
     price: String(p.price),
     costPrice: String(p.costPrice ?? 0),
     stock: String(p.stock),
+    unitType: p.unitType === "kg" ? "kg" : "count",
     category: p.category,
     expiryDate: p.expiryDate ? new Date(p.expiryDate).toISOString().split("T")[0] : "",
     expiryDate2: p.expiryDate2 ? new Date(p.expiryDate2).toISOString().split("T")[0] : "",
@@ -292,6 +333,7 @@ export function ProductManager() {
       barcode: `${p.barcode}-COPY`,
       price: String(p.price),
       stock: String(p.stock),
+      unitType: p.unitType === "kg" ? "kg" : "count",
       category: p.category,
     });
     setFormErrors({});
@@ -325,6 +367,7 @@ export function ProductManager() {
       price: Number(form.price),
       costPrice: Number(form.costPrice),
       stock: Number(form.stock),
+      unitType: form.unitType === "kg" ? "kg" : "count",
       category: form.category.trim() || "General",
       expiryDate: form.expiryDate || null,
       expiryDate2: form.expiryDate2 || null,
@@ -484,6 +527,7 @@ export function ProductManager() {
                 <TableHead className="pl-6">{t("product")}</TableHead>
                 <TableHead>{t("category")}</TableHead>
                 <TableHead className="text-right">{t("priceLabel")}</TableHead>
+                <TableHead>{t("unit")}</TableHead>
                 <TableHead>{t("stock")}</TableHead>
                 <TableHead className="pr-6 text-right">{t("actions")}</TableHead>
               </TableRow>
@@ -491,7 +535,7 @@ export function ProductManager() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-12 text-center">
+                  <TableCell colSpan={6} className="py-12 text-center">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       {t("loadingProducts")}
@@ -500,7 +544,7 @@ export function ProductManager() {
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-12 text-center">
+                  <TableCell colSpan={6} className="py-12 text-center">
                     <EmptyState onAdd={openAdd} hasProducts={(products?.length ?? 0) > 0} t={t} />
                   </TableCell>
                 </TableRow>
@@ -523,8 +567,14 @@ export function ProductManager() {
                     <TableCell>{categoryBadge(p.category)}</TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
                       {formatMoney(p.price, currency)}
+                      {p.unitType === "kg" && (
+                        <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                          {t("perKg")}
+                        </span>
+                      )}
                     </TableCell>
-                    <TableCell>{stockBadge(p.stock, t)}</TableCell>
+                    <TableCell>{unitBadge(p.unitType, t)}</TableCell>
+                    <TableCell>{stockBadge(p.stock, p.unitType, t)}</TableCell>
                     <TableCell className="pr-6 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button
@@ -587,12 +637,18 @@ export function ProductManager() {
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {categoryBadge(p.category)}
-                        {stockBadge(p.stock, t)}
+                        {unitBadge(p.unitType, t)}
+                        {stockBadge(p.stock, p.unitType, t)}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <span className="font-semibold tabular-nums">
                         {formatMoney(p.price, currency)}
+                        {p.unitType === "kg" && (
+                          <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                            {t("perKg")}
+                          </span>
+                        )}
                       </span>
                       <div className="flex gap-1">
                         <Button
@@ -692,9 +748,50 @@ export function ProductManager() {
               )}
             </div>
 
+            {/* Unit type selector — decides whether stock is by count (int) or weight (kg, float) */}
+            <div className="space-y-1.5">
+              <Label>{t("unitType")}</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({ ...f, unitType: "count" }))
+                  }
+                  className={cn(
+                    "flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                    form.unitType !== "kg"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  )}
+                  aria-pressed={form.unitType !== "kg"}
+                >
+                  <Package className="h-4 w-4" />
+                  {t("byCount")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({ ...f, unitType: "kg" }))
+                  }
+                  className={cn(
+                    "flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                    form.unitType === "kg"
+                      ? "border-amber-500 bg-amber-500/15 text-amber-700"
+                      : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  )}
+                  aria-pressed={form.unitType === "kg"}
+                >
+                  <Scale className="h-4 w-4" />
+                  {t("byWeight")}
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
-                <Label htmlFor="p-price">{t("sellingPrice")}</Label>
+                <Label htmlFor="p-price">
+                  {form.unitType === "kg" ? t("pricePerKg") : t("sellingPrice")}
+                </Label>
                 <div className="relative">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                     {currency}
@@ -742,13 +839,15 @@ export function ProductManager() {
                 )}
               </div>
               <div className="col-span-2 space-y-1.5 sm:col-span-1">
-                <Label htmlFor="p-stock">{t("stock")}</Label>
+                <Label htmlFor="p-stock">
+                  {form.unitType === "kg" ? t("stockKg") : t("stock")}
+                </Label>
                 <Input
                   id="p-stock"
                   type="number"
                   min={0}
-                  step="1"
-                  inputMode="numeric"
+                  step={form.unitType === "kg" ? "0.001" : "1"}
+                  inputMode={form.unitType === "kg" ? "decimal" : "numeric"}
                   value={form.stock}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, stock: e.target.value }))

@@ -38,6 +38,9 @@ export async function POST(request: Request) {
       body?.stock === undefined || body?.stock === null
         ? 0
         : Number(body?.stock);
+    const unitTypeRaw =
+      typeof body?.unitType === "string" ? body.unitType.trim() : "count";
+    const unitType: "count" | "kg" = unitTypeRaw === "kg" ? "kg" : "count";
     const category =
       typeof body?.category === "string" && body.category.trim()
         ? body.category.trim()
@@ -87,10 +90,13 @@ export async function POST(request: Request) {
     }
     if (Number.isNaN(stock) || stock < 0) {
       return NextResponse.json(
-        { error: "Stock must be an integer >= 0" },
+        { error: "Stock must be a number >= 0" },
         { status: 400 }
       );
     }
+    // For count products, stock must be a non-negative integer.
+    // For kg products, stock is a float (e.g. 50.5).
+    const stockValue = unitType === "kg" ? stock : Math.floor(stock);
     if (expiryDate && Number.isNaN(expiryDate.getTime())) {
       return NextResponse.json(
         { error: "expiryDate must be a valid ISO date string" },
@@ -129,7 +135,8 @@ export async function POST(request: Request) {
       barcode,
       price,
       costPrice,
-      stock: Math.floor(stock),
+      stock: stockValue,
+      unitType,
       category,
       store: { connect: { id: session.storeId } },
     };

@@ -100,7 +100,8 @@ model Product {
   barcode     String
   price       Float
   costPrice   Float     @default(0)
-  stock       Int       @default(0)
+  stock       Float     @default(0) // Float to support kg products (e.g., 50.5 kg)
+  unitType    String    @default("count") // "count" | "kg"
   category    String    @default("General")
   expiryDate  DateTime?
   expiryDate2 DateTime?
@@ -151,7 +152,7 @@ model SaleItem {
   product     Product? @relation(fields: [productId], references: [id])
   productName String
   unitPrice   Float
-  quantity    Int
+  quantity    Float    // Float to support kg (fractional) quantities (e.g. 1.750 kg)
   total       Float
 
   @@index([saleId])

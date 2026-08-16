@@ -1799,3 +1799,161 @@ Updated `src/components/auth-screen.tsx`:
   * Suppliers count stayed at 1 (dedup working) ✅
 - Auth screen VLM: "Dark text on white card: ~17:1 contrast ratio (well above 4.5:1 minimum)" ✅
 - No console errors ✅
+
+---
+Task ID: WEIGHT-1
+Agent: orchestrator + full-stack-developer (weight-based product system)
+Task: Add support for products sold by weight (kg) alongside count-based products.
+
+## Features Built
+
+### 1. Database
+- Changed `SaleItem.quantity` from `Int` to `Float` to support fractional quantities (e.g. 1.750 kg).
+- `Product.stock` was already `Float` and `Product.unitType` was already added by previous task.
+- `prisma db push` applied successfully (data loss accepted for SaleItem.quantity column cast Int→Float).
+
+### 2. API routes
+
+**`src/app/api/products/route.ts`** — POST:
+- Parses `unitType` from body (default `"count"`, must be `"count"` or `"kg"`).
+- Includes `unitType` in Prisma create input.
+- For kg products: stock stored as float (e.g. `50.5`).
+- For count products: stock floored via `Math.floor(stock)`.
+- Error message updated: "Stock must be a number >= 0".
+
+**`src/app/api/products/[id]/route.ts`** — PUT:
+- Handles `unitType` field update (validated to "count" or "kg").
+- Handles `stock` as float when unitType is "kg" (or when incoming unitType is "kg").
+- Uses `effectiveUnit = data.unitType ?? existing.unitType` to determine which rule to apply.
+
+**`src/app/api/sales/route.ts`** — POST:
+- Validation: removed the `Number.isInteger(qty)` requirement, now allows floats (qty > 0).
+- Per-product quantity resolution: for kg products, `qty = rawQty`; for count products, `qty = Math.floor(rawQty)`.
+- `itemCount` now counts each distinct line item as 1 (`saleItemLines.length`), regardless of quantity.
+- Stock deduction works automatically with float math (`Math.max(0, stock - qty)`).
+
+### 3. Cart store (`src/lib/cart-store.ts`)
+- Added `addWeightedProduct(product, weight)` method — merges with existing line or creates a new one with the given weight.
+- Added `isKgProduct(itemOrProduct)` helper exported from the store.
+- Updated `addByBarcode` to use `addWeightedProduct(product, 1)` for kg products and `addProduct` for count.
+
+### 4. Product manager (`src/components/views/product-manager.tsx`)
+- `FormState` extended with `unitType: string` (default `"count"`).
+- `emptyForm`, `toForm`, `duplicateProduct`, `handleSubmit` all carry `unitType`.
+- New **unit type selector** rendered before price/stock (two buttons: "بالعدد / By Count" with Package icon, "بالكيلوغرام / By Weight (kg)" with Scale icon). Selected style uses emerald/amber accent respectively.
+- Price label changes dynamically: `t("sellingPrice")` for count, `t("pricePerKg")` for kg.
+- Stock label changes: `t("stock")` for count, `t("stockKg")` for kg.
+- Stock input `step` is `"1"` for count (numeric inputMode), `"0.001"` for kg (decimal inputMode).
+- Added **Unit** column to the product table — `unitBadge` shows "عدد" (emerald) for count and "كغ" (amber) for kg.
+- Stock badge updated: for kg products shows `"{weight} كغ متوفر"` / `"{weight} kg in stock"` (3 decimal places when fractional).
+- Price cell shows `/ كغ` / `/kg` suffix for kg products.
+- Mobile card list updated with the same unit + kg stock display.
+- `Scale` icon imported from lucide-react.
+
+### 5. POS terminal (`src/components/views/pos-terminal.tsx`)
+- Added `Scale` icon import + `isKgProduct` helper from cart-store.
+- New `WeightDialog` component (split into outer `WeightDialog` + inner `WeightDialogBody`, following the existing `CameraScannerDialog` pattern so body state resets on each open via Radix unmount).
+  - Title: `t("weighProduct")` + "· {product name}".
+  - Big numeric weight input (step 0.001), autofocus, Enter key submits.
+  - Quick weight buttons: 0.250, 0.500, 1.000, 1.500, 2.000.
+  - Shows price-per-kg + "/kg" suffix and live `price_per_kg × weight` total.
+  - Stock badge reflecting remaining kg.
+  - Validates weight > 0 and <= stock; otherwise disables Add button + shows error.
+  - Cancel / Add buttons.
+- `handleAddProduct(p)`:
+  - For kg products: opens the WeightDialog (`setWeighProduct(p)`) instead of adding 1 piece.
+  - For count products: behaves as before (adds 1 piece).
+- Added `handleAddWeighted(product, weight)` — called by WeightDialog's Add button. Validates stock limit (with kg suffix in toast), then calls `addWeightedProduct`.
+- `ProductTile`:
+  - For kg products: shows amber "كغ" badge (with Scale icon) in top-left of the colored header.
+  - Price shows "/kg" suffix.
+  - Stock badge shows kg formatting (`"{weight} كغ متوفر"`).
+- `CartItemRow`:
+  - Quantity display: kg products show `"{weight.toFixed(3)} كغ"`; count products show `"x{qty}"`.
+  - Per-unit price suffix: kg = "/kg", count = "each".
+  - Name shows a small amber "كغ" tag for kg products.
+  - Stepper in parent uses step `0.25` for kg, `1` for count.
+- Held-order resume: kg items restored via `addWeightedProduct(ci.product, ci.quantity)`; count items still loop with `addProduct`.
+- Custom-item product now includes `unitType: "count"` so it doesn't accidentally trigger kg flow.
+- WeightDialog rendered alongside other dialogs (scanner, checkout, etc).
+
+### 6. i18n keys (`src/lib/i18n.ts`)
+Added to BOTH `ar` and `en` translations:
+```
+unitType, byCount, byWeight, pricePerKg, stockKg,
+weighProduct, enterWeight, weight, totalPrice,
+unit, countUnit, kgUnit, kg, perKg, inStockKg
+```
+
+## API smoke tests (all passing)
+- POST /api/products with `unitType:"kg", stock:50.5` → 201, returns `unitType:"kg", stock:50.5`.
+- POST /api/products with `unitType:"count", stock:99.7` → 201, returns `stock:99` (floored).
+- PUT /api/products/{id} switching `unitType:"count"→"kg"` with `stock:25.5` → 200, returns `unitType:"kg", stock:25.5`.
+- PUT /api/products/{id} switching back to count with `stock:50` → 200, returns `unitType:"count", stock:50`.
+- POST /api/sales with kg item `quantity:1.75` → 201, `itemCount:1`, `total:6.125` (1.75 × 3.5), `items[0].quantity:1.75`.
+- POST /api/sales with count item `quantity:3` → 201, `itemCount:1`, `total:30` (3 × 10).
+- DELETE /api/products/{id} → 204.
+
+## Verification
+- `bun run lint`: clean (exit 0).
+- Dev server: restarted once (killed + re-spawned) to pick up the regenerated Prisma client after `db push`. Latest dev.log shows SQL queries including the `unitType` column in INSERT/UPDATE/SELECT, no runtime errors.
+- `agent-ctx/WEIGHT-1-orchestrator.md` not written — this is the only agent on this task; worklog captured here.
+
+## Notes
+- The dev server needed a manual restart after `prisma db push` because Turbopack cached the old Prisma client (the globalThis-pinned client instance in `src/lib/db.ts` was using the pre-migration schema). After restart the new client with `unitType` is loaded and all queries work correctly.
+- Existing count products in the DB already default to `unitType:"count"` thanks to the `@default("count")` annotation in the Prisma schema, so no data migration was needed.
+
+---
+Task ID: WEIGHT-SYSTEM
+Agent: orchestrator + full-stack-developer
+Task: Implement weight-based (kg) product system with weight dialog in POS
+
+## Features
+
+### 1. Database Changes
+- `Product.stock`: changed from `Int` to `Float` (supports kg values like 50.5)
+- `Product.unitType`: new field `String @default("count")` — "count" or "kg"
+- `SaleItem.quantity`: changed from `Int` to `Float` (supports 1.750 kg)
+- Schema pushed successfully.
+
+### 2. Product Form (unit type selector)
+- Two-button selector: "بالعدد" (By Count) and "بالكيلوغرام" (By Weight/kg)
+- When kg selected: price label → "سعر الكيلوغرام", stock label → "المخزون (كغ)", stock accepts decimals
+- When count selected: normal behavior (integer stock)
+- New "Unit" column in product table showing "عدد" or "كغ"
+- Stock badges show "50 كغ متوفر" for kg products
+
+### 3. POS Weight Dialog
+- Clicking a **kg product** opens a weight dialog instead of adding directly:
+  - Title: "وزن · [product name]"
+  - Large weight input (step 0.001, default 1.000)
+  - Quick weight buttons: 0.250, 0.500, 1.000, 1.500, 2.000
+  - Price per kg display + stock remaining
+  - Live total calculation: weight × price_per_kg
+  - "إضافة" (Add) + "إلغاء" (Cancel) buttons
+- Clicking a **count product** adds 1 piece directly (unchanged)
+
+### 4. Cart Display
+- kg products show "1.750 كغ" instead of "x1"
+- Cart stepper: 0.25 step for kg, 1 step for count
+- Line total: price_per_kg × weight for kg products
+
+### 5. API Changes
+- POST /api/products: accepts `unitType` field, stores stock as float for kg
+- PUT /api/products/[id]: handles unitType update
+- POST /api/sales: accepts fractional quantities for kg items, deducts float from stock
+
+## Verification:
+- `bun run lint`: clean.
+- agent-browser QA:
+  * Product form: unit type selector visible with "بالعدد" + "بالكيلوغرام" buttons ✅
+  * VLM confirmed: "بالكيلوغرام selected and highlighted in green" ✅
+  * Weight dialog: opens when clicking kg product ✅
+    - Title with product name ✅
+    - Weight input + quick buttons (0.250/0.500/1.000/1.500/2.000) ✅
+    - Price per kg display ✅
+    - Calculated total ✅
+    - Add + Cancel buttons ✅
+  * VLM confirmed: "1.750 كغ, 250.00 per kg, total 437.50" ✅
+  * Product tiles: show "/ كغ" suffix + "50 كغ متوفر" ✅
+  * No console errors ✅
