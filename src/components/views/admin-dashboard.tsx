@@ -16,6 +16,8 @@ import {
   RefreshCw,
   Sparkles,
   Lock,
+  Zap,
+  CalendarPlus,
 } from "lucide-react";
 
 import { adminApi, shopApi } from "@/lib/api";
@@ -49,6 +51,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 type T = (key: TranslationKey) => string;
 
@@ -147,6 +159,10 @@ export function AdminDashboard() {
 
   const [plan, setPlan] = useState<SubscriptionPlan>("MONTHLY");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [subDialogStore, setSubDialogStore] = useState<AdminStore | null>(null);
+  const [subDuration, setSubDuration] = useState<number>(30);
+  const [subCustomDays, setSubCustomDays] = useState<string>("");
+  const [subPlan, setSubPlan] = useState<string>("MONTHLY");
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["admin", "stats"],
@@ -182,6 +198,29 @@ export function AdminDashboard() {
     onError: (e: Error) =>
       toast.error(e.message || t("failedToggleStore")),
   });
+
+  const activateSubMutation = useMutation({
+    mutationFn: ({ id, days, plan }: { id: string; days: number; plan: string }) =>
+      adminApi.activateSubscription(id, days, plan),
+    onSuccess: () => {
+      toast.success(t("subActivatedSuccess"));
+      qc.invalidateQueries({ queryKey: ["admin", "stores"] });
+      setSubDialogStore(null);
+      setSubCustomDays("");
+    },
+    onError: (e: Error) =>
+      toast.error(e.message || t("failedToggleStore")),
+  });
+
+  const handleActivateSub = () => {
+    if (!subDialogStore) return;
+    const days = subDuration === 0 ? Number(subCustomDays) || 30 : subDuration;
+    activateSubMutation.mutate({
+      id: subDialogStore.id,
+      days,
+      plan: subPlan,
+    });
+  };
 
   const handleCopy = async (key: string) => {
     try {
@@ -561,29 +600,46 @@ export function AdminDashboard() {
                           {s.counts.sales}
                         </TableCell>
                         <TableCell className="pr-6 text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={toggleStoreMutation.isPending}
-                            onClick={() => toggleStoreMutation.mutate(s.id)}
-                            className={cn(
-                              s.status === "SUSPENDED"
-                                ? "border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
-                                : "border-red-500/40 text-red-700 hover:bg-red-500/10 dark:text-red-400"
-                            )}
-                          >
-                            {s.status === "SUSPENDED" ? (
-                              <>
-                                <ShieldCheck className="h-3.5 w-3.5" />
-                                {t("activateStore")}
-                              </>
-                            ) : (
-                              <>
-                                <Ban className="h-3.5 w-3.5" />
-                                {t("suspendStore")}
-                              </>
-                            )}
-                          </Button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSubDialogStore(s);
+                                setSubDuration(30);
+                                setSubCustomDays("");
+                                setSubPlan(s.subscription?.plan || "MONTHLY");
+                              }}
+                              className="border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
+                              title={t("activateSubscription")}
+                            >
+                              <Zap className="h-3.5 w-3.5" />
+                              <span className="hidden xl:inline">{t("activateSubscription")}</span>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={toggleStoreMutation.isPending}
+                              onClick={() => toggleStoreMutation.mutate(s.id)}
+                              className={cn(
+                                s.status === "SUSPENDED"
+                                  ? "border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
+                                  : "border-red-500/40 text-red-700 hover:bg-red-500/10 dark:text-red-400"
+                              )}
+                            >
+                              {s.status === "SUSPENDED" ? (
+                                <>
+                                  <ShieldCheck className="h-3.5 w-3.5" />
+                                  {t("activateStore")}
+                                </>
+                              ) : (
+                                <>
+                                  <Ban className="h-3.5 w-3.5" />
+                                  {t("suspendStore")}
+                                </>
+                              )}
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -693,6 +749,133 @@ export function AdminDashboard() {
           </div>
         </Card>
       </motion.div>
+
+      {/* Activate Subscription Dialog */}
+      <Dialog open={!!subDialogStore} onOpenChange={(o) => !o && setSubDialogStore(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-emerald-600" />
+              {t("activateSubscription")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("activateSubDesc")}
+              {subDialogStore && (
+                <span className="mt-1 block font-medium text-foreground">
+                  {subDialogStore.name}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Current subscription info */}
+            {subDialogStore?.subscription && (
+              <div className="rounded-lg border bg-muted/30 p-3 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t("currentEndDate")}</span>
+                  <span className="font-medium">
+                    {formatDate(subDialogStore.subscription.endDate)}
+                  </span>
+                </div>
+                <div className="mt-1 flex justify-between">
+                  <span className="text-muted-foreground">{t("subStatus")}</span>
+                  <span className={cn(
+                    "font-medium",
+                    subDialogStore.subscription.status === "ACTIVE"
+                      ? "text-emerald-600"
+                      : subDialogStore.subscription.status === "TRIAL"
+                      ? "text-amber-600"
+                      : "text-red-600"
+                  )}>
+                    {subDialogStore.subscription.status}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Duration selector */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">{t("selectDuration")}</Label>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  { val: 30, label: t("days30") },
+                  { val: 90, label: t("days90") },
+                  { val: 365, label: t("days365") },
+                  { val: 0, label: t("customDays") },
+                ].map((opt) => (
+                  <button
+                    key={opt.val}
+                    onClick={() => setSubDuration(opt.val)}
+                    className={cn(
+                      "rounded-lg border px-2 py-2 text-xs font-medium transition-all",
+                      subDuration === opt.val
+                        ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                        : "border-border bg-card text-muted-foreground hover:bg-accent"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom days input */}
+            {subDuration === 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="custom-days">{t("enterCustomDays")}</Label>
+                <Input
+                  id="custom-days"
+                  type="number"
+                  min={1}
+                  value={subCustomDays}
+                  onChange={(e) => setSubCustomDays(e.target.value)}
+                  placeholder="e.g. 60"
+                  className="tabular-nums"
+                />
+              </div>
+            )}
+
+            {/* Plan selector */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">{t("subscriptionPlan")}</Label>
+              <Select value={subPlan} onValueChange={setSubPlan}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MONTHLY">{t("monthlyPlan")}</SelectItem>
+                  <SelectItem value="QUARTERLY">{t("quarterlyPlan")}</SelectItem>
+                  <SelectItem value="YEARLY">{t("yearlyPlan")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSubDialogStore(null)}>
+              {t("close")}
+            </Button>
+            <Button
+              onClick={handleActivateSub}
+              disabled={
+                activateSubMutation.isPending ||
+                (subDuration === 0 && !subCustomDays.trim())
+              }
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {activateSubMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CalendarPlus className="h-4 w-4" />
+              )}
+              {activateSubMutation.isPending
+                ? t("subActivating")
+                : t("extendSubscription")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

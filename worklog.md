@@ -1957,3 +1957,41 @@ Task: Implement weight-based (kg) product system with weight dialog in POS
   * VLM confirmed: "1.750 كغ, 250.00 per kg, total 437.50" ✅
   * Product tiles: show "/ كغ" suffix + "50 كغ متوفر" ✅
   * No console errors ✅
+
+---
+Task ID: ADMIN-ACTIVATE-SUB
+Agent: orchestrator
+Task: Add subscription activation feature from super admin dashboard
+
+## Features
+
+### 1. New API Endpoint
+`POST /api/admin/stores/[id]/activate-subscription` (super admin only):
+- Body: `{ durationDays: number, plan?: "MONTHLY"|"QUARTERLY"|"YEARLY" }`
+- If subscription exists + still active → extends from current end date
+- If subscription expired → starts from now
+- If no subscription → creates new one
+- Returns updated subscription + success message
+
+### 2. Admin Dashboard UI
+- New **"تفعيل الاشتراك"** button (Zap icon) in each store row, next to suspend/activate button.
+- Opens a dialog with:
+  - Store name display
+  - Current subscription info (end date + status)
+  - Duration selector: 30 days / 90 days / 365 days / Custom days
+  - Custom days input (when "Custom" is selected)
+  - Plan selector: Monthly / Quarterly / Yearly
+  - "تمديد الاشتراك / Extend Subscription" button (emerald)
+- On success: toast "تم تفعيل الاشتراك بنجاح" + store list refreshed
+
+### 3. API Client
+Added `adminApi.activateSubscription(id, durationDays, plan)` to `src/lib/api.ts`.
+
+## Verification:
+- `bun run lint`: clean.
+- agent-browser QA:
+  * "تفعيل الاشتراك" button visible in every store row ✅
+  * Dialog opens with: title, current sub info, duration buttons (30/90/365/custom), plan selector, extend button ✅
+  * VLM confirmed all elements ✅
+  * Clicked 365 days + Extend → toast "تم تفعيل الاشتراك بنجاح" ✅
+  * No console errors ✅
