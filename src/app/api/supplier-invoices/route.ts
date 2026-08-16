@@ -12,7 +12,11 @@ interface InvoiceItemInput {
 }
 
 interface CreateInvoiceBody {
-  supplierId: string;
+  supplierId?: string;
+  supplierName?: string;
+  supplierPhone?: string;
+  supplierEmail?: string;
+  supplierAddress?: string;
   invoiceNo: string;
   invoiceDate?: string;
   items: InvoiceItemInput[];
@@ -43,11 +47,11 @@ export async function POST(request: Request) {
 
     if (
       !body ||
-      typeof body.supplierId !== "string" ||
-      !body.supplierId.trim()
+      ((!body.supplierId || typeof body.supplierId !== "string" || !body.supplierId.trim()) &&
+       (!body.supplierName || typeof body.supplierName !== "string" || !body.supplierName.trim()))
     ) {
       return NextResponse.json(
-        { error: "supplierId is required" },
+        { error: "Either supplierId or supplierName is required" },
         { status: 400 }
       );
     }
@@ -64,16 +68,55 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate supplier belongs to store
-    const supplier = await db.supplier.findFirst({
-      where: { id: body.supplierId, storeId: session.storeId },
-      select: { id: true },
-    });
-    if (!supplier) {
-      return NextResponse.json(
-        { error: "Supplier not found in your store" },
-        { status: 400 }
-      );
+    // Validate supplier: either use existing supplierId, or auto-create from invoice info
+    let supplierId = body.supplierId?.trim();
+
+    if (!supplierId) {
+      // Auto-create a supplier from the invoice's supplier info
+      const supplierName = body.supplierName?.trim() || "";
+      const supplierPhone = body.supplierPhone?.trim() || "";
+      const supplierEmail = body.supplierEmail?.trim() || "";
+      const supplierAddress = body.supplierAddress?.trim() || "";
+
+      if (!supplierName) {
+        return NextResponse.json(
+          { error: "supplierName is required when supplierId is not provided" },
+          { status: 400 }
+        );
+      }
+
+      // Check if a supplier with the same name already exists in this store
+      let supplier = await db.supplier.findFirst({
+        where: { storeId: session.storeId, name: supplierName },
+        select: { id: true },
+      });
+
+      if (!supplier) {
+        // Create a new supplier automatically
+        supplier = await db.supplier.create({
+          data: {
+            name: supplierName,
+            phone: supplierPhone,
+            email: supplierEmail,
+            address: supplierAddress,
+            storeId: session.storeId,
+          },
+        });
+      }
+
+      supplierId = supplier.id;
+    } else {
+      // Validate existing supplier belongs to store
+      const supplier = await db.supplier.findFirst({
+        where: { id: supplierId, storeId: session.storeId },
+        select: { id: true },
+      });
+      if (!supplier) {
+        return NextResponse.json(
+          { error: "Supplier not found in your store" },
+          { status: 400 }
+        );
+      }
     }
 
     // Validate items
@@ -198,7 +241,7 @@ export async function POST(request: Request) {
           status,
           notes: body.notes ?? "",
           store: { connect: { id: session.storeId } },
-          supplier: { connect: { id: body.supplierId } },
+          supplier: { connect: { id: supplierId } },
           items: { create: itemsCreate },
         },
         include: { items: true, supplier: true },
