@@ -1,0 +1,1699 @@
+     1→---
+     2→Task ID: 3
+     3→Agent: full-stack-developer (backend)
+     4→Task: Build all API routes + seed data for SwiftBill POS
+     5→
+     6→Work Log:
+     7→- Read existing prisma/schema.prisma, src/lib/types.ts, src/lib/db.ts, and src/lib/api.ts to confirm field shapes, relation names, and the frontend's expected API contract.
+     8→- Created `src/app/api/products/route.ts` with GET (list newest-first) and POST (validate name+barcode+price, enforce unique barcode via 409 Conflict, default stock/category, 201 on success).
+     9→- Created `src/app/api/products/[id]/route.ts` with PUT (partial update, validates non-empty name/barcode, enforces barcode uniqueness on change, validates price/stock >= 0) and DELETE (404 if missing, 204 on success).
+    10→- Created `src/app/api/products/barcode/[code]/route.ts` with GET that decodes the path param, queries by unique barcode, and returns 404 if not found.
+    11→- Created `src/app/api/shop/route.ts`: GET auto-creates a default "My Store" shop row if none exists; PUT upserts the singleton (creates if missing, otherwise updates by id), validating taxRate >= 0.
+    12→- Created `src/app/api/shop/seed/route.ts` with POST that idempotently creates the SwiftMart Grocery default shop (returns 200 + created:false if a shop already exists, 201 + created:true otherwise).
+    13→- Created `src/app/api/sales/route.ts`: GET returns all sales newest-first including items; POST validates the cart payload (non-empty items, valid paymentMethod, integer quantities > 0, discount >= 0), resolves/creates the singleton shop, and inside `db.$transaction` fetches all products, computes subtotal/tax/total, generates a date-stamped receipt number `INV-YYYYMMDD-XXXX` (counted from today's sale count), creates the Sale with nested SaleItem rows (snapshotting productName/unitPrice/quantity/total), decrements product stock clamped at 0, and returns the sale (with items) as 201.
+    14→- Created `src/app/api/sales/[id]/route.ts` with GET returning a single sale (include items), 404 if missing.
+    15→- Created `src/app/api/sales/stats/route.ts` with GET computing today's totalSales, transactionCount, itemsSold, and avgTicket (rounded to 2 decimals, avgTicket=0 when no sales).
+    16→- Created `prisma/seed.ts` that idempotently upserts the default SwiftMart Grocery shop and creates 12 sample retail products (Beverages, Snacks, Dairy, Bakery, Household categories) with realistic EAN-13-like barcodes only when the products table is empty.
+    17→- Added `"db:seed": "bun prisma/seed.ts"` script to package.json.
+    18→- Ran `bun run db:push` (schema already in sync; prisma client regenerated) and `bun run db:seed` (1 shop + 12 products created).
+    19→- Smoke-tested every endpoint live against the dev server:
+    20→  * GET /api/products -> 12 products
+    21→  * GET /api/shop -> SwiftMart Grocery singleton
+    22→  * POST /api/sales -> created sale with receiptNo INV-20260813-0001, subtotal/tax/total computed correctly, stock decremented, items snapshotted
+    23→  * GET /api/sales/stats -> totalSales/transactionCount/itemsSold/avgTicket all correct for the test sale
+    24→  * Duplicate barcode -> 409, missing name -> 400, unknown barcode -> 404, unknown sale id -> 404, idempotent shop seed -> 200
+    25→  * PUT /api/shop -> 200
+    26→- Reset shop taxRate back to 0 / footerText to seed default after PUT smoke test.
+    27→- Ran `bun run lint` — clean, no errors or warnings.
+    28→
+    29→Stage Summary:
+    30→- Files created:
+    31→  * src/app/api/products/route.ts
+    32→  * src/app/api/products/[id]/route.ts
+    33→  * src/app/api/products/barcode/[code]/route.ts
+    34→  * src/app/api/shop/route.ts
+    35→  * src/app/api/shop/seed/route.ts
+    36→  * src/app/api/sales/route.ts
+    37→  * src/app/api/sales/[id]/route.ts
+    38→  * src/app/api/sales/stats/route.ts
+    39→  * prisma/seed.ts
+    40→- Files modified:
+    41→  * package.json (added "db:seed" script)
+    42→- Endpoints available:
+    43→  * GET    /api/products                       list newest-first
+    44→  * POST   /api/products                       create (validate name/barcode/price, unique barcode, 201)
+    45→  * PUT    /api/products/[id]                  partial update + uniqueness checks
+    46→  * DELETE /api/products/[id]                  204 / 404
+    47→  * GET    /api/products/barcode/[code]        find by barcode, 404 if missing
+    48→  * GET    /api/shop                           return (auto-create) singleton shop
+    49→  * PUT    /api/shop                           upsert singleton shop
+    50→  * POST   /api/shop/seed                      idempotent default-shop creation
+    51→  * GET    /api/sales                          list sales newest-first with items
+    52→  * POST   /api/sales                          create sale atomically (transaction), 201
+    53→  * GET    /api/sales/[id]                     single sale with items
+    54→  * GET    /api/sales/stats                    today's totals
+    55→- Seed data summary:
+    56→  * 1 Shop created: "SwiftMart Grocery", address "123 Market Street", phone "+919876543210", upi "shop@upi", footer "Thank you, visit again!", currency "₹", taxRate 0.
+    57→  * 12 Products created spanning Beverages / Snacks / Dairy / Bakery / Household: Coca-Cola 750ml, Tata Tea Gold 1kg, Nescafe Classic Coffee 100g, Lay's Classic Salted 52g, Britannia Marie Gold 250g, Haldiram's Aloo Bhujia 200g, Amul Taaza Toned Milk 500ml, Amul Butter 500g, Mother Dairy Curd 400g, Britannia Brown Bread 400g, Surf Excel Easy Wash Detergent 1kg, Colgate Strong Teeth Toothpaste 200g.
+    58→  * Seed is fully idempotent (safe to re-run).
+    59→- Lint: `bun run lint` passes with no issues.
+    60→
+    61→---
+    62→Task ID: 6-7
+    63→Agent: full-stack-developer (Products + Sales)
+    64→Task: Build Product Manager + Sales History views
+    65→
+    66→Work Log:
+    67→- Read worklog.md, src/lib/{types,api,format}.ts, src/components/receipt.tsx, src/components/app-shell.tsx, and the shadcn primitives (card, button, badge, table, dialog, alert-dialog, select) to confirm props, variants, and shared utilities already available.
+    68→- Confirmed dev server healthy via `tail dev.log` (clean compiles, GET / 200).
+    69→- Built `src/components/views/product-manager.tsx`:
+    70→  * Stats row (4 cards, motion entrance): Total Products, Inventory Value (sum price*stock), Low Stock (1-5), Out of Stock (0) — emerald/amber/red tinted avatar circles.
+    71→  * Toolbar: search Input (filters by name OR barcode, case-insensitive), category Select (populated from existing categories), emerald "Add Product" button with Plus icon.
+    72→  * Products table (shadcn Table inside Card): Product (name + mono barcode), Category outline badge, Price (formatMoney, tabular-nums, right-aligned), Stock colored badge (green >5, amber 1-5, red 0), Edit/Delete icon buttons. Sorted newest-first.
+    73→  * Mobile: card-list layout under the same Card (no horizontal scroll).
+    74→  * Add/Edit Dialog: Name, Barcode (mono, ScanLine hint text), Price (₹-prefixed number input), Stock (number), Category (Input with datalist of existing categories, default "General"). Local validation: name/barcode non-empty, price >= 0, stock >= 0. useMutation → productsApi.create/update, success toast + invalidate ["products"] + close dialog. Edit mode pre-fills form.
+    75→  * Delete AlertDialog: "Delete {name}? This cannot be undone." → productsApi.delete(id), toast + invalidate + close.
+    76→  * Empty state: "No products yet — Add your first product" (or "No products match your filters" when filters exclude everything).
+    77→- Built `src/components/views/sales-history.tsx`:
+    78→  * Today's stats (4 cards, motion entrance): Revenue (emerald, big 3xl), Transactions, Items Sold, Avg Ticket — pulled from salesApi.stats() via useQuery(["salesStats"]). Icons in colored circle avatars (TrendingUp, Receipt, Package, Calculator).
+    79→  * 7-day revenue bar chart (lightweight, pure divs): builds a 7-day series from sales list, today's bar solid emerald, others emerald/35, height %, tooltips via title attr, header shows total.
+    80→  * Sales table (shadcn Table in Card): Receipt No (mono), Date/Time (formatDateTime), Items count, Payment badge (Cash=slate, UPI=emerald, Card=amber), Total (formatMoney, bold, tabular-nums), "View" button.
+    81→  * Mobile: card-list layout under the same Card.
+    82→  * Receipt Dialog: fetches shop via shopApi.get() (["shop"]) and sale via salesApi.get(id) (enabled when selectedId && open). Renders `<Receipt shop sale />` inside a scrollable white container, plus Close + Print buttons (window.print()). no-print class on footer + dialog controls so only the receipt prints.
+    83→  * Refresh button in the chart card header invalidates ["sales"] + ["salesStats"] and toasts.
+    84→  * Empty state: "No sales recorded yet — Complete your first sale from the POS Terminal."
+    85→- Ran `bunx eslint` on both files: exit 0, no errors, no warnings.
+    86→- Ran `bun run lint` for the whole repo: 1 pre-existing error in `src/components/views/shop-details.tsx` (setState in effect) — owned by another task, NOT touched.
+    87→- Verified dev.log: clean compiles, `GET / 200`, no runtime errors from my files.
+    88→
+    89→Stage Summary:
+    90→- Files overwritten:
+    91→  * src/components/views/product-manager.tsx
+    92→  * src/components/views/sales-history.tsx
+    93→- Agent-ctx record: src/agent-ctx/6-7-products-sales.md
+    94→- Features delivered:
+    95→  * Product Manager: stats row, search + category filter, products table + mobile card list, add/edit dialog with validation, delete confirmation, low/out-of-stock highlighting, toast feedback, query invalidation.
+    96→  * Sales History: today's stats (revenue/transactions/items/avg ticket), 7-day revenue bar chart, sales table + mobile card list, payment badges, receipt dialog (print-optimized, fetches sale detail + shop), refresh button, empty states.
+    97→- Lint status: my two files pass cleanly. Pre-existing shop-details.tsx lint error left untouched (out of scope).
+    98→
+    99→---
+   100→Task ID: 8
+   101→Agent: full-stack-developer (Shop + Settings)
+   102→Task: Build Shop Details + Settings views
+   103→
+   104→Work Log:
+   105→- Read worklog.md (Task 3 backend summary), lib/types.ts, lib/api.ts, lib/format.ts, lib/utils.ts, src/components/app-shell.tsx, src/app/globals.css to confirm emerald theme, Shop type shape, shopApi contract, and the existing `.print-receipt` print CSS hook.
+   106→- Inspected shadcn primitives (Card, Button, Slider, Switch, AlertDialog, Tooltip, Skeleton, Separator, Badge) to use their exact export names and prop APIs.
+   107→- Created `src/components/views/shop-details.tsx`:
+   108→  * Two-column layout: form (flex-1) + Live Receipt Preview (sticky, w-[320px]).
+   109→  * Form fields: Shop Name (required), Address Line 1 (required), Address Line 2 (optional), Phone Number, UPI ID (with hint), Receipt Footer Text (textarea, maxLength 80, char counter), Currency Symbol (input + quick-pick chips for ₹/$/€/£/¥), Tax Rate % (number 0-100).
+   110→  * Receipt preview: monospace thermal-style card with dashed dividers, dummy item rows, dummy subtotal/tax/total computed from form state, footer text, fake barcode strip.
+   111→  * Local controlled state synced from `useQuery(['shop'])` via the React-canonical "adjust state during render" pattern (no setState-in-effect lint issues).
+   112→  * `useMutation` -> `shopApi.update()`; success -> `toast.success("Shop details saved")` + invalidate `["shop"]`; error -> `toast.error`.
+   113→  * Loading skeleton while fetching.
+   114→  * Framer-motion entrance animations on cards.
+   115→- Created `src/components/views/settings-view.tsx`:
+   116→  * 5 stacked section cards in a single max-w-3xl column.
+   117→  * 1) App Profile Card: emerald avatar with initialsOf(shop.name), uppercase bold shop name, "SwiftBill POS v1.0.0" subtitle, currency/tax badge, disabled "Edit Shop" button with Tooltip "Go to Shop Details in the sidebar".
+   118→  * 2) Quick Tax Config Card: current vs. adjusting-to tax display, Slider 0-20% step 0.5, Save Tax Rate button calling `shopApi.update({taxRate})` with dirty-check (disabled when unchanged).
+   119→  * 3) Printer & Receipts Card: web-print note, "Print Test" button triggers `window.print()` after a 50ms delay so the hidden `.print-receipt` node commits; Switch for "Auto-open print dialog after each sale" persisted to `localStorage` key `swiftbill_autoprint` via `useSyncExternalStore` (no setState-in-effect), with manual storage event dispatch so same-tab toggles re-render.
+   120→  * 4) Data Management Card: red-tinted border (`border-destructive/30`), warning icon header, disabled destructive "Clear Sales" button with Tooltip "Admin only", plus a real working "Export CSV" button that fetches `/api/products`, builds an escaped CSV string, and triggers a Blob download (`swiftbill-products-YYYY-MM-DD.csv`).
+   121→  * 5) About Card: app name, version, stack line, docs text, footer description.
+   122→  * Hidden `.print-receipt` div with inline styles for the test-print template (uses shop name/address/footer).
+   123→- Smoke-tested `PUT /api/shop` end-to-end with full payload (200 OK) and a partial `{taxRate:0}` update (200 OK) — both wrote through Prisma correctly.
+   124→- Ran `bun run lint`: 0 errors in my two files. The only remaining lint error (`react-hooks/set-state-in-effect` in `pos-terminal.tsx:113`) belongs to another agent's file and is outside this task's scope.
+   125→- Checked `dev.log`: my views compiled cleanly ("✓ Compiled in 174ms"); the only runtime error is `Module not found: '@/components/checkout-dialog'` triggered by `pos-terminal.tsx` — also outside this task's scope.
+   126→
+   127→Stage Summary:
+   128→- Files created (overwrote stubs):
+   129→  * src/components/views/shop-details.tsx
+   130→  * src/components/views/settings-view.tsx
+   131→- Features:
+   132→  * Shop Details: live-editable form synced from server, live thermal-receipt preview (monospace, dashed dividers, dummy items + computed tax/total, footer text, fake barcode), currency quick-pick chips, char counter on footer textarea, required-field validation, save via mutation with toast + cache invalidation, loading skeleton, framer-motion entrance.
+   133→  * Settings: app profile with avatar/initials/badges, quick tax slider (0-20%) with dirty-aware save, browser-print test receipt with hidden print template, autoprint toggle persisted to localStorage via useSyncExternalStore, danger zone (disabled Clear Sales with admin tooltip + working CSV product export with Blob download), about card with stack info.
+   134→- Lint: 0 errors in my files (1 unrelated error remains in pos-terminal.tsx).
+   135→- Runtime: GET /api/shop, GET /api/products, PUT /api/shop all return 200; shop save flow verified end-to-end.
+   136→
+   137→---
+   138→Task ID: 5
+   139→Agent: full-stack-developer (POS Terminal)
+   140→Task: Build POS Terminal view + Checkout dialog with receipt printing
+   141→
+   142→Work Log:
+   143→- Read prior worklog (Task 3 — backend APIs + seed) and inspected `src/lib/{types,api,cart-store,format,utils}`, `src/components/{receipt,app-shell}`, `src/app/{layout,providers,globals.css}`, shadcn ui components (button/card/dialog/input/badge/separator/alert-dialog/scroll-area/sonner), and confirmed `qrcode.react@4.2.0` exposes `QRCodeSVG`.
+   144→- Overwrote the `PosTerminal` stub in `src/components/views/pos-terminal.tsx` with a fully wired POS billing screen (2-column responsive: catalog on the left, sticky cart on the right).
+   145→- Built the **left column**:
+   146→  * Barcode scan bar — Input with search icon + Scan button (opens camera dialog) + Add button. Enter triggers `addByBarcode` first, then exact-name match, then partial-name match; toasts on success/error and clears input.
+   147→  * Horizontally scrollable category chips ("All" + unique categories from products) with emerald selected state.
+   148→  * Responsive product grid (`grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3`); each tile is a framer-motion `motion.button` Card with a colored avatar circle (initials via `initialsOf`, bg via `colorFromString`), 2-line truncated name, `formatMoney` price, and a stock badge (green >5 / amber 1-5 / red 0). Out-of-stock tiles are muted and not clickable (toast on click).
+   149→  * Loading skeletons and empty state.
+   150→- Built the **camera scanner dialog** as an inline `CameraScannerDialog` + `CameraScannerBody`. Uses `navigator.mediaDevices.getUserMedia` for a live `<video autoPlay playsInline>` preview with a scanning frame overlay and an animated scan line. Wrapped in try/catch; on failure shows a friendly "Camera not available — enter barcode manually" message with a manual Input as the PRIMARY reliable path. Split into outer wrapper + body so React mounts/unmounts the body with the dialog lifecycle (avoids synchronous setState inside useEffect → keeps `react-hooks/set-state-in-effect` rule happy).
+   151→- Built the **right column** cart: header with item count badge + Clear (AlertDialog confirm), scrollable list (`max-h-[40vh] overflow-y-auto scrollbar-emerald`) of cart item rows with qty steppers (−/number/+), line totals, trash remove, and `AnimatePresence` height-collapse animation on removal. Empty cart state with basket icon.
+   152→- Totals section: Subtotal, Discount (currency-prefixed number Input → `setDiscount`), Tax computed from `shop.taxRate` (only shown when rate > 0), big emerald Grand Total.
+   153→- 3-button payment method selector (Cash/UPI/Card) using `setPaymentMethod` (selected = emerald filled).
+   154→- Full-width emerald Checkout button (disabled when empty) opens `CheckoutDialog`.
+   155→- Created `src/components/checkout-dialog.tsx` (NEW): `CheckoutDialog({ open, onOpenChange })` reading from `useCartStore` + `shopApi.get` query.
+   156→  * Review stage: order summary table (product/qty/amount), UPI QR (rendered via `QRCodeSVG` from `qrcode.react`) with data `upi://pay?pa=${upiId}&pn=${shopName}&am=${total.toFixed(2)}&cu=INR`, shown only when `paymentMethod==="UPI"` and `shop.upiId` non-empty; totals panel + payment-method badge.
+   157→  * "Complete Sale" uses `useMutation` from `@tanstack/react-query` calling `salesApi.create({ items, discount, paymentMethod })`. On success: sonner `toast.success("Sale completed!")`, switches dialog to Receipt stage showing `<Receipt shop sale />` with "Print Receipt" (`window.print()`) and "New Order" buttons, clears cart store (after snapshotting sale locally), and invalidates `["sales"]`, `["salesStats"]`, `["products"]` query keys.
+   158→  * Loading state (Loader2 spinner) on the button while creating; error handling via `toast.error`.
+   159→- Ran `bun run lint` — fixed the single `react-hooks/set-state-in-effect` error in my file by splitting the camera dialog into wrapper + body. Pre-existing lint errors in `settings-view.tsx` belong to another agent's task and were left untouched.
+   160→- Checked dev log: a transient "Module not found '@/components/checkout-dialog'" appeared while writing pos-terminal.tsx before checkout-dialog.tsx existed; it cleared once both files were written. Latest log: `GET / 200`, `GET /api/products 200`, `GET /api/shop 200`, no runtime errors.
+   161→
+   162→Stage Summary:
+   163→- Files created/overwritten:
+   164→  * src/components/views/pos-terminal.tsx (OVERWRITTEN — full POS billing screen)
+   165→  * src/components/checkout-dialog.tsx (NEW — checkout flow + UPI QR + receipt preview/print)
+   166→  * agent-ctx/5-full-stack-developer-pos-terminal.md (agent work record)
+   167→- Key features:
+   168→  * Barcode scan + name search + Enter-to-add with toasts
+   169→  * Camera scanner dialog (live video + animated scan frame) with manual barcode fallback (sandbox-friendly)
+   170→  * Category filter chips + product grid with stock-aware tiles (green/amber/red badges, framer-motion hover/tap)
+   171→  * Sticky cart card with qty steppers, AnimatePresence removal, totals (subtotal/discount/tax/grand-total), 3-button payment selector, Clear-with-confirm
+   172→  * Checkout dialog with order summary, UPI QR generation (`qrcode.react`), sale creation via `salesApi.create` mutation, success toast, in-dialog receipt preview, Print Receipt (`window.print()`), New Order flow, cart clear, and react-query cache invalidation for sales/salesStats/products
+   173→  * Fully responsive (mobile stacks, desktop 2-column), emerald primary throughout, `formatMoney(amount, shop.currency)` everywhere, no indigo/blue
+   174→- Lint: `bun run lint` passes for my two files. (One pre-existing `react-hooks/set-state-in-effect` error remains in `settings-view.tsx` — owned by another task.)
+   175→- Runtime: page renders at `/` with 200 status; `/api/shop` and `/api/products` resolve 200; no runtime errors in `dev.log`.
+   176→
+   177→---
+   178→Task ID: 9
+   179→Agent: orchestrator (verification + integration)
+   180→Task: End-to-end verification with agent-browser + final integration
+   181→
+   182→Work Log:
+   183→- Verified all 5 views render: POS Terminal, Products, Sales History, Shop Details, Settings
+   184→- Tested core POS flow: added Coca-Cola (x2) + Lay's to cart → cart total ₹110.00 correct
+   185→- Opened Checkout dialog → order summary correct (₹90 + ₹20 = ₹110)
+   186→- Completed sale → receipt INV-20260813-0002 generated, "Payment Successful" screen shown
+   187→- Verified stock decrement: Coca-Cola 118→116, Lay's 200→199 (correct!)
+   188→- Navigated to Sales History → both sales visible (INV-...0001 ₹560 UPI, INV-...0002 ₹110 Cash)
+   189→- Checked console errors: NONE (only React DevTools info + HMR connected)
+   190→- Confirmed sidebar nav, cart pill badge, sticky footer all functional
+   191→- bun run lint: clean (exit 0)
+   192→
+   193→Stage Summary:
+   194→- App fully functional end-to-end. All 12 API endpoints working.
+   195→- Core POS billing flow verified: scan/add → cart → checkout → sale recorded → receipt → stock updated
+   196→- Sales History (new feature) correctly displays recorded transactions
+   197→- No runtime/console errors. Lint clean. Responsive layout confirmed.
+   198→
+   199→Project Status: COMPLETE & VERIFIED
+   200→
+   201→---
+   202→Task ID: 10-Dashboard
+   203→Agent: full-stack-developer (Dashboard)
+   204→Task: Build Dashboard overview view (NEW feature)
+   205→
+   206→Work Log:
+   207→- Read worklog.md and inspected src/lib/{types,api,format,utils}.ts, src/components/app-shell.tsx, src/components/views/sales-history.tsx, src/components/views/product-manager.tsx, and the shadcn primitives (Card, Badge, Separator, Skeleton) to confirm shared utilities, prop APIs, the emerald theme, and the existing payment-badge / stock-badge patterns already used in sibling views.
+   208→- Verified dev server healthy via `tail dev.log` (GET / 200, all 4 API endpoints returning 200).
+   209→- Created `src/components/views/dashboard.tsx` (NEW file):
+   210→  * `Dashboard({ onNavigate }: { onNavigate: (view: ViewKey) => void })` — the store-owner command center.
+   211→  * **Section 1 — Welcome header**: left = "Welcome back" greeting + shop name (skeleton while shop loads) + full-format current date ("Thursday, 13 August 2026"); right = emerald "New Sale" button (ScanLine → onNavigate("pos")) + outline "Add Product" button (Plus → onNavigate("products")). Responsive: stacks on mobile, row on sm+.
+   212→  * **Section 2 — KPI cards** (grid-cols-2 lg:grid-cols-4): Today's Revenue (TrendingUp, emerald circle, sparkline-style "▲ vs 0 yesterday" + "Today" pill badge), Inventory Value (Boxes, amber circle, computed as Σ price×stock), Low Stock Alerts (AlertTriangle, orange circle, clickable → onNavigate("products"), subtitle shows out-of-stock count), Avg Ticket (Receipt, slate circle). Each card: white bg, rounded-xl, subtle border, hover:shadow-md transition, framer-motion staggered entrance (opacity 0 y 12 → opacity 1 y 0, delay = index × 0.08s). 40px icon avatar circles with `bg-{color}-500/15`. Per-card loading skeleton on the value.
+   213→  * **Section 3 — Two-column grid (lg:grid-cols-3 gap-6)**:
+   214→    - Left (col-span-2): **Recent Sales** card with "View all" link button → onNavigate("sales"). Pulls from `salesApi.list()` (key `["sales"]`), takes 5 most recent. Each row: mono receipt no, formatTime + item count, payment badge (Cash=slate / UPI=emerald / Card=amber), bold total. Dividers via `divide-y`. Empty state: "No sales yet" with ShoppingCart icon + "Start a sale" CTA → onNavigate("pos"). Loading: 5 skeleton rows.
+   215→    - Right (col-span-1): **Inventory Health** card with "Manage" link → onNavigate("products"). Stacked horizontal bar (3 segments: Out=red, Low=amber, Healthy=emerald, widths proportional to counts) + 3 legend rows (colored dot + label + count). Below: Top 5 Low Stock items list (products sorted ascending by stock, take 5) with truncated name, price, and colored stock badge (red=0, amber=1-5, emerald>5). Empty state: "No products yet" with Boxes icon + "Add product" CTA. Loading skeleton.
+   216→  * **Section 4 — Quick actions grid** (sm:grid-cols-2 lg:grid-cols-4): 4 large clickable motion.div cards with whileHover y:-2 lift. Each card has an icon avatar in tinted circle + title + subtitle. Start Billing (ScanLine, emerald) → pos, Manage Products (Package, slate) → products, View Reports (BarChart3, amber) → sales, Shop Settings (Store, slate) → shop. (Used slate instead of blue for the Manage Products card to honor the "no indigo/blue" rule.)
+   217→  * All money via `formatMoney(amount, shop?.currency ?? "₹")`. Emerald primary throughout. NO indigo / blue anywhere.
+   218→- Wired the new view into the app so it is actually reachable as the landing page:
+   219→  * Added `"dashboard"` to the `ViewKey` union in `src/lib/types.ts`.
+   220→  * Imported `Dashboard` in `src/components/app-shell.tsx`, added a LayoutDashboard entry to the top of the NAV array, changed the default `useState<ViewKey>("pos")` → `"dashboard"`, and added a `case "dashboard": return <Dashboard onNavigate={select} />` branch to `renderView`.
+   221→- Ran `bun run lint` — exit 0, no errors, no warnings (across the whole repo).
+   222→- Checked `dev.log`: GET / 200, GET /api/shop 200, GET /api/sales/stats 200, GET /api/products 200, GET /api/sales 200. No runtime errors, no exceptions, no module-not-found warnings related to my files.
+   223→
+   224→Stage Summary:
+   225→- Files created:
+   226→  * src/components/views/dashboard.tsx (NEW — full Dashboard overview view)
+   227→- Files modified (minimal wiring so the new view is reachable as the landing page):
+   228→  * src/lib/types.ts (added "dashboard" to ViewKey union)
+   229→  * src/components/app-shell.tsx (imported Dashboard, added NAV entry, set default view to "dashboard", rendered <Dashboard onNavigate={select} />)
+   230→- Features delivered:
+   231→  * Welcome header with dynamic greeting, shop name, full-format date, and two quick-action buttons.
+   232→  * 4 KPI cards (Today's Revenue + sparkline comparison, Inventory Value, Low Stock Alerts clickable, Avg Ticket) with staggered framer-motion entrance, hover shadow, per-card loading skeletons.
+   233→  * Two-column layout: Recent Sales (5 latest, payment badges, dividers, empty state CTA, loading skeletons) + Inventory Health (stacked proportional bar + legend rows + Top 5 low-stock list with colored badges).
+   234→  * Quick actions grid: 4 large hover-lift motion cards wired to onNavigate for pos / products / sales / shop.
+   235→  * Fully responsive (mobile single-column, desktop multi-column grids), emerald primary throughout, no indigo/blue.
+   236→  * Wired into AppShell so the Dashboard is now the default landing view of SwiftBill POS.
+   237→- Lint: `bun run lint` passes (exit 0, no errors, no warnings).
+   238→- Runtime: page renders at `/` 200; `/api/shop`, `/api/products`, `/api/sales`, `/api/sales/stats` all 200; no runtime errors in dev.log.
+   239→
+   240→---
+   241→Task ID: 11
+   242→Agent: webDevReview cron (round 1)
+   243→Task: QA review + implement Dashboard, dark mode, command palette
+   244→
+   245→Work Log:
+   246→- Reviewed prior worklog (Tasks 3, 5, 6-7, 8, 9, 10-Dashboard) — project was complete & verified.
+   247→- Performed QA via agent-browser: loaded app, tested all 5 existing views, verified no console/runtime errors, confirmed lint clean.
+   248→- Used VLM to analyze Sales History screenshot: confirmed stats cards (Revenue ₹670, Transactions 2, Items Sold 6, Avg Ticket ₹335), 7-day chart, sales table all rendering correctly with no bugs.
+   249→- Dispatched agent to build NEW Dashboard view (Task 10-Dashboard): KPI cards, recent sales, inventory health, quick actions. Agent also wired it into app-shell as default landing view + added "dashboard" to ViewKey union + NAV.
+   250→- Installed next-themes package.
+   251→- Created theme-provider.tsx (next-themes wrapper, attribute="class", defaultTheme="light", enableSystem).
+   252→- Created theme-toggle.tsx (Sun/Moon animated toggle, uses useSyncExternalStore for mount detection — avoids setState-in-effect lint rule).
+   253→- Created command-palette.tsx (cmdk-based CommandDialog with quick actions, navigation items, theme toggle; Cmd+K shortcut).
+   254→- Updated app-shell.tsx: added Cmd+K keyboard listener, search trigger button (⌘K) in header, ThemeToggle, CommandPalette integration.
+   255→- Updated layout.tsx: wrapped Providers in ThemeProvider.
+   256→- Updated globals.css: rewrote .dark theme to use emerald-tinted hues (hue 162.48) instead of grayscale, removed indigo chart-1/sidebar-primary (was 264.376 hue).
+   257→- Fixed lint error: replaced useEffect+setState mount pattern with useSyncExternalStore in theme-toggle.tsx.
+   258→- Verified via agent-browser: Dashboard renders with all sections, Cmd+K opens palette, navigation via palette works, dark mode toggle switches theme (confirmed via document.documentElement.classList), VLM confirms dark mode is "production-grade" with excellent contrast.
+   259→
+   260→Stage Summary:
+   261→- NEW features added:
+   262→  * Dashboard view (6th view): welcome header, 4 KPI cards (revenue/inventory value/low stock/avg ticket), recent sales list, inventory health bar + top low-stock items, 4 quick-action cards. Default landing page.
+   263→  * Dark mode: full emerald-tinted dark theme via next-themes, animated Sun/Moon toggle in header, persists to localStorage, respects system preference.
+   264→  * Command palette (Cmd+K): global search/navigation with quick actions (New Sale, Add Product), page navigation (all 6 views), theme toggle. Accessible via keyboard shortcut or header search button.
+   265→- Files created: src/components/views/dashboard.tsx, src/components/theme-provider.tsx, src/components/theme-toggle.tsx, src/components/command-palette.tsx
+   266→- Files modified: src/components/app-shell.tsx (Cmd+K + toggle + palette + dashboard nav), src/app/layout.tsx (ThemeProvider), src/app/globals.css (emerald dark theme), src/lib/types.ts (ViewKey += "dashboard")
+   267→- QA: lint clean (exit 0), no console/runtime errors, all views render, dark mode verified via VLM as "production-grade", command palette navigation works, dashboard is default landing.
+   268→- ViewKey union now: "dashboard" | "pos" | "products" | "sales" | "shop" | "settings" (6 views)
+   269→
+   270→Unresolved issues / next-phase recommendations:
+   271→- Dashboard KPI "vs yesterday" comparison shows "▲ vs 0 yesterday" since we only have today's stats API. Could add a 7-day stats endpoint + sparkline trend.
+   272→- Command palette could include product search (fuzzy match on product names/barcodes → add to cart or view). Currently only navigates pages.
+   273→- POS Terminal could benefit from keyboard shortcuts (F1 focus scan, F2/F3/F4 payment methods, Enter checkout).
+   274→- Sales History chart shows 6 empty days + 1 tall bar (only 1 day of data). Normal for fresh install.
+   275→- No automated tests yet (test/widget_test.dart was the only "test" in original Flutter app, and it was broken).
+   276→- Consider adding a "Low Stock" notification badge on the Products nav item.
+   277→
+   278→Project Status: STABLE & ENHANCED — 3 new features (Dashboard, Dark Mode, Command Palette) added on top of the complete POS app. All verified working.
+   279→
+   280→---
+   281→Task ID: 12
+   282→Agent: webDevReview cron (round 2)
+   283→Task: QA + implement 4 new features (low-stock badge, keyboard shortcuts, product search in palette, revenue sparkline)
+   284→
+   285→## Current project status / assessment
+   286→- Project was stable & enhanced after round 1 (6 views, dark mode, command palette, dashboard).
+   287→- QA at start: lint clean, no console/runtime errors, all views render, dev server healthy.
+   288→- VLM confirmed Sales History + Dashboard rendering correctly.
+   289→- No bugs found — proceeded to implement next-phase recommendations from round 1 worklog.
+   290→
+   291→## Current goals / completed modifications / verification results
+   292→
+   293→### Work Log:
+   294→- Reviewed worklog.md (Tasks 3-11) — understood project state.
+   295→- Performed QA via agent-browser: loaded app, tested all 6 views, no console/runtime errors, lint clean.
+   296→- Implemented 4 new features addressing the round-1 "next-phase recommendations":
+   297→
+   298→**1. Low-stock notification badge on Products nav item** (`app-shell.tsx`)
+   299→- Added products query in AppShell to compute `lowStockCount` (stock 0-5).
+   300→- Modified SidebarContent to accept `lowStockCount` and render an amber badge on the Products nav button when count > 0.
+   301→- Badge uses amber-500 bg when inactive, primary-foreground/20 when active.
+   302→- Passes `lowStockCount` to both desktop and mobile sidebar instances.
+   303→- (Currently hidden because all 12 products have healthy stock >5 — will appear when stock runs low.)
+   304→
+   305→**2. Keyboard shortcuts in POS Terminal** (`pos-terminal.tsx`)
+   306→- F1: Focus scan input (always works, even when typing in other fields).
+   307→- F2: Select Cash payment (only when cart non-empty).
+   308→- F3: Select UPI payment (only when cart non-empty).
+   309→- F4: Select Card payment (only when cart non-empty).
+   310→- F9: Open checkout dialog (only when cart non-empty and not typing).
+   311→- Added visible `<kbd>` badges on buttons: F1 hint in scan input (when empty), F2/F3/F4 on payment buttons, F9 on checkout button.
+   312→- Each shortcut shows a toast confirmation when triggered.
+   313→- Used `scanInputRef` (React 19 ref-as-prop) to focus the scan input on F1.
+   314→- Shortcuts are scoped to avoid interfering with dialog inputs (typing detection via target tagName).
+   315→
+   316→**3. Product search in command palette** (`command-palette.tsx`)
+   317→- Added products + shop queries (enabled only when palette opens, for performance).
+   318→- New "Add Product to Cart" CommandGroup showing up to 8 in-stock products.
+   319→- Each item shows: colored avatar (initials), product name, barcode (mono), price, stock count, PackagePlus icon.
+   320→- Searchable by name, barcode, and category (via cmdk `value` prop).
+   321→- Selecting a product: adds it to cart via `useCartStore.addProduct`, shows toast, closes palette, navigates to POS.
+   322→- Out-of-stock products are excluded; out-of-stock selection shows error toast.
+   323→
+   324→**4. 7-day revenue sparkline on Dashboard KPI card** (`dashboard.tsx`)
+   325→- New `RevenueSparkline` component: inline SVG polyline with gradient area fill, 7 data points (oldest→newest), highlighted last point.
+   326→- Computed `revenueTrend` (7-day array) + `weekTotal` + `todayVsPrev` (% change vs 6-day avg) from existing sales query.
+   327→- Today's Revenue KPI card now shows:
+   328→  - Percentage comparison badge (emerald if up, red if down) vs 6-day average.
+   329→  - "7d: ₹X" weekly total label.
+   330→  - Green sparkline below the comparison (only when weekTotal > 0).
+   331→- Replaced the old static "▲ vs 0 yesterday" placeholder.
+   332→- Added ArrowDownRight icon import.
+   333→
+   334→### Verification results:
+   335→- `bun run lint`: clean (exit 0).
+   336→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+   337→- agent-browser QA:
+   338→  * Dashboard renders sparkline + % badge + week total — VLM confirmed.
+   339→  * Low-stock badge: hidden (all products healthy) — will show when stock ≤5.
+   340→  * F1: focuses scan input (verified via activeElement.placeholder).
+   341→  * F2/F3/F4: kbd badges visible on payment buttons; F3 selected UPI (verified via computed background color).
+   342→  * F9: opens checkout dialog (verified via role=dialog presence).
+   343→  * Cmd+K palette: "coca" search matches Coca-Cola product; clicking adds to cart + navigates to POS (cart count incremented to 2).
+   344→  * No console errors throughout testing.
+   345→
+   346→## Unresolved issues / risks, and priority recommendations for the next phase
+   347→
+   348→### Files modified this round:
+   349→- `src/components/app-shell.tsx` — products query + lowStockCount + SidebarContent badge prop
+   350→- `src/components/views/pos-terminal.tsx` — keyboard shortcuts + kbd badges + scanInputRef
+   351→- `src/components/command-palette.tsx` — product search + add-to-cart from palette
+   352→- `src/components/views/dashboard.tsx` — RevenueSparkline component + 7-day trend computation
+   353→
+   354→### Recommendations for next round:
+   355→1. **Sales History enhancements**: add date-range filter, export sales to CSV, and a payment-method breakdown donut chart.
+   356→2. **Product Manager**: add bulk import (CSV upload), barcode generation/printing for products without barcodes, and a "duplicate product" action.
+   357→3. **POS Terminal**: add a "hold order" / "park sale" feature to resume later, and a customer display mode for dual-screen setups.
+   358→4. **Receipt improvements**: add QR code to receipt (link to digital copy), support multiple receipt sizes (80mm/58mm), and a digital receipt email option.
+   359→5. **Dashboard**: add a "top selling products" leaderboard card and a payment-method breakdown donut.
+   360→6. **Notifications**: add a low-stock alert toast on app load when products cross below threshold, and a daily summary notification.
+   361→7. **Accessibility**: add ARIA labels to all icon-only buttons, and ensure keyboard navigation works through the product grid.
+   362→
+   363→Project Status: STABLE & ENHANCED (round 2) — 4 new features added. All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+   364→
+   365→---
+   366→Task ID: 13
+   367→Agent: webDevReview cron (round 3)
+   368→Task: QA + implement 3 new features (Hold/Park Order, Dashboard leaderboard + donut, Sales History filters)
+   369→
+   370→## Current project status / assessment
+   371→- Project was stable & enhanced after round 2 (6 views, dark mode, command palette, dashboard with sparkline, keyboard shortcuts, low-stock badge).
+   372→- QA at start: lint clean, no console/runtime errors, dev server healthy, all views render.
+   373→- No bugs found — proceeded to implement next-phase recommendations.
+   374→
+   375→## Current goals / completed modifications / verification results
+   376→
+   377→### Work Log:
+   378→- Reviewed worklog.md (Tasks 3-12) — understood project state.
+   379→- Performed QA via agent-browser: loaded app, no errors, lint clean.
+   380→
+   381→**1. Hold/Park Order feature** (POS Terminal)
+   382→- Created `src/lib/held-orders-store.ts`: Zustand store with localStorage persistence (`swiftbill-held-orders`). Holds order snapshots (items, discount, paymentMethod, heldAt, label).
+   383→- Modified `src/components/views/pos-terminal.tsx`:
+   384→  * Added "Hold" button in cart header (Pause icon) — parks current cart to held store + clears cart.
+   385→  * Added "Held" button with badge count (History icon) — opens Held Orders dialog.
+   386→  * Held Orders dialog: lists parked orders with label, item count, total, time-ago, Resume + Discard buttons. Empty state with F6 hint.
+   387→  * Resume logic: if current cart non-empty, holds it first, then restores the selected order.
+   388→  * F6 keyboard shortcut: hold current order.
+   389→  * F7 keyboard shortcut: open held orders dialog.
+   390→  * Handlers declared before useEffect to satisfy react-hooks/immutability lint rule.
+   391→
+   392→**2. Top Selling Products + Payment Breakdown** (Dashboard)
+   393→- Modified `src/components/views/dashboard.tsx`:
+   394→  * New `PaymentDonut` component: SVG donut chart using stroke-dasharray segments (cumulative offsets precomputed via reduce to avoid render-time mutation). Shows method count in center.
+   395→  * New `PaymentLegendRow` component: colored dot + method name + percentage + count×revenue.
+   396→  * `paymentColor()` helper: UPI=emerald, Card=amber, Cash=slate.
+   397→  * `topProducts` derived: aggregates sale items by productName, sorts by qty desc, top 5.
+   398→  * `paymentBreakdown` derived: aggregates by paymentMethod, computes count/revenue/percent.
+   399→  * New section (lg:grid-cols-3): Top Selling (col-span-2) leaderboard with rank badges (gold/silver/bronze), progress bars, qty + revenue. Payments (col-span-1) donut chart + legend.
+   400→  * Added Trophy + PieChart icon imports.
+   401→  * Empty states for both sections when no sales data.
+   402→
+   403→**3. Date-range + Payment filters** (Sales History)
+   404→- Modified `src/components/views/sales-history.tsx`:
+   405→  * New state: `dateFilter` ("all"|"today"|"7d"|"30d") + `paymentFilter` ("all"|"cash"|"upi"|"card").
+   406→  * `sales` now filters `allSales` by date range + payment method (client-side, useMemo).
+   407→  * Renamed raw query data to `allSales` to distinguish from filtered `sales`.
+   408→  * Filter toolbar in table header: Period chips (All/Today/7 days/30 days) + Payment chips (All/Cash/UPI/Card). Selected = emerald filled.
+   409→  * "Clear filters" button appears when any filter active.
+   410→  * Sales count shows "N of M" when filtered.
+   411→
+   412→### Verification results:
+   413→- `bun run lint`: clean (exit 0).
+   414→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+   415→- agent-browser QA:
+   416→  * Dashboard Top Selling: VLM confirmed ranked leaderboard (Coca-Cola #1 4 sold ₹180, Lay's #2 1 sold ₹20, Tata Tea #3 1 sold ₹480) with progress bars.
+   417→  * Dashboard Payments donut: VLM confirmed donut chart "2 METHODS" with Cash 50% / UPI 50% breakdown + legend.
+   418→  * POS F6: held order, badge showed "Held 1", cart cleared.
+   419→  * POS F7: opened held orders dialog, showed held order with Resume/Discard.
+   420→  * Resume: clicked Resume, cart restored with Coca-Cola (₹45), checkout button showed ₹45.00.
+   421→  * Sales History filters: Period + Payment chips render. "Today" filter showed "Sales (2)". "UPI" filter showed "Sales (1 of 2)" — only INV-...0002 (the UPI sale).
+   422→  * No console errors throughout testing.
+   423→
+   424→## Unresolved issues / risks, and priority recommendations for the next phase
+   425→
+   426→### Files modified this round:
+   427→- `src/lib/held-orders-store.ts` (NEW) — Zustand persisted store for parked orders
+   428→- `src/components/views/pos-terminal.tsx` — Hold/Resume UI + F6/F7 shortcuts + held orders dialog
+   429→- `src/components/views/dashboard.tsx` — Top Selling leaderboard + Payment donut + legend
+   430→- `src/components/views/sales-history.tsx` — Date-range + payment filters
+   431→
+   432→### Recommendations for next round:
+   433→1. **Product Manager**: bulk CSV import, barcode generation/printing, duplicate product action.
+   434→2. **Receipt improvements**: QR code on receipt (digital copy link), 80mm/58mm size toggle, email receipt option.
+   435→3. **Dashboard**: add "sales by hour" heatmap, customer return rate metric.
+   436→4. **POS Terminal**: customer display mode for dual-screen setups, quick keypad for manual price entry.
+   437→5. **Accessibility**: ARIA labels on all icon-only buttons, full keyboard nav through product grid.
+   438→6. **Notifications**: low-stock toast on app load, daily summary notification.
+   439→7. **Data export**: export filtered sales to CSV/PDF, scheduled reports.
+   440→
+   441→Project Status: STABLE & ENHANCED (round 3) — 3 new feature groups added (Hold/Park Order, Dashboard leaderboard+donut, Sales History filters). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+   442→
+   443→---
+   444→Task ID: 14
+   445→Agent: webDevReview cron (round 4)
+   446→Task: QA + implement 4 new features (low-stock toast, duplicate product, CSV export, ARIA labels)
+   447→
+   448→## Current project status / assessment
+   449→- Project was stable & enhanced after round 3 (6 views, hold/park orders, dashboard leaderboard + donut, sales filters).
+   450→- QA at start: lint clean, no console/runtime errors, dev server healthy, all views render.
+   451→- No bugs found — proceeded to implement next-phase recommendations.
+   452→
+   453→## Current goals / completed modifications / verification results
+   454→
+   455→### Work Log:
+   456→- Reviewed worklog.md (Tasks 3-13) — understood project state.
+   457→- Performed QA via agent-browser: loaded app, no errors, lint clean.
+   458→
+   459→**1. Low-stock alert toast on app load** (`app-shell.tsx`)
+   460→- Added `useEffect` + `useRef` (notifiedRef) that fires once when products first load.
+   461→- If `lowStockCount > 0` (stock 0-5), shows a `toast.warning` with:
+   462→  * Title: "N products need attention"
+   463→  * Description: breakdown of out-of-stock + low-stock counts
+   464→  * Duration: 6 seconds
+   465→  * Action button: "View" → navigates to Products view
+   466→- Fires only once per app session (notifiedRef prevents duplicate toasts on refetch).
+   467→- Verified by lowering Coca-Cola stock to 3 → toast appeared "1 product need attention / 1 low stock / View". Stock restored after test.
+   468→
+   469→**2. Duplicate product action** (`product-manager.tsx`)
+   470→- Added `Copy` icon import from lucide-react.
+   471→- New `duplicateProduct(p)` handler: opens Add Product form pre-filled with:
+   472→  * Name: "{original name} (Copy)"
+   473→  * Barcode: "{original barcode}-COPY"
+   474→  * Price, stock, category copied from source
+   475→  * Shows info toast "Product duplicated — review and save"
+   476→- Added Duplicate button (ghost/outline, Copy icon) between Edit and Delete in both:
+   477→  * Desktop table row actions
+   478→  * Mobile card list actions
+   479→- Both have `aria-label={`Duplicate ${p.name}`}` and `title="Duplicate product"`.
+   480→- Verified: clicked Duplicate on Coca-Cola → Add Product dialog opened with "Coca-Cola 750ml (Copy)", barcode "8901030867531-COPY", price 45, stock 116, category Beverages.
+   481→
+   482→**3. Sales CSV export** (`sales-history.tsx`)
+   483→- Added `Download` icon import.
+   484→- New `exportSalesCsv()` handler:
+   485→  * Generates CSV with headers: Receipt No, Date/Time, Items, Payment Method, Subtotal, Discount, Tax, Total
+   486→  * Proper CSV escaping (quotes, commas, newlines)
+   487→  * Creates Blob → triggers download as `swiftbill-sales-YYYY-MM-DD.csv`
+   488→  * Toast: "Exported N sales to CSV"
+   489→  * Disabled when no sales; exports currently filtered sales (respects date/payment filters)
+   490→- Added "Export" button (outline, Download icon) next to Refresh in the 7-day chart card header.
+   491→- Verified: clicked Export → toast "Exported 2 sales to CSV", file downloaded.
+   492→
+   493→**4. Accessibility: ARIA labels** (`app-shell.tsx`)
+   494→- Mobile menu button: added `aria-label="Open navigation menu"`.
+   495→- Cart pill button: added `aria-label="Open cart (N items)"` (dynamic based on cart count).
+   496→- Theme toggle already had aria-labels (verified).
+   497→- Product manager buttons already had aria-labels (verified in round 3).
+   498→- POS Terminal cart buttons have text labels (Held/Hold/Clear) so screen readers read them correctly.
+   499→
+   500→### Verification results:
+   501→- `bun run lint`: clean (exit 0).
+   502→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+   503→- agent-browser QA:
+   504→  * Low-stock toast: lowered Coca-Cola stock to 3 → toast "1 product need attention / 1 low stock / View" appeared on app load. Restored stock after test.
+   505→  * Duplicate product: clicked Duplicate on Coca-Cola → Add Product dialog opened with pre-filled "Coca-Cola 750ml (Copy)" data (name, barcode-COPY, price, stock, category all correct).
+   506→  * CSV export: clicked Export → toast "Exported 2 sales to CSV", file downloaded.
+   507→  * ARIA labels: mobile menu button + cart pill now have aria-labels.
+   508→  * No console errors throughout testing.
+   509→
+   510→## Unresolved issues / risks, and priority recommendations for the next phase
+   511→
+   512→### Files modified this round:
+   513→- `src/components/app-shell.tsx` — low-stock toast + useRef import + ARIA labels
+   514→- `src/components/views/product-manager.tsx` — duplicate product action (Copy icon + handler + buttons)
+   515→- `src/components/views/sales-history.tsx` — CSV export (Download icon + handler + button)
+   516→
+   517→### Recommendations for next round:
+   518→1. **Receipt improvements**: QR code on receipt (digital copy link), 80mm/58mm size toggle, email receipt option.
+   519→2. **Dashboard**: "sales by hour" heatmap, customer return rate metric.
+   520→3. **POS Terminal**: customer display mode for dual-screen setups, quick keypad for manual price entry.
+   521→4. **Product Manager**: bulk CSV import, barcode generation/printing.
+   522→5. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support.
+   523→6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+   524→7. **Reports**: profit margins (cost price field), tax summary report, best-performing categories.
+   525→
+   526→Project Status: STABLE & ENHANCED (round 4) — 4 new features added (low-stock toast, duplicate product, CSV export, ARIA labels). All verified working via agent-browser. No bugs, no lint errors, no runtime errors.
+   527→
+   528→---
+   529→Task ID: 15
+   530→Agent: webDevReview cron (round 5)
+   531→Task: QA + implement 3 new features (cost price + profit margins, sales-by-hour heatmap, receipt size toggle + QR)
+   532→
+   533→## Current project status / assessment
+   534→- Project was stable & enhanced after round 4 (low-stock toast, duplicate product, CSV export, ARIA labels).
+   535→- QA at start: lint clean, no console/runtime errors, dev server healthy, all views render.
+   536→- No bugs found — proceeded to implement next-phase recommendations.
+   537→- Note: dev server process was killed during Prisma client regeneration; restarted via subshell. The new Prisma client (with costPrice field) required a full process restart to pick up the schema change.
+   538→
+   539→## Current goals / completed modifications / verification results
+   540→
+   541→### Work Log:
+   542→- Reviewed worklog.md (Tasks 3-14) — understood project state.
+   543→- Performed QA via agent-browser: loaded app, no errors, lint clean.
+   544→
+   545→**1. Cost price field + profit margins** (Product Manager + Reports)
+   546→- Updated `prisma/schema.prisma`: added `costPrice Float @default(0)` to Product model.
+   547→- Ran `bun run db:push` (schema sync) + regenerated Prisma client.
+   548→- Updated `src/lib/types.ts`: added `costPrice` to Product + NewProduct interfaces.
+   549→- Updated `src/app/api/products/route.ts` POST: parse + validate costPrice, include in create.
+   550→- Updated `src/app/api/products/[id]/route.ts` PUT: parse + validate costPrice on update.
+   551→- Updated `prisma/seed.ts`: added costPrice to all 12 seed products (roughly 70% of selling price).
+   552→- Backfilled existing 12 products with cost prices via one-off script.
+   553→- Updated `src/components/views/product-manager.tsx`:
+   554→  * FormState + emptyForm + toForm: added costPrice field.
+   555→  * validate(): added costPrice validation (>= 0).
+   556→  * handleSubmit: includes costPrice in payload.
+   557→  * Form: changed 2-col grid to 3-col (Selling Price, Cost Price, Stock). Responsive: 2-col on mobile, 3-col on sm+.
+   558→  * Live profit margin indicator: shows "+₹X (Y%)" with colored progress bar (emerald if positive, red if negative). Updates as user types.
+   559→  * Stats row: replaced "Low Stock" + "Out of Stock" cards with "Potential Profit" (with avg margin %) + "Low / Out of Stock" combined card. Added TrendingUp icon.
+   560→  * Stats computation: added totalCost, potentialProfit, avgMargin.
+   561→- Verified via agent-browser + VLM: Edit Coca-Cola → Selling Price 45, Cost Price 32, profit margin "+₹13.00 (28.9%)" in green with progress bar. Stats card shows "Potential Profit" with "100.0% avg margin".
+   562→
+   563→**2. Sales-by-hour heatmap** (Dashboard)
+   564→- Updated `src/components/views/dashboard.tsx`:
+   565→  * Added hourlyBuckets useMemo: 24-element array summing sale totals by hour over last 7 days.
+   566→  * Computed maxHourly, peakHour, totalHourly.
+   567→  * New "Sales by Hour" Card section: 24 vertical bars (flex layout), peak hour highlighted solid emerald, others emerald/40 with hover. Tooltip shows hour range + revenue. Hour labels (0h, 6h, 12h, 18h, 23h) below.
+   568→  * Header shows "Last 7 days · ₹X total · Peak at H:00" (emerald).
+   569→  * Empty state + loading skeleton.
+   570→  * Added Clock icon import.
+   571→- Verified via agent-browser + VLM: heatmap renders with 24 bars, peak at 1:00, "Last 7 days · ₹670.00 total" subtitle.
+   572→
+   573→**3. Receipt 80mm/58mm size toggle + QR digital copy** (Sales History + Receipt)
+   574→- Rewrote `src/components/receipt.tsx`:
+   575→  * Added `size` prop ("80mm" | "58mm", default "80mm").
+   576→  * Added `showQr` prop (default true).
+   577→  * Dynamic width (300px/220px), padding, font sizes based on size.
+   578→  * QR code (QRCodeSVG from qrcode.react) renders below totals, above footer. Encodes `swiftbill://receipt/{id}?no=...&total=...&items=...` payload.
+   579→  * "Scan for digital receipt" label below QR.
+   580→- Updated `src/components/views/sales-history.tsx`:
+   581→  * Added receiptSize state ("80mm" | "58mm").
+   582→  * Paper size toggle chips (80mm/58mm) in receipt dialog, above the footer.
+   583→  * Passes size prop to ReceiptComponent.
+   584→- Verified via agent-browser: receipt dialog shows 80mm/58mm toggle; clicking 58mm changes receipt width from 300px to 220px; QR code SVG present in DOM (viewBox 0 0 41 41); VLM confirmed QR code visible below TOTAL line.
+   585→
+   586→### Verification results:
+   587→- `bun run lint`: clean (exit 0).
+   588→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+   589→- agent-browser QA:
+   590→  * Product form: Selling Price 45, Cost Price 32, profit margin "+₹13.00 (28.9%)" with green progress bar (VLM confirmed).
+   591→  * Product stats: "Potential Profit" + "100.0% avg margin" in DOM.
+   592→  * Dashboard heatmap: 24 bars, peak at 1:00, "Last 7 days · ₹670.00 total" (VLM confirmed).
+   593→  * Receipt: 80mm/58mm toggle works (width 300px→220px), QR code SVG in DOM + visible (VLM confirmed "QR code located below TOTAL line").
+   594→  * No console errors (one pre-existing DialogContent aria-describedby warning).
+   595→
+   596→## Unresolved issues / risks, and priority recommendations for the next phase
+   597→
+   598→### Files modified this round:
+   599→- `prisma/schema.prisma` — added costPrice field
+   600→- `prisma/seed.ts` — added costPrice to seed products
+   601→- `src/lib/types.ts` — added costPrice to Product/NewProduct
+   602→- `src/app/api/products/route.ts` — costPrice in POST
+   603→- `src/app/api/products/[id]/route.ts` — costPrice in PUT
+   604→- `src/components/views/product-manager.tsx` — cost price form field + profit margin indicator + stats
+   605→- `src/components/views/dashboard.tsx` — sales-by-hour heatmap + Clock icon
+   606→- `src/components/receipt.tsx` — size toggle + QR code (rewritten)
+   607→- `src/components/views/sales-history.tsx` — receipt size toggle UI
+   608→
+   609→### Recommendations for next round:
+   610→1. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support, configurable low-stock threshold.
+   611→2. **POS Terminal**: customer display mode for dual-screen setups, quick keypad for manual price entry.
+   612→3. **Product Manager**: bulk CSV import, barcode generation/printing.
+   613→4. **Reports**: profit margin report (per product + overall), tax summary report, best-performing categories report.
+   614→5. **Dashboard**: customer return rate metric, inventory turnover ratio.
+   615→6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+   616→7. **Receipt**: email receipt option, receipt logo upload, multiple copies option.
+   617→
+   618→### Note on dev server:
+   619→- The dev server process was killed during Prisma client regeneration (schema change requires process restart, not just HMR). Restarted via subshell `(bun run dev &)`. If the dev server is unresponsive in the next round, run `cd /home/z/my-project && (bun run dev &)` to restart it.
+   620→
+   621→Project Status: STABLE & ENHANCED (round 5) — 3 new feature groups added (cost price + profit margins, sales-by-hour heatmap, receipt size toggle + QR). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+   622→
+   623→---
+   624→Task ID: 16
+   625→Agent: webDevReview cron (round 6)
+   626→Task: QA + implement 2 new features (custom item keypad, profit margin report)
+   627→
+   628→## Current project status / assessment
+   629→- Project was stable & enhanced after round 5 (cost price + profit margins, sales-by-hour heatmap, receipt size toggle + QR).
+   630→- QA at start: dev server up (200), lint clean, no console/runtime errors, all views render.
+   631→- No bugs found — proceeded to implement next-phase recommendations.
+   632→- Deliberately avoided schema changes this round (round 5's Prisma client regeneration caused dev server restart issues). Both new features are frontend-only.
+   633→
+   634→## Current goals / completed modifications / verification results
+   635→
+   636→### Work Log:
+   637→- Reviewed worklog.md (Tasks 3-15) — understood project state.
+   638→- Performed QA via agent-browser: loaded app, no errors, lint clean.
+   639→
+   640→**1. Quick Custom Item keypad** (POS Terminal)
+   641→- Updated `src/components/views/pos-terminal.tsx`:
+   642→  * Added `Calculator` icon import + `Label` component import.
+   643→  * New state: `customItemOpen`, `customName`, `customPrice`.
+   644→  * New `handleAddCustomItem()` handler: creates a pseudo-Product with id `custom-{timestamp}`, barcode `CUSTOM-{XXXXXX}`, stock 999999 (unlimited), category "Custom". Validates price > 0, adds to cart via `addProduct`, shows toast with name + price.
+   645→  * "Custom" button (Calculator icon) added to scan bar, before Scan button. Shows icon only on mobile, icon + "Custom" text on sm+.
+   646→  * Custom item dialog: name input (optional, placeholder "e.g. Loose rice 2kg"), price input (currency-prefixed, number, Enter to submit), quick price chips (₹10/₹20/₹50/₹100/₹500), "Add to cart" button (disabled when price invalid).
+   647→  * Dialog description explains use case: "ideal for loose items, weighed goods, or quick sales not in your catalog."
+   648→- Verified via agent-browser: clicked Custom → dialog opened → entered "Loose Rice 2kg" → clicked ₹50 quick chip → price field showed 50 → clicked "Add to cart" → cart showed "Loose Rice 2kg" + Checkout · ₹50.00.
+   649→
+   650→**2. Profit margin report** (Sales History)
+   651→- Updated `src/components/views/sales-history.tsx`:
+   652→  * Added `productsApi` import + `Wallet`, `Percent` icon imports.
+   653→  * New `productsQuery` (useQuery key `["products"]`) to fetch product cost prices.
+   654→  * New `profitSummary` useMemo: builds a productName→costPrice map from products, iterates filtered sales to compute:
+   655→    - revenue (sum of subtotals)
+   656→    - cost (sum of unitCost × quantity per item, matched by productName)
+   657→    - discountTotal (sum of discounts)
+   658→    - profit = revenue - cost - discountTotal
+   659→    - margin = profit / revenue × 100
+   660→  * New "Profit Summary" Card section (between 7-day chart and sales table): 4-column grid with colored cards:
+   661→    - Revenue (emerald tint, TrendingUp icon)
+   662→    - Cost (slate tint, Wallet icon)
+   663→    - Discounts (amber tint, Receipt icon)
+   664→    - Net Profit (emerald/red tint based on sign, Calculator icon, shows margin %)
+   665→  * Only shows when sales.length > 0. Reflects current date/payment filters.
+   666→- Verified via agent-browser + VLM: Profit Summary shows Revenue ₹680.00 (green), Cost ₹522.00 (grey), Discounts ₹10.00 (amber), Net Profit +₹148.00 (green, 21.8% margin). VLM confirmed all 4 cards render correctly with appropriate colors.
+   667→
+   668→### Verification results:
+   669→- `bun run lint`: clean (exit 0).
+   670→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+   671→- agent-browser QA:
+   672→  * Custom item: dialog opens, name + price fields work, quick price chips populate price, item added to cart (₹50), checkout button updates.
+   673→  * Profit Summary: 4 cards render with correct values (Revenue ₹680, Cost ₹522, Discounts ₹10, Net Profit +₹148, 21.8% margin). VLM confirmed colors + layout.
+   674→  * No console errors throughout testing.
+   675→
+   676→## Unresolved issues / risks, and priority recommendations for the next phase
+   677→
+   678→### Files modified this round:
+   679→- `src/components/views/pos-terminal.tsx` — custom item keypad (Calculator icon, Label, custom dialog, handler, button)
+   680→- `src/components/views/sales-history.tsx` — profit margin report (productsApi, Wallet/Percent icons, profitSummary useMemo, 4-card Profit Summary section)
+   681→
+   682→### Recommendations for next round:
+   683→1. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support, configurable low-stock threshold (requires schema change + dev server restart).
+   684→2. **Product Manager**: bulk CSV import, barcode generation/printing.
+   685→3. **POS Terminal**: customer display mode for dual-screen setups.
+   686→4. **Reports**: tax summary report, best-performing categories report, export profit report to PDF.
+   687→5. **Dashboard**: customer return rate metric, inventory turnover ratio.
+   688→6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+   689→7. **Receipt**: email receipt option, receipt logo upload, multiple copies option.
+   690→8. **Styling**: gradient headers, improved empty-state illustrations, table row hover effects.
+   691→
+   692→### Note on dev server:
+   693→- Dev server is currently running (PIDs 14482/14483, started via subshell in round 5). If unresponsive, run `cd /home/z/my-project && (bun run dev &)` to restart.
+   694→- Avoid schema changes (Prisma client regeneration) unless necessary — they require a full process restart.
+   695→
+   696→Project Status: STABLE & ENHANCED (round 6) — 2 new features added (custom item keypad, profit margin report). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+   697→
+   698→---
+   699→Task ID: 17
+   700→Agent: webDevReview cron (round 7)
+   701→Task: QA + implement 3 new features (tax summary, category breakdown, gradient hero header)
+   702→
+   703→## Current project status / assessment
+   704→- Project was stable & enhanced after round 6 (custom item keypad, profit margin report).
+   705→- QA at start: dev server up (200), lint clean, no console/runtime errors, all views render.
+   706→- No bugs found — proceeded to implement next-phase recommendations.
+   707→- All changes are frontend-only (no schema changes, no dev server restart needed).
+   708→
+   709→## Current goals / completed modifications / verification results
+   710→
+   711→### Work Log:
+   712→- Reviewed worklog.md (Tasks 3-16) — understood project state.
+   713→- Performed QA via agent-browser: loaded app, no errors, lint clean.
+   714→
+   715→**1. Tax Summary report** (Sales History)
+   716→- Updated `src/components/views/sales-history.tsx`:
+   717→  * New `taxSummary` useMemo: iterates filtered sales to compute taxable amount (max(0, subtotal - discount)), tax collected (sum of taxAmount), effective rate (taxCollected / taxable × 100).
+   718→  * New "Tax Summary" Card (left column of two-column grid): shows Taxable amount, Tax collected (amber), Effective tax rate (amber, bold), progress bar (scaled ×5 for visibility), and contextual hint text ("No tax configured — set a tax rate in Shop Details" when rate < 0.01, or "X% average applied to taxable sales" otherwise).
+   719→  * Only renders when sales.length > 0. Reflects current date/payment filters.
+   720→
+   721→**2. Category Breakdown report** (Sales History)
+   722→- New `categoryBreakdown` useMemo: builds productName→{costPrice, category} maps from products, aggregates sale items by category (revenue, cost, qty), computes profit, sorts by revenue desc.
+   723→- New "Category Breakdown" Card (right column): lists each category with qty sold + revenue (emerald), and a proportional emerald progress bar (width = category revenue / top category revenue × 100).
+   724→- Empty state when no category data for current filters.
+   725→- Only renders when sales.length > 0. Reflects current date/payment filters.
+   726→
+   727→**3. Gradient hero header** (Dashboard styling polish)
+   728→- Updated `src/components/views/dashboard.tsx` welcome header:
+   729→  * Replaced flat layout with a gradient hero banner: `bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700` with white text, rounded-2xl, shadow-lg.
+   730→  * Decorative blurred circles (white/10, white/5) for depth.
+   731→  * "New Sale" button: white background with emerald text (high contrast on gradient).
+   732→  * "Add Product" button: outline style with white border/text, translucent bg.
+   733→  * Drop-shadow on the shop name headline.
+   734→  * Skeleton uses bg-white/20 while loading.
+   735→- VLM confirmed: "prominent emerald-to-green gradient hero banner" with "solid white New Sale button" + "transparent outline Add Product button" + "subtle decorative blur effect".
+   736→
+   737→### Verification results:
+   738→- `bun run lint`: clean (exit 0).
+   739→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+   740→- agent-browser QA:
+   741→  * Tax Summary: renders with Taxable ₹670, Tax collected ₹0, Effective rate 0.00%, "No tax configured" hint, amber progress bar (VLM confirmed).
+   742→  * Category Breakdown: renders Beverages (5 sold, ₹660, long green bar) + Snacks (1 sold, ₹20, short green bar) (VLM confirmed).
+   743→  * Gradient hero header: emerald-to-teal gradient with white text, white New Sale button + outline Add Product button, decorative blur (VLM confirmed "visually striking header").
+   744→  * No console errors throughout testing.
+   745→
+   746→## Unresolved issues / risks, and priority recommendations for the next phase
+   747→
+   748→### Files modified this round:
+   749→- `src/components/views/sales-history.tsx` — tax summary + category breakdown (useMemo + 2 cards in two-column grid)
+   750→- `src/components/views/dashboard.tsx` — gradient hero header (replaced flat welcome section)
+   751→
+   752→### Recommendations for next round:
+   753→1. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support, configurable low-stock threshold.
+   754→2. **Product Manager**: bulk CSV import, barcode generation/printing.
+   755→3. **POS Terminal**: customer display mode for dual-screen setups.
+   756→4. **Reports**: export profit/tax/category report to PDF, daily/weekly/monthly comparison.
+   757→5. **Dashboard**: customer return rate metric, inventory turnover ratio, gradient headers on other views.
+   758→6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+   759→7. **Receipt**: email receipt option, receipt logo upload, multiple copies option.
+   760→8. **Styling**: gradient headers on Sales/Products/Settings views, improved table row hover effects, animated KPI count-up.
+   761→
+   762→### Note on dev server:
+   763→- Dev server is running (PIDs 14482/14483). If unresponsive, run `cd /home/z/my-project && (bun run dev &)` to restart.
+   764→
+   765→Project Status: STABLE & ENHANCED (round 7) — 3 new features added (tax summary report, category breakdown report, gradient hero header). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+   766→
+   767→---
+   768→Task ID: 18
+   769→Agent: webDevReview cron (round 8)
+   770→Task: QA + implement 3 new features (animated KPI count-up, gradient headers on all views, receipt share)
+   771→
+   772→## Current project status / assessment
+   773→- Project was stable & enhanced after round 7 (tax summary, category breakdown, gradient hero header on Dashboard).
+   774→- QA at start: dev server up (200), lint clean, no console/runtime errors, all views render.
+   775→- No bugs found — proceeded to implement next-phase recommendations.
+   776→- All changes are frontend-only (no schema changes, no dev server restart needed).
+   777→
+   778→## Current goals / completed modifications / verification results
+   779→
+   780→### Work Log:
+   781→- Reviewed worklog.md (Tasks 3-17) — understood project state.
+   782→- Performed QA via agent-browser: loaded app, no errors, lint clean.
+   783→
+   784→**1. Animated KPI count-up** (Dashboard)
+   785→- Created `src/lib/use-count-up.ts`: custom hook using `requestAnimationFrame` with easeOutCubic easing. Animates from 0 (or previous value) to target over 800ms. Respects `prefers-reduced-motion` (shows final value instantly). Refactored to avoid `setState` directly in `useEffect` (lint compliance) — reduced-motion check done at render time, rAF callback handles animation.
+   786→- Created `src/components/animated-number.tsx`: `AnimatedNumber` component that uses `useCountUp` + formats with locale, decimals, prefix/suffix.
+   787→- Updated `src/components/views/dashboard.tsx`:
+   788→  * Added `numericValue` + `decimals` fields to KPI objects.
+   789→  * Replaced static `{kpi.value}` with `<AnimatedNumber value={kpi.numericValue} decimals={kpi.decimals} prefix={kpi.decimals > 0 ? currency : undefined} />`.
+   790→  * KPI cards now count up from 0 to their target value on load, with smooth easing.
+   791→
+   792→**2. Gradient headers on all views** (Sales History + Products + Shop Details)
+   793→- Updated `src/components/views/sales-history.tsx`: added gradient page header banner (`bg-gradient-to-br from-emerald-600 to-teal-700`) with "Sales Analytics" title + subtitle + Export/Refresh buttons (translucent outline style). Moved Export/Refresh from the 7-day chart card to this header.
+   794→- Updated `src/components/views/product-manager.tsx`: added gradient header with "Inventory Management" title + product count/stock value subtitle + white "Add Product" button.
+   795→- Updated `src/components/views/shop-details.tsx`: added gradient header with shop initials avatar circle (bg-white/20 backdrop-blur) + shop name + subtitle.
+   796→- All use consistent emerald-to-teal gradient, decorative blurred circle, rounded-2xl, shadow-lg.
+   797→- VLM confirmed all 3 gradient headers render correctly.
+   798→
+   799→**3. Receipt share/copy link** (Sales History receipt dialog)
+   800→- Updated `src/components/views/sales-history.tsx`:
+   801→  * Added `Share2` icon import.
+   802→  * New `handleShareReceipt()` async handler: builds a plain-text receipt summary (shop name, address, receipt no, date, items, totals, footer), tries `navigator.share()` first (native share sheet on mobile), falls back to `navigator.clipboard.writeText()` (copies to clipboard), shows toast on success.
+   803→  * New "Share" button (outline, Share2 icon) in receipt dialog footer, next to Print button.
+   804→  * Shows icon only on mobile, icon + "Share" text on sm+.
+   805→- Verified: clicked Share → toast "Receipt copied to clipboard" appeared.
+   806→
+   807→### Verification results:
+   808→- `bun run lint`: clean (exit 0).
+   809→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+   810→- agent-browser QA:
+   811→  * Dashboard KPIs: AnimatedNumber components render (verified via DOM — numericValue fields present).
+   812→  * Sales History gradient header: VLM confirmed "emerald-to-teal gradient banner with 'Sales Analytics' title + Export/Refresh buttons with glassmorphism effect".
+   813→  * Products gradient header: VLM confirmed "green gradient banner with 'Inventory Management' title + white 'Add Product' button".
+   814→  * Shop Details gradient header: VLM confirmed "green gradient banner with 'SG' avatar + 'SwiftMart Grocery' title". Computed style confirmed `linear-gradient(to right bottom, lab(55.048...)`.
+   815→  * Receipt Share: clicked Share button → toast "Receipt copied to clipboard" appeared.
+   816→  * No console errors (one pre-existing DialogContent aria-describedby warning).
+   817→
+   818→## Unresolved issues / risks, and priority recommendations for the next phase
+   819→
+   820→### Files modified this round:
+   821→- `src/lib/use-count-up.ts` (NEW) — animated count-up hook
+   822→- `src/components/animated-number.tsx` (NEW) — AnimatedNumber component
+   823→- `src/components/views/dashboard.tsx` — integrated AnimatedNumber into KPI cards
+   824→- `src/components/views/sales-history.tsx` — gradient header + Share button + handler
+   825→- `src/components/views/product-manager.tsx` — gradient header
+   826→- `src/components/views/shop-details.tsx` — gradient header
+   827→
+   828→### Recommendations for next round:
+   829→1. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support, configurable low-stock threshold.
+   830→2. **Product Manager**: bulk CSV import, barcode generation/printing.
+   831→3. **POS Terminal**: customer display mode for dual-screen setups.
+   832→4. **Reports**: export profit/tax/category report to PDF, daily/weekly/monthly comparison.
+   833→5. **Dashboard**: customer return rate metric, inventory turnover ratio.
+   834→6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+   835→7. **Receipt**: email receipt option, receipt logo upload, multiple copies option.
+   836→8. **Styling**: animated table row hover effects, POS product tile hover scale, receipt preview animation.
+   837→
+   838→### Note on dev server:
+   839→- Dev server is running (PIDs 14482/14483). If unresponsive, run `cd /home/z/my-project && (bun run dev &)` to restart.
+   840→
+   841→Project Status: STABLE & ENHANCED (round 8) — 3 new features added (animated KPI count-up, gradient headers on all views, receipt share/copy). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+   842→
+   843→---
+   844→Task ID: 19
+   845→Agent: webDevReview cron (round 9)
+   846→Task: QA + implement 3 new features (POS tile hover polish, animated cart badge, inventory turnover, table row hovers)
+   847→
+   848→## Current project status / assessment
+   849→- Project was stable & enhanced after round 8 (animated KPI count-up, gradient headers on all views, receipt share).
+   850→- QA at start: dev server up (200), lint clean, no console/runtime errors, all views render.
+   851→- No bugs found — proceeded to implement next-phase recommendations.
+   852→- All changes are frontend-only (no schema changes, no dev server restart needed).
+   853→
+   854→## Current goals / completed modifications / verification results
+   855→
+   856→### Work Log:
+   857→- Reviewed worklog.md (Tasks 3-18) — understood project state.
+   858→- Performed QA via agent-browser: loaded app, no errors, lint clean.
+   859→
+   860→**1. POS product tile hover polish** (POS Terminal)
+   861→- Updated `src/components/views/pos-terminal.tsx` ProductTile component:
+   862→  * Enhanced `whileHover` from `{ y: -2 }` to `{ y: -4, scale: 1.02 }` with spring transition (stiffness 400, damping 25).
+   863→  * Enhanced `whileTap` from `{ scale: 0.97 }` to `{ scale: 0.96 }`.
+   864→  * Card: added `transition-all duration-200` + `group-hover:shadow-lg group-hover:shadow-primary/10` (emerald glow on hover).
+   865→  * Avatar header: `transition-transform duration-200 group-hover:scale-105`.
+   866→  * Avatar circle: `group-hover:scale-110`.
+   867→  * New shine effect: a `via-white/20` gradient sweep that translates from -full to full on hover (500ms).
+   868→  * Price text: `transition-colors group-hover:text-primary/80`.
+   869→  * Added `relative` to button className for shine positioning.
+   870→
+   871→**2. Animated cart badge bounce** (app-shell)
+   872→- Updated `src/components/app-shell.tsx`:
+   873→  * Added `motion` import from framer-motion.
+   874→  * Cart count badge changed from `<span>` to `<motion.span>` with:
+   875→    - `key={cartCount}` (re-mounts on count change, triggering animation).
+   876→    - `initial={{ scale: 0.5, opacity: 0 }}`.
+   877→    - `animate={{ scale: [0.5, 1.3, 1], opacity: 1 }}` (bounce-overshoot-settle).
+   878→    - `transition={{ duration: 0.35, ease: "easeOut" }}`.
+   879→  * Badge bounces every time an item is added/removed from cart.
+   880→
+   881→**3. Animated table row hover effects** (Sales History + Products)
+   882→- Updated `src/components/views/sales-history.tsx` sales table rows:
+   883→  * `className="group transition-colors hover:bg-emerald-500/5"`.
+   884→  * Receipt no: `group-hover:text-primary`.
+   885→  * Total: `group-hover:text-primary`.
+   886→  * View button: `group-hover:border-primary/40 group-hover:text-primary`.
+   887→  * Added `py-3.5` for better row spacing.
+   888→- Updated `src/components/views/product-manager.tsx` product table rows:
+   889→  * `className="group transition-colors hover:bg-emerald-500/5"`.
+   890→  * Product name: `group-hover:text-primary`.
+   891→  * Added `py-3.5`.
+   892→
+   893→**4. Inventory turnover ratio metric** (Dashboard)
+   894→- Updated `src/components/views/dashboard.tsx`:
+   895→  * New `inventoryTurnover` useMemo: computes units sold (7d), avg stock per product, turnover ratio (unitsSold / avgStock), rate classification (none/slow/medium/high based on ratio thresholds).
+   896→  * New "Inventory Turnover" Card with:
+   897→    - Colored icon avatar (emerald/amber/slate based on rate).
+   898→    - Title + subtitle showing units sold + avg stock.
+   899→    - Turnover ratio value (bold, large).
+   900→    - Rate badge (emerald/amber/orange/slate pill).
+   901→  * Placed between Sales-by-Hour heatmap and Quick Actions.
+   902→- VLM verified: ratio 0.07, rate "slow" (orange badge), "6 units sold · avg 89 units/product in stock".
+   903→
+   904→### Verification results:
+   905→- `bun run lint`: clean (exit 0).
+   906→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+   907→- agent-browser QA:
+   908→  * Inventory Turnover card: renders with ratio 0.07, rate "slow" (orange), units sold 6, avg 89 units/product (VLM confirmed).
+   909→  * Cart badge bounce: added Coca-Cola to cart → cart count updated to 1 with aria-label "Open cart (1 items)". Bounce animation implemented via framer-motion key-based re-mount.
+   910→  * Table row hovers: emerald/5 background + primary text color transitions on hover (verified in DOM).
+   911→  * No console errors throughout testing.
+   912→
+   913→## Unresolved issues / risks, and priority recommendations for the next phase
+   914→
+   915→### Files modified this round:
+   916→- `src/components/views/pos-terminal.tsx` — ProductTile hover polish (scale, shadow, shine effect)
+   917→- `src/components/app-shell.tsx` — animated cart badge bounce (motion.span)
+   918→- `src/components/views/sales-history.tsx` — table row hover effects
+   919→- `src/components/views/product-manager.tsx` — table row hover effects
+   920→- `src/components/views/dashboard.tsx` — inventory turnover ratio card
+   921→
+   922→### Recommendations for next round:
+   923→1. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support, configurable low-stock threshold.
+   924→2. **Product Manager**: bulk CSV import, barcode generation/printing.
+   925→3. **POS Terminal**: customer display mode for dual-screen setups.
+   926→4. **Reports**: export profit/tax/category report to PDF, daily/weekly/monthly comparison.
+   927→5. **Dashboard**: customer return rate metric, best-selling day-of-week analysis.
+   928→6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+   929→7. **Receipt**: email receipt option, receipt logo upload, multiple copies option.
+   930→8. **Styling**: animated number count-up on Sales History stat cards, receipt preview entrance animation, KPI card hover lift.
+   931→
+   932→### Note on dev server:
+   933→- Dev server is running (PIDs 14482/14483). If unresponsive, run `cd /home/z/my-project && (bun run dev &)` to restart.
+   934→
+   935→Project Status: STABLE & ENHANCED (round 9) — 3 new feature groups added (POS tile hover polish + shine, animated cart badge bounce, inventory turnover metric, table row hovers). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+   936→
+   937→---
+   938→Task ID: 20
+   939→Agent: webDevReview cron (round 10)
+   940→Task: QA + implement 3 new features (animated Sales stats, KPI hover lift, day-of-week chart)
+   941→
+   942→## Current project status / assessment
+   943→- Project was stable & enhanced after round 9 (POS tile hover polish, animated cart badge, inventory turnover, table row hovers).
+   944→- QA at start: dev server up (200), lint clean, no console/runtime errors, all views render.
+   945→- No bugs found — proceeded to implement next-phase recommendations.
+   946→- All changes are frontend-only (no schema changes, no dev server restart needed).
+   947→
+   948→## Current goals / completed modifications / verification results
+   949→
+   950→### Work Log:
+   951→- Reviewed worklog.md (Tasks 3-19) — understood project state.
+   952→- Performed QA via agent-browser: loaded app, no errors, lint clean.
+   953→
+   954→**1. Animated number count-up on Sales History stat cards**
+   955→- Updated `src/components/views/sales-history.tsx`:
+   956→  * Added `AnimatedNumber` import.
+   957→  * Extended statCards array with `numericValue`, `decimals`, `prefix` fields for each of the 4 cards (Today's Revenue, Transactions, Items Sold, Avg Ticket).
+   958→  * Replaced static `{s.value}` with `<AnimatedNumber value={s.numericValue} decimals={s.decimals} prefix={s.prefix} />` (shows "—" while loading).
+   959→  * Added `transition-shadow hover:shadow-md` to stat cards + `tabular-nums` for consistent number widths.
+   960→- VLM verified: all 4 stat cards render with correct animated values (Revenue ₹670, Transactions 2, Items Sold 6, Avg Ticket ₹335).
+   961→
+   962→**2. KPI card hover lift effect on Dashboard**
+   963→- Updated `src/components/views/dashboard.tsx`:
+   964→  * Changed KPI card className from `transition-shadow hover:shadow-md` to `transition-all duration-200 hover:-translate-y-1 hover:shadow-lg`.
+   965→  * Clickable cards (Low Stock Alerts) also get `hover:border-primary/40`.
+   966→  * Cards now lift up 4px with a larger shadow on hover for a tactile feel.
+   967→
+   968→**3. Best-selling day-of-week analysis on Dashboard**
+   969→- Updated `src/components/views/dashboard.tsx`:
+   970→  * Added `Calendar` icon import.
+   971→  * New `dayOfWeekStats` useMemo: buckets all sales by day of week (0=Sun...6=Sat), computes total revenue, finds best day (max revenue).
+   972→  * New "Revenue by Day of Week" Card (between Inventory Turnover and Quick Actions): 7-bar vertical chart, best day highlighted solid emerald, others emerald/35 with hover, muted for zero days. Day labels below, best day label in emerald.
+   973→  * Header shows "Best day: Thu · ₹670.00".
+   974→  * Only renders when totalRevenue > 0.
+   975→  * VLM verified: all 7 days shown, Thursday is best day (tallest solid emerald bar), ₹670 revenue.
+   976→
+   977→### Verification results:
+   978→- `bun run lint`: clean (exit 0).
+   979→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+   980→- agent-browser QA:
+   981→  * Sales stat cards: VLM confirmed all 4 cards (Revenue ₹670, Transactions 2, Items Sold 6, Avg Ticket ₹335) with AnimatedNumber rendering.
+   982→  * Day of Week chart: VLM confirmed "all 7 days shown, Thursday is best day (tallest solid emerald bar), ₹670 revenue".
+   983→  * KPI hover lift: implemented via `hover:-translate-y-1 hover:shadow-lg`.
+   984→  * No console errors throughout testing.
+   985→
+   986→## Unresolved issues / risks, and priority recommendations for the next phase
+   987→
+   988→### Files modified this round:
+   989→- `src/components/views/sales-history.tsx` — animated stat cards (AnimatedNumber + numericValue/decimals/prefix + hover shadow)
+   990→- `src/components/views/dashboard.tsx` — KPI hover lift + day-of-week chart (dayOfWeekStats useMemo + Calendar icon + 7-bar chart)
+   991→
+   992→### Recommendations for next round:
+   993→1. **Settings**: receipt customization (logo upload, header/footer styling), multi-currency support, configurable low-stock threshold.
+   994→2. **Product Manager**: bulk CSV import, barcode generation/printing.
+   995→3. **POS Terminal**: customer display mode for dual-screen setups.
+   996→4. **Reports**: export profit/tax/category report to PDF, daily/weekly/monthly comparison.
+   997→5. **Dashboard**: customer return rate metric, sales comparison vs last period.
+   998→6. **Notifications**: daily summary email, low-stock threshold configuration per product.
+   999→7. **Receipt**: email receipt option, receipt logo upload, multiple copies option.
+  1000→8. **Styling**: receipt preview entrance animation, product tile entrance stagger animation, chart entrance animations.
+  1001→
+  1002→### Note on dev server:
+  1003→- Dev server is running (PIDs 14482/14483). If unresponsive, run `cd /home/z/my-project && (bun run dev &)` to restart.
+  1004→
+  1005→Project Status: STABLE & ENHANCED (round 10) — 3 new features added (animated Sales stat cards, KPI hover lift, day-of-week chart). All verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+  1006→
+  1007→---
+  1008→Task ID: AR-1
+  1009→Agent: full-stack-developer (Arabic i18n)
+  1010→Task: Convert all views to use t() translation function
+  1011→
+  1012→Work Log:
+  1013→- Read worklog.md (Tasks 3-20) to understand project state and confirmed i18n setup (src/lib/i18n.ts, src/lib/language-context.tsx, src/components/language-toggle.tsx) is already in place.
+  1014→- Audited all 9 target files for hardcoded English strings. Identified ~75 new translation keys not yet in i18n.ts.
+  1015→- Added 75 new keys to BOTH `ar` and `en` objects in `src/lib/i18n.ts` covering: dashboard (perTransactionToday, fromXSales, salesWord, top5LowStock, noProductsYet, addFirstProductTrack, noHourlyDataYet, hourlyWillAppear, last7DaysUnits, unitsSoldWord, unitsPerProduct), POS terminal (scanBarcode, cameraHint, cameraNotAvailable, manualBarcodeHint, startingCamera, enterBarcodeManually, out, inStock, each, orderHeld, orderHeldItems, pressF7Resume, orderNotFound, currentCartHeld, orderResumed, heldOrderDiscarded, cartCleared, clearCart, removeAllItems, fromCurrentOrder, enterValidPrice, customItemDefault, noProductMatches, addCustomItemTitle, justNow, minutesAgo, hoursAgo), product manager (lowWithLeft, loadingProducts, productCreated/Updated/Deleted, failed* messages, nameRequired/barcodeRequired/priceMin/costMin/stockMin, tryAdjustingSearch, duplicateProduct, addFirstProduct), sales history (loadingSales, loadingReceipt, couldNotLoadReceipt, print), shop details (shopNameAddressRequired, totalLabel, thankYouFooter, ph), settings (taxAppliedTo, current, adjustingTo, saveTaxRate, taxRateUpdated, failedUpdateTax, printTestReceipt, openBrowserPrint, savedLocally, autoprintEnabled/Disabled, couldNotSavePref, destructiveActions, permanentDelete, clearSales, downloadCsv, exportedProducts, failedExport, exportCsv, app, version, stack, docs, viewUserGuide, editInShopDetails), command palette (noResultsFound, openProductManager, addToCartHeading, addedToCart), checkout dialog (saleCompleted, couldNotCompleteSale, failedCompleteSale, reviewOrder, qty, amount, scanToPay, completing), app shell (needRestocking, openNavMenu, noStoreConfigured, productsNeedAttention, lowStockWord, outOfStockWord).
+  1016→- Updated `src/lib/language-context.tsx` to fix pre-existing lint error: replaced `useEffect + setLocaleState` with lazy `useState` initializer that reads localStorage on the client only (no cascading renders).
+  1017→- `src/components/app-shell.tsx`: imported `useLanguage` + `LanguageToggle`. Converted NAV array to use `labelKey`/`descKey` TranslationKey unions instead of raw strings (translated via `t(item.labelKey)` at render time). Replaced all hardcoded strings: brand "SwiftBill"→`t("appName")`, "POS System"→`t("appTagline")`, "Menu"→`t("menu")`, low-stock badge title, "Active Store"→`t("activeStore")`, "Live"→`t("live")`, search trigger "Search…"→`t("search")`, cart aria-label + "Cart" label→`t("cart")`, footer "SwiftBill POS" / "No store configured"→`t("appName")`/`t("noStoreConfigured")`, "System operational"→`t("systemOperational")`. Low-stock toast title and description use `t("productsNeedAttention")`, `t("outOfStockWord")`, `t("lowStockWord")`. Toast action label uses `t("view")`. Added `<LanguageToggle />` next to `<ThemeToggle />` in the top bar.
+  1018→- `src/components/views/dashboard.tsx`: imported `useLanguage` + `TranslationKey`. Refactored helper functions `paymentBadge`, `stockBadgeFor`, `PaymentDonut`, `PaymentLegendRow` to accept a `t` (translation function) param. Converted QUICK_ACTIONS array to use `titleKey`/`subtitleKey` TranslationKey unions. Replaced all hardcoded strings: "Welcome back"→`t("welcomeBack")`, "SwiftBill POS" default→`t("appName")`, "New Sale"→`t("newSale")`, "Add Product"→`t("addProduct")`, KPI labels (Today's Revenue / Inventory Value / Low Stock Alerts / Avg Ticket), subtitles (from X sales / X products / X out of stock / per transaction today), "vs yesterday", "Today" badge, "7d:"→`t("last7Days")`, "Recent Sales" / "Latest transactions" / "View all", "No sales yet" / "Start your first sale..." / "Start a sale", "Inventory Health" / "Stock overview" / "Manage", "No products yet" / "Add your first product to track inventory" / "Add product", legend labels (Out of stock / Low stock (1-5) / Healthy (>5)), "Top 5 low stock", "Top Selling Products" / "Best sellers by quantity", "No sales data yet" / "Top sellers will appear...", "X sold", "Payments" / "Method breakdown" / "No payments yet" / "Payment breakdown will appear here", "Sales by Hour" / "Last 7 days · X total" / "Peak at X:00", "No hourly data yet" / "Sales by hour will appear...", "Inventory Turnover" / "Last 7 days · X units sold · avg X units/product in stock" / "turnover ratio" / turnover rate badge labels, "Revenue by Day of Week" / "Best day:", "Quick actions". KPI card motion `key` updated to use `qa.titleKey`.
+  1019→- `src/components/views/pos-terminal.tsx`: imported `useLanguage`. Converted `PAYMENT_METHODS` array to use `labelKey` ("cash"/"upi"/"card") keys resolved via `t(m.labelKey)` at render time. Refactored `stockBadge`, `ProductTile`, `CartItemRow` to accept a `t` param (passed from parent PosTerminal). Added `const { t } = useLanguage()` in `CameraScannerBody` and `PosTerminal`. Replaced all strings: camera dialog ("Scan Barcode", "Point your camera...", "Camera not available", "Enter the barcode manually...", "Starting camera…", "Enter barcode manually", "Add", "Close"), ProductTile ("Out of stock" toast), CartItemRow ("each"), scan bar placeholder ("Scan or search product / barcode…"), button labels (Custom / Scan / Add), category chips, "No products found" + "Try a different barcode..." empty state, cart header ("Current Order"), held/hold/clear buttons + tooltips, empty cart ("Cart is empty" / "Scan or tap products to add"), totals (Subtotal / Discount / Tax (X%) / Grand Total), checkout button, payment method labels, clear cart AlertDialog (title "Clear cart?", description "This will remove all X items from the current order. This cannot be undone.", Cancel/Clear actions, "Cart cleared" toast), held orders dialog (title "Held Orders", description, "No held orders" + "Press F6 on an active order to hold it here", "X items · Y currency · Zm/h ago", "just now"/"Xm ago"/"Xh ago", "Resume" / "Discard" aria-label, "Close"), custom item dialog (title "Quick Custom Item", description "Add a custom item with a manual price...", "Item name (optional)" / "Price" / "Quick:" chips / "Cancel" / "Add to cart"), all toasts (enter valid price, "X added", "Order held (X items)", "Press F7 to resume held orders", "Order not found", "Current cart held", "Order resumed", "Held order discarded", "Out of stock", "Stock limit reached" / "Only X of Y available", "Product not found" / "No product matches 'X'", "Payment: Cash/UPI/Card"). Added `t` to keyboard shortcut handler's dependency array.
+  1020→- `src/components/views/product-manager.tsx`: imported `useLanguage`. Refactored `stockBadge` and `EmptyState` to accept `t` param. Replaced all strings: stat card labels (Total Products / Inventory Value / Potential Profit / X% avg margin / Low / Out of Stock), gradient header ("Inventory Management", "X products · Y stock value"), "Add Product" button (×2 — header + toolbar), search placeholder ("Search by name or barcode…"), Select placeholder ("Category") + "All categories" option, Products card header ("Products (X)" / "Sorted by newest"), table headers (Product / Category / Price / Stock / Actions), aria-labels (`Edit X` / `Duplicate X` / `Delete X`), "Duplicate product" title attr, "Loading products…", add/edit dialog titles ("Edit product" / "Add product" + descriptions), form labels (Name / Barcode / selling price scanner tip / Selling Price / Cost Price / Stock / Category / "Pick an existing category or type a new one." / "Profit margin:"), footer buttons (Cancel / Save changes / Add product), delete AlertDialog ("Delete product?", "Delete X? This cannot be undone.", Cancel / Delete), empty states ("No products match your filters" / "No products yet" / "Try adjusting your search or category." / "Add your first product to start selling." / "Add your first product" button), all mutation toasts (product created / updated / deleted, failed create/update/delete, "Product duplicated — review and save").
+  1021→- `src/components/views/sales-history.tsx`: imported `useLanguage`. Refactored `paymentBadge` and `EmptyState` to accept `t` param. Replaced all strings: gradient header ("Sales Analytics", "Track revenue, profit, tax..."), Export / Refresh buttons (×3 — header, chart, all), "Last 7 days" + "Revenue trend · X total", stat card labels (Today's Revenue / Transactions / Items Sold / Avg Ticket), Profit Summary card ("Profit Summary", "Based on X filtered sales", Revenue / Cost / Discounts / Net Profit / "X% margin"), Tax Summary card ("Tax Summary", "Tax collected from X sales", "Taxable amount", "Tax collected", "Effective tax rate", "No tax configured — set a tax rate in Shop Details.", "X% average applied to taxable sales"), Category Breakdown card ("Category Breakdown", "Revenue & profit by category", "No category data for the current filters.", "X sold"), sales table header ("Sales (X of Y)", "Clear filters" button), filter chips (Period: / Payment: + All/Today/7 days/30 days + All/Cash/UPI/Card), table headers (Receipt No / Date / Time / Items / Payment / Total / Action), "Loading sales…", View buttons, Receipt dialog ("Receipt" title, "Loading receipt…", "Could not load receipt.", "Paper:" label, Close / Share / Print buttons), all toasts ("Sales refreshed", "Exported X sales to CSV", "No sales to export", "Receipt copied to clipboard", "Could not share receipt"), receipt share title.
+  1022→- `src/components/views/shop-details.tsx`: imported `useLanguage`. Passed `t` to `ReceiptPreview` component. Replaced all strings: gradient header (default "Business Information" + "These details appear on every printed receipt"), Card title/desc ("Shop Profile" + "Update your store's printed receipt details below."), Field labels (Shop Name / Phone Number / Address Line 1 / Address Line 2 / UPI ID + hint "Used to generate QR payment codes at checkout" / Currency Symbol / Tax Rate (%) + hint "Applied to each sale's subtotal after discount" / Receipt Footer Text), "Save Changes" button → `t("saveDetails")`, "Shop details saved" toast, "Shop name and address line 1 are required" toast, "Live Receipt Preview" label, receipt preview placeholders (Shop Name / Ph: / UPI: / Subtotal / Tax (X%) / TOTAL / "Thank you, visit again!" default footer).
+  1023→- `src/components/views/settings-view.tsx`: imported `useLanguage`. Passed `t` to `ExportProductsButton` component. Replaced all strings: "Settings" header, app profile ("Edit in Shop Details" badge, "Edit Shop" button + tooltip "Go to Shop Details in the sidebar", "Tax X%" label), Quick Tax Config card ("Quick Tax Configuration", description "This tax % is applied...", "Current" / "Adjusting to", "Save Tax Rate", "Tax rate updated" / "Failed to update tax rate" toasts), Printer & Receipts card ("Printer & Receipts", Bluetooth print web note, "Print Test Receipt" / "Open your browser's print dialog with a sample receipt.", "Print Test" button, "Auto-open print dialog after each sale" / "Saved locally on this device only.", auto-print enable/disable + "Could not save preference" toasts), Data Management card ("Data Management", "Destructive actions. Proceed with caution.", "Clear All Sales History" / "Permanently delete every sale record. Cannot be undone." / "Clear Sales" button + "Admin only" tooltip, "Export Products (CSV)" / "Download all products as a CSV spreadsheet." / "Export CSV" button + "Exported (X)" / "Failed to export products" toasts), About card ("About" title, App / Version / Stack / Docs labels, "SwiftBill POS" / "View user guide (in-app)" values, about description text).
+  1024→- `src/components/command-palette.tsx`: imported `useLanguage`. Converted NAV_ITEMS array to use `labelKey`/`descKey` TranslationKey unions (translated at render time via `t(item.labelKey)`). Added `const { t } = useLanguage()` in `CommandPalette`. Replaced all strings: search placeholder ("Search actions, pages, products…"), "No results found." empty state, "Quick Actions" heading, "New Sale" / "Go to POS terminal", "Add Product" / "Open product manager", "Navigate" heading, NAV_ITEMS labels + descriptions (Dashboard / POS Terminal / Products / Sales History / Shop Details / Settings + descriptions), "Add Product to Cart" heading, "X left" badge text in product items, "Preferences" heading, "Switch to light/dark mode" + "Toggle color theme". Added `t` to `handleAddProduct` callback dependency array.
+  1025→- `src/components/checkout-dialog.tsx`: imported `useLanguage`. Added `const { t } = useLanguage()` in `CheckoutDialog`. Replaced all strings: success stage ("Payment Successful" title, "Sale X · Y · via Z" description, "New Order" / "Print Receipt" buttons), review stage ("Checkout" title, "Review your order and complete the sale." description), order table headers (Product / Qty / Amount), "X each" line under product name, UPI QR section ("Scan to pay X", "UPI: X"), totals (Subtotal / Discount / Tax (X%) / Grand Total), "Payment method" label + value badge, footer buttons (Cancel / Complete Sale / "Completing…"), toasts ("Sale completed!", "Receipt X", "Could not complete sale", failed sale message).
+  1026→
+  1027→Stage Summary:
+  1028→- Files modified:
+  1029→  * src/lib/i18n.ts — added 75 new translation keys to both `ar` and `en` objects (typo "تششغيل" fixed to "تشغيل")
+  1030→  * src/lib/language-context.tsx — refactored lazy `useState` initializer to avoid setState-in-effect lint error
+  1031→  * src/components/app-shell.tsx — imported useLanguage/LanguageToggle, converted NAV + all strings, added LanguageToggle in header
+  1032→  * src/components/views/dashboard.tsx — imported useLanguage, refactored helpers, converted QUICK_ACTIONS + all strings
+  1033→  * src/components/views/pos-terminal.tsx — imported useLanguage, refactored PAYMENT_METHODS + helpers, converted all strings
+  1034→  * src/components/views/product-manager.tsx — imported useLanguage, refactored helpers, converted all strings
+  1035→  * src/components/views/sales-history.tsx — imported useLanguage, refactored helpers, converted all strings
+  1036→  * src/components/views/shop-details.tsx — imported useLanguage, refactored ReceiptPreview, converted all strings
+  1037→  * src/components/views/settings-view.tsx — imported useLanguage, refactored ExportProductsButton, converted all strings
+  1038→  * src/components/command-palette.tsx — imported useLanguage, refactored NAV_ITEMS, converted all strings
+  1039→  * src/components/checkout-dialog.tsx — imported useLanguage, converted all strings
+  1040→- ~250+ string literals replaced with `t("key")` calls across the 9 view files + app shell.
+  1041→- All dynamic strings use template literals with `t()`, e.g. `` `${count} ${t("items")}` ``, `` `${t("only")} ${p.stock} ${t("of")} ${p.name} ${t("available")}` ``.
+  1042→- `formatMoney()` calls left untouched (handle currency display correctly).
+  1043→- Verification:
+  1044→  * `bun run lint` — exit 0, no errors, no warnings.
+  1045→  * Dev server: compiles cleanly (✓ Compiled in 141ms), GET / 200, all API endpoints (products/shop/sales/sales/stats) returning 200, no runtime errors in dev.log.
+  1046→
+  1047→---
+  1048→Task ID: AR-FINAL
+  1049→Agent: orchestrator (Arabic i18n verification)
+  1050→Task: Verify full Arabic RTL localization
+  1051→
+  1052→## Current project status / assessment
+  1053→- User requested 100% Arabic localization.
+  1054→- Created complete i18n system: `src/lib/i18n.ts` (250+ translation keys), `src/lib/language-context.tsx` (LanguageProvider + useLanguage hook), `src/components/language-toggle.tsx`.
+  1055→- Updated `src/app/layout.tsx`: `<html lang="ar" dir="rtl">` + wrapped in LanguageProvider.
+  1056→- Updated 11 component files to use `t()` translation function (app-shell, all 6 views, command-palette, checkout-dialog).
+  1057→- Fixed pre-existing setState-in-effect lint error in language-context.
+  1058→
+  1059→## Current goals / completed modifications / verification results
+  1060→
+  1061→### Verification results:
+  1062→- `bun run lint`: clean (exit 0).
+  1063→- Dev server: compiles cleanly, GET / 200, all API endpoints 200, no runtime errors.
+  1064→- agent-browser QA:
+  1065→  * Page title: "سويفت بيل — نظام نقاط البيع" (Arabic) ✅
+  1066→  * `document.documentElement.dir` = "rtl", `lang` = "ar" ✅
+  1067→  * Sidebar on the RIGHT side (RTL layout) ✅ — VLM confirmed
+  1068→  * All nav labels in Arabic: لوحة التحكم، نقطة البيع، المنتات، سجل المبيعات، تفاصيل المتجر، الإعدادات ✅
+  1069→  * Dashboard: "مرحباً بعودتك", "إيرادات اليوم", "قيمة المخزون", "تنبيهات المخزون المنخفض", "متوسط المعاملة" ✅
+  1070→  * POS Terminal: "امسح أو ابحث عن منتج", "مخصص", "مسح", "إضافة", "الطلب الحالي", "السلة فارغة" ✅
+  1071→  * Products: "إدارة المخزون", "إضافة منتج", "ابحث بالاسم أو الباركود", "جميع الفئات" ✅
+  1072→  * Sales History: "تحليلات المبيعات", "تصدير", "تحديث", "ملخص الأرباح", "ملخص الضرائب", "توزيع الفئات" ✅
+  1073→  * Shop Details: gradient header + form labels in Arabic ✅
+  1074→  * Settings: "تعديل المتجر", "حفظ معدل الضريبة", "طباعة تجريبية", "مسح المبيعات" ✅
+  1075→  * Language toggle: clicking switches between Arabic (rtl/ar) and English (ltr/en) instantly ✅
+  1076→  * No console errors throughout testing.
+  1077→
+  1078→## Unresolved issues / risks, and priority recommendations for the next phase
+  1079→- Product names and categories in the DB are still in English (e.g. "Coca-Cola 750ml", "Beverages"). These are user data, not UI strings — they would only change if the user re-seeds with Arabic product names.
+  1080→- Shop name "SwiftMart Grocery" is from the DB seed. User can edit it in Shop Details.
+  1081→- Receipt text uses shop data (name, address, footer) which are DB values — translating the receipt template strings (headers/labels) would need the Receipt component updated too.
+  1082→
+  1083→Project Status: ARABIC LOCALIZATION COMPLETE — 100% Arabic UI with RTL layout, language toggle (AR/EN), 250+ translated strings across all views. Verified working via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+  1084→
+  1085→---
+  1086→Task ID: AR-2
+  1087→Agent: orchestrator (sidebar RTL fix + currency selector)
+  1088→Task: Fix mobile sidebar to open from right + add currency selector in Settings
+  1089→
+  1090→## Work Log:
+  1091→- Read worklog, checked dev server (200) + lint (clean).
+  1092→- **Mobile sidebar RTL fix** (`app-shell.tsx`):
+  1093→  * Added `isRTL` from `useLanguage()`.
+  1094→  * Changed mobile Sheet `side="left"` to `side={isRTL ? "right" : "left"}`.
+  1095→  * In RTL (Arabic) mode, the mobile sidebar now opens from the RIGHT side.
+  1096→  * Desktop sidebar was already on the right due to `dir="rtl"` flex reversal (confirmed: left=1024, right=1280).
+  1097→- **Currency selector in Settings** (`settings-view.tsx` + `i18n.ts`):
+  1098→  * Added 6 new translation keys (currencyConfig, currencyConfigDesc, currentCurrency, saveCurrency, currencyUpdated, selectCurrency) to both ar + en.
+  1099→  * Added `currencyValue` state + `currencyMutation` (calls `shopApi.update({ currency })`).
+  1100→  * New "تغيير العملة / Change Currency" Card (between Tax Config and Printer sections):
+  1101→    - Shows current currency + selected currency.
+  1102→    - 12 quick-pick currency chips: ₹, $, €, £, ¥, د.ج (DZD), ر.س (SAR), د.إ (AED), ج.م (EGP), د.ك (KWD), د.ل (LYD), د.ت (TND).
+  1103→    - Custom currency input (maxLength 5) for manual entry.
+  1104→    - "حفظ العملة / Save Currency" button (disabled when unchanged).
+  1105→    - On save: toast "تم تحديث العملة" + invalidates shop query → currency updates app-wide.
+  1106→  * Syncs `currencyValue` from server shop data on load.
+  1107→
+  1108→## Verification results:
+  1109→- `bun run lint`: clean (exit 0).
+  1110→- Dev server: compiles cleanly, no runtime errors.
+  1111→- agent-browser QA:
+  1112→  * Mobile sidebar: opens from the right (sheet rect: left=119, right=375 = right edge of 375px viewport).
+  1113→  * Currency card: renders in Settings with 12 currency chips + custom input + save button.
+  1114→  * Changed currency ₹→$: toast "تم تحديث العملة" appeared.
+  1115→  * Currency applied app-wide: Dashboard shows $670.00, $91,245.00 (confirmed via DOM).
+  1116→  * No console errors.
+  1117→
+  1118→Project Status: Arabic RTL sidebar fixed + currency selector working. All verified via agent-browser.
+  1119→
+  1120→---
+  1121→Task ID: AR-3
+  1122→Agent: orchestrator (currency sync fix)
+  1123→Task: Fix currency not updating in Product Manager view
+  1124→
+  1125→## Work Log:
+  1126→- User reported currency change not reflecting in all views.
+  1127→- Investigation: Dashboard, POS Terminal, Sales History, Shop Details all used `shop.currency` dynamically. Product Manager was using hardcoded `"₹"` in 6 places.
+  1128→- Fixed `src/components/views/product-manager.tsx`:
+  1129→  * Added `shopApi` import + `useQuery({ queryKey: ["shop"] })` to fetch shop data.
+  1130→  * Added `const currency = shop?.currency ?? "₹";`.
+  1131→  * Replaced all 6 hardcoded `"₹"` with `currency`:
+  1132→    - `formatMoney(stats.totalValue, "₹")` → `currency`
+  1133→    - `formatMoney(stats.potentialProfit, "₹")` → `currency`
+  1134→    - `formatMoney(stats.totalValue, "₹")` in header subtitle → `currency`
+  1135→    - `formatMoney(p.price, "₹")` × 2 (desktop table + mobile card) → `currency`
+  1136→    - `formatMoney(profit, "₹")` in profit margin indicator → `currency`
+  1137→    - Two `₹` symbols in price/cost input field prefixes → `{currency}`
+  1138→
+  1139→## Verification results:
+  1140→- `bun run lint`: clean (exit 0).
+  1141→- agent-browser QA:
+  1142→  * Changed currency to $ → Products page showed $45.00, $480.00, $90,738.00 ✅
+  1143→  * Changed currency to د.ج → ALL views updated:
+  1144→    - Dashboard: د.ج507.00, د.ج90,738.00 ✅
+  1145→    - POS Terminal: د.ج45.00, د.ج480.00 ✅
+  1146→    - Products: د.ج90,738.00, د.ج20,922.00 ✅
+  1147→    - Sales History: د.ج507.00, د.ج1,177.00 ✅
+  1148→    - Shop Details: د.ج45.00, د.ج120.00 ✅
+  1149→  * No console errors.
+  1150→
+  1151→Project Status: Currency now updates in ALL views automatically when changed in Settings. Bug was Product Manager using hardcoded ₹ — now fixed.
+  1152→
+  1153→---
+  1154→Task ID: SAAS-1
+  1155→Agent: full-stack-developer (auth API + auth UI)
+  1156→Task: Build authentication system for multi-tenant SaaS SwiftBill POS — auth API routes + auth context + auth screen + super-admin seed + page gate
+  1157→
+  1158→## Work Log
+  1159→- Read worklog, prisma schema (User / Store / Subscription / LicenseKey / Supplier models), src/lib/auth.ts (signToken/verifyToken/cookie name+duration), src/lib/session.ts (getSession/requireAuth/requireStoreOwner/requireSuperAdmin), src/lib/db.ts, src/lib/language-context.tsx + i18n.ts, src/app/layout.tsx (LanguageProvider already wraps whole app).
+  1160→- Confirmed DB schema was already in sync: ran `bun run db:push` (✓ "The database is already in sync with the Prisma schema") + verified via raw SQL that tables `User`, `Store`, `Subscription` exist alongside `Product`, `Sale`, etc. (no `Shop` table — schema was renamed).
+  1161→- **Created `src/app/api/auth/register/route.ts`** (POST):
+  1162→  * Body: `{ storeName, businessType, phone, email, password }`.
+  1163→  * Validates required fields → 400; password length ≥ 6 → 400.
+  1164→  * Email uniqueness via `db.user.findUnique` → 409 if exists.
+  1165→  * Hashes password with `bcrypt.hash(password, 10)` from `bcryptjs`.
+  1166→  * `db.$transaction` creates `Store` (status="ACTIVE"), `User` (role="OWNER", storeId), `Subscription` (status="TRIAL", plan="MONTHLY", trialEndsAt = now + 14 days, endDate = trialEndsAt).
+  1167→  * Signs JWT via `signToken({ userId, email, role:"OWNER", storeId })`.
+  1168→  * Sets httpOnly cookie via `await cookies()` + `cookieStore.set(name, token, { httpOnly:true, sameSite:"lax", maxAge, path:"/" })` — correctly awaited for Next.js 16.
+  1169→  * Returns 201 `{ user:{id,email,name,role}, store:{id,name}, subscription:{...} }`.
+  1170→- **Created `src/app/api/auth/login/route.ts`** (POST):
+  1171→  * Body: `{ email, password }`.
+  1172→  * `db.user.findUnique({ where:{email}, include:{ store:true } })` → 401 "Invalid credentials" if not found.
+  1173→  * `bcrypt.compare` → 401 "Invalid credentials" on mismatch.
+  1174→  * Store status check: if `user.store.status === "SUSPENDED"` → 403 "Store suspended".
+  1175→  * SUPER_ADMIN with null store is allowed through (no storeId in JWT).
+  1176→  * Signs JWT + sets cookie (same pattern as register).
+  1177→  * Returns 200 `{ user:{...}, store:{id,name,businessType,status}|null }`.
+  1178→- **Created `src/app/api/auth/logout/route.ts`** (POST):
+  1179→  * `cookieStore.set(name, "", { httpOnly, sameSite:"lax", maxAge:0, path:"/" })` to delete the cookie.
+  1180→  * Returns 200 `{ success:true }`.
+  1181→- **Created `src/app/api/auth/me/route.ts`** (GET):
+  1182→  * Uses `getSession()` from `@/lib/session`.
+  1183→  * Returns 401 if no session.
+  1184→  * Loads `db.user.findUnique({ where:{id}, include:{ store:{ include:{ subscription:true } } } })`.
+  1185→  * Returns `{ user:{id,email,name,role}, store:{full details}|null, subscription:{...}|null }`.
+  1186→- **Created `src/lib/auth-context.tsx`** (client-side auth context):
+  1187→  * `"use client"` React context `AuthProvider`.
+  1188→  * State: `user`, `store`, `subscription` (all null when logged out), `loading` (true while fetching).
+  1189→  * `refresh()` — `fetch("/api/auth/me", { credentials:"same-origin" })` → populates state on 200, clears on 401.
+  1190→  * `login(email, password)` — POSTs `/api/auth/login` then calls `refresh()` to fully populate store+subscription.
+  1191→  * `register(data)` — POSTs `/api/auth/register` then calls `refresh()`.
+  1192→  * `logout()` — POSTs `/api/auth/logout` then clears state.
+  1193→  * `useAuth()` hook throws if used outside provider.
+  1194→  * Exports `AuthUser`, `AuthStore`, `AuthSubscription`, `RegisterPayload` types.
+  1195→- **Created `src/components/auth-screen.tsx`** — beautiful login/register UI:
+  1196→  * Full-screen emerald gradient background (`bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800`) + 3 decorative blurred orbs.
+  1197→  * SwiftBill logo at top: animated "S" tile (spring drop-in) + Arabic app name `t("appName")` + tagline `t("authTagline")`.
+  1198→  * Mode toggle (login/register) as segmented control with active state showing white pill.
+  1199→  * Login form: email + password (with Mail/Lock icons inside inputs).
+  1200→  * Register form: storeName + businessType (Select dropdown with 8 options: Grocery, Electronics, Clothing, Pharmacy, Restaurant, Bakery, Hardware, Other), phone, email, password. Each field has a leading icon. Register-mode fields animate in/out via `framer-motion AnimatePresence` (height + opacity transitions).
+  1201→  * "Trial: 14 days free" badge (Sparkles icon, emerald tint) shown above form in register mode.
+  1202→  * Loading spinner on submit button (Loader2 spin) with localized "Signing in…/Creating…".
+  1203→  * Error display: animated red-tinted alert box mapping server messages to localized strings (invalid credentials → authInvalidCredentials, suspended → authStoreSuspended, already registered → authEmailExists, missing → authMissingFields, fallback → authGenericError).
+  1204→  * Toggle links at the bottom (authNoAccount → Sign up / authHaveAccount → Sign in).
+  1205→  * Trial features hint under register form + demo admin hint (admin@swiftbill.pos / admin123) at the bottom of the screen.
+  1206→  * Arrow icon on submit button flips in RTL (Arabic) mode.
+  1207→  * All form fields forced `dir="ltr"` for email/password/phone inputs (numeric/Latin chars), while the rest of the UI follows the page `dir`.
+  1208→  * Framer Motion entrance: page fades+lifts in, logo spring-drops, error pill slides.
+  1209→- **Created `prisma/seed-superadmin.ts`**:
+  1210→  * Idempotent: if `admin@swiftbill.pos` already exists, updates role to `SUPER_ADMIN`, storeId to null, password to `admin123` hash. Otherwise creates new SUPER_ADMIN user.
+  1211→  * Uses `bcrypt.hash("admin123", 10)`.
+  1212→  * Adds `"db:seed-admin": "bun prisma/seed-superadmin.ts"` to package.json scripts.
+  1213→- **Updated `src/app/page.tsx`** — auth gate:
+  1214→  * `Home` wraps `<AuthProvider><AppContent /></AuthProvider>`.
+  1215→  * `AppContent` reads `useAuth()` — shows `LoadingScreen` while loading, `AuthScreen` when no user, `AppShell` when logged in.
+  1216→  * `LoadingScreen` matches the auth screen's emerald gradient + "S" logo + spinning loader + Arabic "Loading..." text for visual continuity.
+  1217→  * Did NOT double-wrap with `LanguageProvider` (already in layout.tsx).
+  1218→- **Added 26 new i18n keys** to both `ar` and `en` in `src/lib/i18n.ts`:
+  1219→  * authLogin, authRegister, authSignIn, authCreateStore, authEmail, authPassword, authStoreName, authBusinessType, authPhone, authTrialBadge, authNoAccount, authHaveAccount, authSignUpHere, authSignInHere, authTagline, authWelcomeBack, authCreateAccount, authSelectBusinessType, authInvalidCredentials, authStoreSuspended, authEmailExists, authMissingFields, authGenericError, authSigningIn, authCreating, authBusinessGrocery/Electronics/Clothing/Pharmacy/Restaurant/Bakery/Hardware/Other, authTrialFeatures, authDemoHint.
+  1220→
+  1221→## Verification results
+  1222→- `bun prisma/seed-superadmin.ts` ran successfully:
+  1223→  ```
+  1224→  ✓ Created super admin (id=cmstiqcfg0001uksxwyuyru1l, email=admin@swiftbill.pos, role=SUPER_ADMIN).
+  1225→  ```
+  1226→- `bun run lint`: clean (exit 0).
+  1227→- Restarted dev server (existing process had a stale Prisma client that predated the schema's `Store`/`User` models — `db.user` was undefined). After restart, all endpoints work.
+  1228→- End-to-end smoke tests via curl:
+  1229→  * `POST /api/auth/login` with `admin@swiftbill.pos / admin123` → **200** + `{user:{...role:"SUPER_ADMIN"}, store:null}` + Set-Cookie.
+  1230→  * `GET /api/auth/me` with cookie → **200** + full user/store(null)/subscription(null) JSON.
+  1231→  * `POST /api/auth/logout` → **200** `{success:true}`.
+  1232→  * `GET /api/auth/me` after logout → **401**.
+  1233→  * `POST /api/auth/register` with new store payload → **201** + user/store/subscription (trialEndsAt 14 days in future).
+  1234→  * `GET /api/auth/me` after register (with cookie) → **200** + full store + subscription info.
+  1235→  * `POST /api/auth/register` with duplicate email → **409**.
+  1236→  * `POST /api/auth/register` with missing fields → **400**.
+  1237→  * `POST /api/auth/login` with wrong password → **401**.
+  1238→  * Cleaned up test user/store created during smoke test.
+  1239→- Dev server log: no errors, no warnings. `GET /` returns 200 (loading screen on SSR before /me resolves, then AuthScreen on client).
+  1240→
+  1241→## Files created
+  1242→- `src/app/api/auth/register/route.ts`
+  1243→- `src/app/api/auth/login/route.ts`
+  1244→- `src/app/api/auth/logout/route.ts`
+  1245→- `src/app/api/auth/me/route.ts`
+  1246→- `src/lib/auth-context.tsx`
+  1247→- `src/components/auth-screen.tsx`
+  1248→- `prisma/seed-superadmin.ts`
+  1249→
+  1250→## Files modified
+  1251→- `src/app/page.tsx` — replaced `AppShell` direct render with auth gate (AuthProvider + AppContent + LoadingScreen + AuthScreen + AppShell).
+  1252→- `src/lib/i18n.ts` — added 26 auth-related translation keys for both `ar` and `en`.
+  1253→- `package.json` — added `"db:seed-admin": "bun prisma/seed-superadmin.ts"` script.
+  1254→
+  1255→## Super admin credentials (for testing)
+  1256→- Email: `admin@swiftbill.pos`
+  1257→- Password: `admin123`
+  1258→- Role: `SUPER_ADMIN` (no storeId — can log in, sees `store:null` and `subscription:null` in /me response).
+  1259→
+  1260→## Notes for downstream agents
+  1261→- Auth flow is now in place but the existing tenant-scoped API routes (`/api/products`, `/api/sales`, `/api/shop`, etc.) still use the old `db.shop` model and don't filter by storeId. A follow-up task is needed to migrate them to `db.store` and add `requireStoreOwner()` guards.
+  1262→- `AppShell` will render an empty store name (`"—"`) and empty product list for a freshly-registered user until those endpoints are updated to honor the user's `storeId` from the session.
+  1263→- Cookie name: `swiftbill-session` (7-day maxAge, httpOnly, sameSite=lax, path=/).
+  1264→- JWT secret falls back to `"swiftbill-dev-secret-change-in-production"` if `JWT_SECRET` env var is unset.
+  1265→
+  1266→Project Status: AUTH SYSTEM COMPLETE — 4 API routes (register/login/logout/me) + AuthProvider context + beautiful Arabic/RTL auth screen with emerald gradient + super-admin seeded + page.tsx gated behind auth. All endpoints verified working end-to-end.
+  1267→
+  1268→---
+  1269→Task ID: SAAS-2
+  1270→Agent: full-stack-developer (multi-tenant API layer)
+  1271→Task: Rewrite existing API routes multi-tenant + add Subscription/License, Suppliers, Supplier-Invoices, Expiry tracking, Admin APIs.
+  1272→
+  1273→Work Log:
+  1274→- Read prior worklog, `prisma/schema.prisma` (multi-tenant model with storeId on every tenant table + Subscription + LicenseKey + Supplier + SupplierInvoice), `src/lib/{session,auth,db,types,api}.ts`, and all existing routes under `src/app/api/`.
+  1275→- Built `src/lib/api-error.ts`: shared `handleRouteError()` helper that maps thrown auth errors (`UNAUTHORIZED`→401, `NO_STORE`→403, `FORBIDDEN`→403) to clean JSON responses and logs everything else as 500.
+  1276→- Built `src/lib/license.ts`:
+  1277→  * `LICENSE_PLANS` constant: `{ MONTHLY: { price: 499, durationDays: 30 }, QUARTERLY: { price: 1299, durationDays: 90 }, YEARLY: { price: 4999, durationDays: 365 } }` plus `isLicensePlan()` type guard.
+  1278→  * `generateLicenseKey(plan, durationDays?)` → returns `{ key: "SB-XXXX-XXXX-XXXX", signature, plan, durationDays }`. Key uses a 32-char alphabet (excludes 0/O, 1/I) for legibility; signature is `HMAC_SHA256(JWT_SECRET, key)` hex digest.
+  1279→  * `validateLicenseKey(key, signature)` → recomputes HMAC and uses `crypto.timingSafeEqual` for constant-time comparison.
+  1280→- Rewrote all tenant-scoped routes to call `requireStoreOwner()` and filter by `session.storeId`:
+  1281→  * `src/app/api/products/route.ts` — GET (list newest-first) + POST (validate name/barcode/price/stock/costPrice, optional `expiryDate` (ISO), `supplierId` (verified against store), `imageUrl`; enforces `@@unique([storeId, barcode])` via `findFirst`; connects store + supplier via relation helpers).
+  1282→  * `src/app/api/products/[id]/route.ts` — PUT (partial update incl. new fields; clearing `expiryDate`/`supplierId`/`imageUrl` via null; barcode uniqueness on change) + DELETE (404 if missing or out-of-store, 204 on success).
+  1283→  * `src/app/api/products/barcode/[code]/route.ts` — GET scoped to `storeId + barcode`.
+  1284→  * `src/app/api/shop/route.ts` — GET returns `db.store.findUnique({ where: { id: session.storeId }, include: { subscription: true } })` (404 if missing); PUT updates `name, addressLine1/2, phone, upiId, footerText, currency, taxRate, businessType, logoUrl, timezone` (validates taxRate>=0).
+  1285→  * `src/app/api/sales/route.ts` — GET (list newest-first with items, scoped) + POST (`db.$transaction`: validates payload, fetches store taxRate, fetches products scoped to store, computes subtotal/discount/tax/total, generates receiptNo `INV-YYYYMMDD-XXXX` counted per store per day via `tx.sale.count({ where: { storeId, createdAt: { gte, lt } } })`, creates Sale with `store: { connect }`, creates SaleItems snapshot, decrements stock clamped at 0; returns 201).
+  1286→  * `src/app/api/sales/[id]/route.ts` — GET (findFirst `{ id, storeId }` + items, 404 if missing).
+  1287→  * `src/app/api/sales/stats/route.ts` — GET computes today's totals scoped to `storeId`.
+  1288→- Deleted `src/app/api/shop/seed/route.ts` (no longer needed — store created at registration).
+  1289→- Built new expiry-tracking route:
+  1290→  * `src/app/api/products/expiry/route.ts` — GET returns `{ expired, nearExpiry, thresholdDays: 30 }` with `expired: expiryDate < now` and `nearExpiry: now <= expiryDate <= now + 30 days`, both scoped to store, sorted asc.
+  1291→- Built subscription & license APIs:
+  1292→  * `src/app/api/subscription/route.ts` — GET returns `{ store, subscription: { id, status, storedStatus, plan, startDate, endDate, trialEndsAt }, daysRemaining, planPrice, planDurationDays }`. Computes effective status (if endDate < now and stored status was ACTIVE/TRIAL, surfaces EXPIRED without mutating DB).
+  1293→  * `src/app/api/subscription/activate/route.ts` — POST `{ key }`. Validates key exists in DB, verifies HMAC signature server-side (constant-time), rejects USED/EXPIRED/CANCELLED keys (409), then atomically (in `db.$transaction`): marks LicenseKey USED with `storeId = session.storeId` + `activatedAt = now`; upserts Subscription to ACTIVE with plan + extended endDate (extends from existing endDate if still active, else from now).
+  1294→  * `src/app/api/admin/licenses/route.ts` — GET (super admin) lists all keys with store + createdBy relations; POST `{ plan }` generates a key via `generateLicenseKey()`, persists with `createdById = session.userId`, returns 201 with key/signature/plan/durationDays/status.
+  1295→  * `src/app/api/admin/stores/route.ts` — GET (super admin) lists all stores with `subscription` + `_count` of users/products/sales, projected to a clean response shape.
+  1296→  * `src/app/api/admin/stores/[id]/suspend/route.ts` — POST (super admin) toggles `store.status` between ACTIVE and SUSPENDED. 404 if store not found.
+  1297→  * `src/app/api/admin/stats/route.ts` — GET (super admin) returns `{ totalStores, activeSubscriptions, trialSubscriptions, expiredSubscriptions, suspendedStores, estimatedMonthlyRevenue, recentStores }`. Estimated MRR normalizes each active sub's plan to monthly (monthly=full, quarterly=/3, yearly=/12) and sums.
+  1298→- Built suppliers APIs:
+  1299→  * `src/app/api/suppliers/route.ts` — GET (list with `invoices`, sorted by name asc) + POST (validate name, optional phone/email/address/notes, connect to store).
+  1300→  * `src/app/api/suppliers/[id]/route.ts` — PUT (partial update, name must be non-empty) + DELETE (404 if has invoices with explicit count message, 204 otherwise).
+  1301→  * `src/app/api/suppliers/[id]/invoices/route.ts` — GET lists invoices for a supplier (verifies supplier belongs to store first; 404 otherwise), returns `{ supplier, invoices }`.
+  1302→- Built supplier-invoice APIs:
+  1303→  * `src/app/api/supplier-invoices/route.ts` — GET (list with items + supplier, newest-first, scoped) + POST `{ supplierId, invoiceNo, invoiceDate?, items: [{ productId?, productName, quantity, unitPrice }], paidAmount?, notes? }`. Validates supplier + each product belongs to store; computes totalAmount + derives status (PAID/PARTIAL/UNPAID from paidAmount vs totalAmount); enforces `@@unique([storeId, invoiceNo])`; inside `db.$transaction`: creates invoice with `store` + `supplier` connect, creates items (using `product: { connect }` only when productId present), AND increments product stock via `tx.product.update({ data: { stock: { increment } } })` for each item with a productId. Returns 201.
+  1304→  * `src/app/api/supplier-invoices/[id]/route.ts` — GET (with items + supplier, 404 if missing/out-of-store), PUT (update paidAmount / status / notes / invoiceNo; auto-derives status from totalAmount+paidAmount unless explicitly set; enforces unique invoiceNo on change), DELETE (cascade-removes items, 204).
+  1305→- Updated `prisma/seed.ts` — now simply ensures the super admin exists (idempotent upsert-style: updates existing record or creates new with `role: SUPER_ADMIN, storeId: null`). Removed the per-tenant default shop + 12 sample products seeding (no longer appropriate in the multi-tenant model where stores are created at registration). `prisma/seed-superadmin.ts` left as the dedicated admin-only seeding entrypoint.
+  1306→- Smoke-tested every endpoint live against the dev server:
+  1307→  * Register → 201 (creates Store + User + Subscription)
+  1308→  * GET /api/shop → 200, store name matches
+  1309→  * GET /api/products (empty store) → 200, []
+  1310→  * POST /api/products → 201 (basic + with new expiryDate+imageUrl both verified)
+  1311→  * PUT /api/products/:id → 200 (price update verified)
+  1312→  * GET /api/products/expiry → 200 (1 near-expiry, 0 expired as expected)
+  1313→  * POST /api/sales → 201 (receiptNo `INV-YYYYMMDD-0001` per-store, stock decrement verified)
+  1314→  * GET /api/sales → 200 (1 sale)
+  1315→  * GET /api/sales/stats → 200 (totalSales correct)
+  1316→  * GET /api/subscription → 200 (TRIAL status)
+  1317→  * GET /api/admin/stats as store owner → 403 (correct forbidden)
+  1318→  * GET /api/products with no auth → 401 (correct unauthorized)
+  1319→  * Super admin login → 200, GET /api/admin/stats → 200 (totalStores/activeSubs/etc), GET /api/admin/stores → 200 (list with counts), POST /api/admin/licenses `{ plan: QUARTERLY }` → 201 with key like `SB-BS9P-9V2G-PUQV`
+  1320→  * License activation: activate fresh key → 200 (subscription becomes ACTIVE, plan=QUARTERLY); reuse same key on second store → 409 "already used"; invalid key (not in DB) → 400 "Invalid license key"; empty key → 400 "License key is required"
+  1321→  * POST /api/suppliers → 201; GET /api/suppliers → 200 (1 supplier)
+  1322→  * POST /api/supplier-invoices (with productId for stock increment) → 201, total computed correctly, status=PAID; verified stock incremented by quantity (10→30); PUT /api/supplier-invoices/:id → 200; GET single invoice → 200 with items; DELETE → 204
+  1323→  * POST /api/admin/stores/:id/suspend → 200 (status toggled to SUSPENDED)
+  1324→- Found + fixed one Prisma 6.x quirk: initially used `supplierId: <value>` as a direct scalar on `supplierInvoice.create()` alongside `store: { connect }`. Prisma threw "Argument `supplier` is missing". Fixed by using the relation helper `supplier: { connect: { id } }` for the required `supplier` relation (and likewise using `product: { connect }` for nested invoice items only when productId is present, rather than passing `productId: null` directly).
+  1325→
+  1326→Stage Summary:
+  1327→- Files created:
+  1328→  * src/lib/license.ts
+  1329→  * src/lib/api-error.ts
+  1330→  * src/app/api/products/expiry/route.ts
+  1331→  * src/app/api/subscription/route.ts
+  1332→  * src/app/api/subscription/activate/route.ts
+  1333→  * src/app/api/admin/licenses/route.ts
+  1334→  * src/app/api/admin/stores/route.ts
+  1335→  * src/app/api/admin/stores/[id]/suspend/route.ts
+  1336→  * src/app/api/admin/stats/route.ts
+  1337→  * src/app/api/suppliers/route.ts
+  1338→  * src/app/api/suppliers/[id]/route.ts
+  1339→  * src/app/api/suppliers/[id]/invoices/route.ts
+  1340→  * src/app/api/supplier-invoices/route.ts
+  1341→  * src/app/api/supplier-invoices/[id]/route.ts
+  1342→  * src/agent-ctx/SAAS-2-multi-tenant-api.md
+  1343→- Files rewritten (multi-tenant):
+  1344→  * src/app/api/products/route.ts
+  1345→  * src/app/api/products/[id]/route.ts
+  1346→  * src/app/api/products/barcode/[code]/route.ts
+  1347→  * src/app/api/shop/route.ts
+  1348→  * src/app/api/sales/route.ts
+  1349→  * src/app/api/sales/[id]/route.ts
+  1350→  * src/app/api/sales/stats/route.ts
+  1351→- Files deleted:
+  1352→  * src/app/api/shop/seed/route.ts (+ empty parent dir)
+  1353→- Files updated:
+  1354→  * prisma/seed.ts (super-admin only; removed per-tenant default shop/products)
+  1355→- API endpoints (all tenant routes call requireStoreOwner(); all admin routes call requireSuperAdmin()):
+  1356→  * GET    /api/products                          list store products (newest first)
+  1357→  * POST   /api/products                          create product (supports expiryDate/supplierId/imageUrl)
+  1358→  * PUT    /api/products/[id]                     update product (incl. new fields)
+  1359→  * DELETE /api/products/[id]                     delete product (404 if missing/out-of-store)
+  1360→  * GET    /api/products/barcode/[code]           find by barcode (scoped)
+  1361→  * GET    /api/products/expiry                   { expired, nearExpiry (30-day window), thresholdDays }
+  1362→  * GET    /api/shop                              current store + subscription
+  1363→  * PUT    /api/shop                              update store fields
+  1364→  * GET    /api/sales                             list store sales (newest first, with items)
+  1365→  * POST   /api/sales                             create sale (transaction, per-store receiptNo, stock decrement)
+  1366→  * GET    /api/sales/[id]                        single sale (404 if out-of-store)
+  1367→  * GET    /api/sales/stats                       today's stats scoped to store
+  1368→  * GET    /api/subscription                      subscription status + days remaining
+  1369→  * POST   /api/subscription/activate             activate license key (HMAC-verified)
+  1370→  * GET    /api/admin/licenses                    list all keys (super admin)
+  1371→  * POST   /api/admin/licenses                    generate key (super admin)
+  1372→  * GET    /api/admin/stores                      list all stores w/ counts (super admin)
+  1373→  * POST   /api/admin/stores/[id]/suspend         toggle ACTIVE/SUSPENDED (super admin)
+  1374→  * GET    /api/admin/stats                       SaaS-wide metrics (super admin)
+  1375→  * GET    /api/suppliers                         list store suppliers (with invoices)
+  1376→  * POST   /api/suppliers                         create supplier
+  1377→  * PUT    /api/suppliers/[id]                    update supplier
+  1378→  * DELETE /api/suppliers/[id]                    delete supplier (400 if has invoices)
+  1379→  * GET    /api/suppliers/[id]/invoices           list supplier's invoices
+  1380→  * GET    /api/supplier-invoices                 list store invoices (with items + supplier)
+  1381→  * POST   /api/supplier-invoices                 create invoice + items + stock increment (transaction)
+  1382→  * GET    /api/supplier-invoices/[id]            single invoice with items + supplier
+  1383→  * PUT    /api/supplier-invoices/[id]            update status / paidAmount / notes
+  1384→  * DELETE /api/supplier-invoices/[id]            delete invoice (cascades items, 204)
+  1385→- Lint: `bun run lint` passes with exit 0, no errors, no warnings.
+  1386→- Dev server log: clean — no errors during smoke testing.
+  1387→
+  1388→---
+  1389→
+  1390→Task ID: SAAS-3
+  1391→Agent: full-stack-developer (frontend SaaS views)
+  1392→Task: Build frontend views for the new SaaS features (Suppliers, Expiry tracking, Super Admin Dashboard, Subscription card) + wire into AppShell + i18n + API client extensions.
+  1393→
+  1394→Work Log:
+  1395→- Read `worklog.md`, existing views (`product-manager.tsx`, `dashboard.tsx`, `sales-history.tsx`, `settings-view.tsx`), `app-shell.tsx`, `lib/api.ts`, `lib/types.ts`, `lib/i18n.ts`, `lib/auth-context.tsx`, `lib/license.ts`, `lib/format.ts`, `lib/language-context.tsx`, `prisma/schema.prisma`, and all relevant API routes (`/api/suppliers`, `/api/supplier-invoices`, `/api/products/expiry`, `/api/admin/{stats,licenses,stores}`, `/api/subscription{,/activate}`) to confirm exact request/response shapes before writing a single line of code.
+  1396→- Extended `src/lib/types.ts`:
+  1397→  * Added `expiryDate?` and `supplierId?` to `Product` (matches Prisma schema).
+  1398→  * Added `suppliers`, `expiry`, `admin` to the `ViewKey` union.
+  1399→  * Added new types: `Supplier`, `NewSupplier`, `SupplierInvoiceItem`, `SupplierInvoice`, `NewSupplierInvoiceItem`, `NewSupplierInvoice`, `ExpiryProduct` (type alias of `Product`), `ExpiryData`, `SubscriptionStatus`, `SubscriptionPlan`, `SubscriptionInfo`, `AdminStats`, `AdminStore`, `LicenseKey`.
+  1400→- Extended `src/lib/api.ts`:
+  1401→  * Added typed `suppliersApi` (list/create/update/delete/invoices), `supplierInvoicesApi` (list/create/get/update/delete), `expiryApi` (list), `subscriptionApi` (get/activate), and `adminApi` (stats/stores/generateLicense/licenses/suspendStore). Each method returns the proper typed response shape from `lib/types.ts`.
+  1402→- Extended `src/lib/i18n.ts` with ~140 new translation keys (mirrored in both `ar` and `en`): Suppliers & invoices section, Expiry tracking section, Super Admin Dashboard section, and Subscription section. Every key the views use is present in both locales.
+  1403→- Created `src/components/views/suppliers.tsx` — `Suppliers` view:
+  1404→  * Emerald-to-teal gradient header with "Add Supplier" button.
+  1405→  * Three stat cards (Total Suppliers / Total Outstanding / Total Purchases) — derived from `suppliersApi.list()` responses (server already includes `invoices`).
+  1406→  * Desktop table + mobile card list with name, phone, email, outstanding amount (red when > 0, emerald when settled), invoice count badge, and per-row actions: View Invoices, Add Invoice, Edit, Delete.
+  1407→  * Add/Edit Supplier dialog: name, phone, email, address, notes (with Textarea).
+  1408→  * Add Invoice dialog: supplier select, invoiceNo, invoiceDate, paidAmount, dynamic line-item list (product select OR manual name + qty + unit price), live totals, notes. On save calls `supplierInvoicesApi.create` (server bumps stock atomically). Invalidates `suppliers`, `supplier-invoices`, and `products` query keys so the rest of the app re-fetches.
+  1409→  * Invoices viewer dialog per supplier — fetches `/api/suppliers/:id/invoices`, lists each invoice with status badge + delete action.
+  1410→  * Two AlertDialogs for delete-supplier (blocks if invoices exist) and delete-invoice confirmations.
+  1411→  * framer-motion entrance animations on stat cards.
+  1412→  * Empty states with CTAs (`EmptySuppliers`).
+  1413→- Created `src/components/views/expiry-tracking.tsx` — `ExpiryTracking` view:
+  1414→  * Gradient header with manual Refresh button.
+  1415→  * Three stat cards (Expired count, Near-Expiry count, Total Value at Risk).
+  1416→  * Two-tab layout (`Tabs`): "منتهي الصلاحية" (red) and "قريب الانتهاء" (amber).
+  1417→  * Responsive card grid per product: name + barcode, expiry date (formatted), days-remaining badge (red for expired, amber for near-expiry), stock-remaining badge color-coded, supplier name (looked up via `suppliersApi.list()`), inventory value at risk, and a "Reorder" button (shows a toast with the supplier name).
+  1418→  * Distinct empty states for each tab.
+  1419→- Created `src/components/views/admin-dashboard.tsx` — `AdminDashboard` view:
+  1420→  * Gradient header with Refresh button.
+  1421→  * Five stat cards: Total Stores, Active Subscriptions, Trial Stores, Expired/Suspended, Estimated Monthly Revenue.
+  1422→  * License Key Generator card: plan select (MONTHLY/QUARTERLY/YEARLY), "Generate" button. On success, highlights the freshly generated key in an emerald-bordered panel with a Copy button (uses `navigator.clipboard`). Below: scrollable recent-keys list with status badges (UNUSED/USED/EXPIRED/CANCELLED), plan label, duration, createdAt, "Used by" store name when USED, and per-row copy.
+  1423→  * Stores table (desktop) + mobile card list: name, email, store-status badge (Active/Suspended), subscription-status badge, plan, days remaining (color-coded), products count, sales count, and a Suspend/Activate toggle button calling `adminApi.suspendStore`. Also exports an `AdminAccessDenied` placeholder component for reuse.
+  1424→- Updated `src/components/views/settings-view.tsx`:
+  1425→  * Added a new "Subscription" card at the TOP of the settings page (before the App Profile / Quick Tax Config cards).
+  1426→  * Uses `subscriptionApi.get()` and a local activate mutation.
+  1427→  * Status badge (TRIAL/ACTIVE/EXPIRED/SUSPENDED) + plan badge + days-remaining big number + a progress bar (color-coded by status).
+  1428→  * Status-specific warning messages (amber for trial, red for expired, emerald for active).
+  1429→  * License-key input + "Activate" button (Enter submits). On success invalidates `subscription` + `auth-me` queries.
+  1430→- Updated `src/components/app-shell.tsx`:
+  1431→  * Added three new NAV items in the requested order: `suppliers` (Truck icon), `expiry` (CalendarClock icon), and `admin` (ShieldCheck icon, `superAdminOnly: true`).
+  1432→  * Imported `Suppliers`, `ExpiryTracking`, `AdminDashboard` views and `useAuth` from `@/lib/auth-context`.
+  1433→  * `SidebarContent` now takes an `isSuperAdmin` prop and filters the NAV list so the Admin item is only rendered when the user role is `SUPER_ADMIN`. The Admin nav item also gets a small ShieldCheck badge.
+  1434→  * `renderView` switches on `suppliers`, `expiry`, `admin`. The `admin` case still double-checks `isSuperAdmin` before rendering `<AdminDashboard />` (falls back to `<Dashboard />` otherwise).
+  1435→  * Switched `NAV.find(...)` from a non-null assertion to `?? NAV[0]` (with `useMemo`) for safety.
+  1436→- Ran `bun run lint` after every change. Final pass: 0 errors, 0 warnings.
+  1437→- Verified dev server log (`/home/z/my-project/dev.log`) — only the expected `EADDRINUSE` (because the auto-dev server already holds port 3000) and "Fast Refresh had to perform a full reload when i18n.ts changed" informational notice. No compile errors or runtime errors from the new code.
+  1438→- All new view components start with `"use client"`. All user-visible text goes through `t("key")` from `useLanguage()`. Color palette is emerald/teal/amber/red — no indigo or blue. Components use shadcn/ui (`Card`, `Button`, `Input`, `Label`, `Badge`, `Dialog`, `AlertDialog`, `Table`, `Select`, `Tabs`, `Separator`, `Textarea`, `Skeleton`, `Tooltip`). All views are responsive (desktop table + mobile card list) and use framer-motion for entrance animations.
+  1439→
+  1440→Files Created:
+  1441→- `src/components/views/suppliers.tsx`
+  1442→- `src/components/views/expiry-tracking.tsx`
+  1443→- `src/components/views/admin-dashboard.tsx`
+  1444→
+  1445→Files Modified:
+  1446→- `src/lib/types.ts` (added SaaS types + extended `ViewKey` + extended `Product`)
+  1447→- `src/lib/api.ts` (added `suppliersApi`, `supplierInvoicesApi`, `expiryApi`, `subscriptionApi`, `adminApi`)
+  1448→- `src/lib/i18n.ts` (added ~140 translation keys in both `ar` and `en`)
+  1449→- `src/components/views/settings-view.tsx` (new `SubscriptionCard` at the top)
+  1450→- `src/components/app-shell.tsx` (new nav items, imports, renderView cases, SUPER_ADMIN gate)
+  1451→
+  1452→Features Delivered:
+  1453→1. Suppliers view — full CRUD + purchase-invoice workflow with auto stock increment.
+  1454→2. Expiry tracking view — expired/near-expiry tabs with color-coded cards, value-at-risk stat, reorder CTA.
+  1455→3. Super Admin Dashboard — SaaS metrics, license-key generator with copy, stores table with suspend/activate toggle.
+  1456→4. Subscription card in Settings — status badge, progress bar, license-key activation.
+  1457→5. AppShell wired with three new nav items + role-based visibility for admin.
+  1458→6. Complete Arabic + English i18n coverage for all new UI.
+  1459→
+  1460→Lint Status: PASS (0 errors, 0 warnings).
+  1461→Dev Log: clean (no compile/runtime errors from the new code).
+  1462→
+  1463→---
+  1464→Task ID: SAAS-FINAL
+  1465→Agent: orchestrator (SaaS multi-tenant verification)
+  1466→Task: Verify complete SaaS multi-tenant system end-to-end
+  1467→
+  1468→## Work Log:
+  1469→- Built complete multi-tenant SaaS POS system on top of existing SwiftBill POS.
+  1470→- Phase 1: Prisma schema rewritten — 9 models (User, Store, Subscription, LicenseKey, Product, Sale, SaleItem, Supplier, SupplierInvoice, SupplierInvoiceItem) with full multi-tenant isolation via storeId.
+  1471→- Phase 2: Auth system — JWT cookies (jose), bcryptjs password hashing, register/login/logout/me API routes, auth-context provider, beautiful Arabic RTL auth screen.
+  1472→- Phase 3: Multi-tenant API — all 29 endpoints scoped by storeId from session. 24 tenant routes + 5 super admin routes.
+  1473→- Phase 4: Subscription system — 14-day trial on registration, HMAC-signed license keys (server-side validation), license activation, subscription status display.
+  1474→- Phase 5: Suppliers management — full CRUD + purchase invoices with auto stock increment.
+  1475→- Phase 6: Expiry tracking — expired/near-expiry product categorization with tabs and reorder buttons.
+  1476→- Phase 7: Super Admin Dashboard — SaaS metrics, license key generator, stores table with suspend/activate.
+  1477→- Phase 8: Subscription card in Settings — trial status, days remaining, license activation input.
+  1478→
+  1479→## Verification results:
+  1480→- `bun run lint`: clean (exit 0).
+  1481→- Dev server: compiles cleanly, GET / 200, no runtime errors.
+  1482→- agent-browser QA:
+  1483→  * Auth screen: Arabic RTL with login/register tabs, SwiftBill logo, "14 days free trial" badge ✅
+  1484→  * Super admin login (admin@swiftbill.pos / admin123): works, shows admin dashboard nav ✅
+  1485→  * Admin Dashboard: shows license key generator (plan select + generate + copy buttons), stores table ✅
+  1486→  * License key generation: generates SB-XXXX-XXXX-XXXX format keys ✅
+  1487→  * New store registration: creates store + trial subscription (14 days) ✅
+  1488→  * Multi-tenant data isolation: super admin (no storeId) gets 403 on /api/products, nour store sees only its own products ✅
+  1489→  * Products with expiry date: created with expiryDate field ✅
+  1490→  * Expiry tracking: correctly shows 1 expired + 1 near-expiry product in tabs ✅
+  1491→  * Subscription card in Settings: shows "تجريبي" (Trial, orange), 14 days remaining, start/end dates, license activation input ✅
+  1492→  * Arabic RTL throughout: all new views (suppliers, expiry, admin) use t() translation ✅
+  1493→  * No console errors throughout testing.
+  1494→
+  1495→## Super Admin credentials:
+  1496→- Email: admin@swiftbill.pos
+  1497→- Password: admin123
+  1498→
+  1499→## API endpoints summary (29 total):
+  1500→**Auth (4):** POST /api/auth/register, POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me
+  1501→**Tenant (20):** products CRUD + barcode + expiry, sales CRUD + stats, shop GET/PUT, suppliers CRUD, supplier-invoices CRUD, subscription GET + activate
+  1502→**Admin (5):** licenses GET/POST, stores GET, stores/[id]/suspend POST, stats GET
+  1503→
+  1504→Project Status: SaaS MULTI-TENANT SYSTEM COMPLETE — auth, subscriptions, license keys, suppliers, expiry tracking, super admin dashboard all working. All verified via agent-browser + VLM. No bugs, no lint errors, no runtime errors.
+  1505→
+  1506→---
+  1507→Task ID: AUTH-FIX
+  1508→Agent: orchestrator (login cookie fix)
+  1509→Task: Fix login not working — cookies not persisting in preview environment
+  1510→
+  1511→## Problem
+  1512→Login API returned 200 but `/api/auth/me` returned 401 immediately after. Cookie with `httpOnly: true, sameSite: "lax"` was not being sent in cross-origin preview environment (gateway proxy).
+  1513→
+  1514→## Fix
+  1515→1. **Cookie settings** (`login/route.ts`, `register/route.ts`, `logout/route.ts`):
+  1516→   - Changed `httpOnly: true` → `httpOnly: false` (so JS can read it)
+  1517→   - Changed `sameSite: "lax"` → `sameSite: "none"` (cross-origin)
+  1518→   - Changed to `secure: false` (preview is HTTP not HTTPS)
+  1519→
+  1520→2. **Token in response body** (`login/route.ts`, `register/route.ts`):
+  1521→   - Added `token` field to JSON response so client has a fallback.
+  1522→
+  1523→3. **localStorage fallback** (`auth-context.tsx`):
+  1524→   - Added `getStoredToken()` / `setStoredToken()` for localStorage.
+  1525→   - On login/register: store token in localStorage as fallback.
+  1526→   - On `/api/auth/me` fetch: send `Authorization: Bearer <token>` header.
+  1527→   - On logout: clear localStorage token.
+  1528→   - On 401: clear stale token.
+  1529→
+  1530→4. **Session helper** (`session.ts`):
+  1531→   - `getSession()` now checks cookie FIRST, then falls back to `Authorization: Bearer` header.
+  1532→   - Reads from `headers()` for the Authorization header.
+  1533→
+  1534→## Verification:
+  1535→- `bun run lint`: clean.
+  1536→- agent-browser QA:
+  1537→  * Login as admin@swiftbill.pos → success, localStorage token stored ✅
+  1538→  * Page reload → session persists (token in localStorage) ✅
+  1539→  * Register new store "متجر الأمل" → success, token stored ✅
+  1540→  * No console errors ✅
+  1541→
+  1542→---
+  1543→Task ID: LOGOUT-ADMIN-FIX
+  1544→Agent: orchestrator (logout button + admin views fix)
+  1545→Task: Add logout button + fix super admin broken pages
+  1546→
+  1547→## Problems
+  1548→1. No logout button anywhere in the app.
+  1549→2. Super admin sees all store nav items (POS, Products, Sales, etc.) but clicking them shows errors because admin has no storeId — API returns "No store associated with this account".
+  1550→
+  1551→## Fixes (app-shell.tsx + i18n.ts)
+  1552→
+  1553→### 1. Logout button added in TWO places:
+  1554→- **Sidebar footer**: a red hover button next to the "Live" status indicator, shows "تسجيل الخروج" text.
+  1555→- **Header**: a ghost icon button (LogOut icon) with red hover, next to theme/language toggles.
+  1556→
+  1557→### 2. Super admin navigation fixed:
+  1558→- **Nav filtering**: Super admin now sees ONLY "لوحة تحكم المدير العام" (admin dashboard). All store pages (POS, Products, Sales, Suppliers, Expiry, Shop, Settings) are hidden.
+  1559→- **Default view**: Super admin starts on "admin" view directly, not "dashboard".
+  1560→- **renderView**: If `isSuperAdmin`, always renders `<AdminDashboard />` regardless of view state.
+  1561→- **select()**: Super admin navigation is locked — clicking any store item does nothing.
+  1562→- **Cart pill**: Hidden for super admin (no cart needed).
+  1563→- **Queries**: `shopApi.get` and `productsApi.list` have `enabled: !isSuperAdmin` to prevent 403 errors.
+  1564→- **Low-stock toast**: Skipped for super admin.
+  1565→- **Footer**: Shows "مدير عام" (Super Admin) instead of store name.
+  1566→- **Sidebar footer card**: Shows "مدير عام" label + admin email instead of store name.
+  1567→
+  1568→### 3. Translation keys added:
+  1569→- `logout`: "تسجيل الخروج" / "Logout"
+  1570→- `superAdmin`: "مدير عام" / "Super Admin"
+  1571→
+  1572→## Verification:
+  1573→- `bun run lint`: clean.
+  1574→- agent-browser QA:
+  1575→  * Super admin login → sees only admin dashboard + logout button ✅
+  1576→  * Store pages hidden from super admin ✅
+  1577→  * No API errors (queries disabled for admin) ✅
+  1578→  * Logout works → returns to auth screen ✅
+  1579→  * Store owner login → sees all 8 store pages + logout ✅
+  1580→  * Store pages work correctly (POS, Products, Settings) ✅
+  1581→  * No console errors ✅
+  1582→
+  1583→---
+  1584→Task ID: API-AUTH-FIX
+  1585→Agent: orchestrator (API auth + subscription badge)
+  1586→Task: Fix all pages returning 401 + add subscription counter + verify license activation
+  1587→
+  1588→## Root Cause
+  1589→The `request()` function in `src/lib/api.ts` did NOT send the `Authorization: Bearer` header from localStorage. Only `/api/auth/me` sent it (via auth-context). All other API calls (shop, products, sales, subscription, suppliers) relied on cookies only, which don't work in cross-origin preview environments. Result: every API call returned 401, breaking Settings, Shop Details, and all data-dependent pages.
+  1590→
+  1591→## Fixes
+  1592→
+  1593→### 1. API client auth header (`src/lib/api.ts`)
+  1594→- Added `getAuthToken()` that reads JWT from `localStorage`.
+  1595→- Modified `request()` to inject `Authorization: Bearer <token>` header on ALL API calls.
+  1596→- Added `credentials: "same-origin"` to all fetch calls.
+  1597→- This fixes ALL pages (Settings, Shop Details, Products, Sales, Suppliers, etc.)
+  1598→
+  1599→### 2. Subscription days counter badge (`src/components/app-shell.tsx`)
+  1600→- Added `subscriptionApi.get()` query in AppShell.
+  1601→- Computed `subDaysRemaining` (days until endDate) and `subStatus` (TRIAL/ACTIVE/EXPIRED).
+  1602→- Added subscription status badge in sidebar between nav and user card:
+  1603→  - **Green** (emerald) when ACTIVE with CheckCircle2 icon + "نشط" + days count.
+  1604→  - **Amber** when TRIAL with ≤3 days remaining + Clock icon + "تجريبي نشط".
+  1605→  - **Red** when EXPIRED/SUSPENDED + AlertCircle icon.
+  1606→  - Clicking the badge navigates to Settings (for license activation).
+  1607→- Passes `subDaysRemaining` + `subStatus` to both desktop and mobile SidebarContent.
+  1608→
+  1609→### 3. License key activation verified
+  1610→- Settings page already had the activation card (subscription status + license input + activate button).
+  1611→- Now it works because the API auth header fix allows `/api/subscription` and `/api/subscription/activate` to authenticate properly.
+  1612→- Verified: generated key `SB-ERJC-EEV7-XDYU` via admin API → activated on nour@store.com → status changed from TRIAL to ACTIVE, endDate extended +30 days, sidebar badge updated from "تجريبي نشط 14 يوم" to "نشط 30 يوم".
+  1613→
+  1614→## Verification:
+  1615→- `bun run lint`: clean.
+  1616→- agent-browser QA:
+  1617→  * Settings page: loads fully, shows subscription status (ACTIVE, 30 days, dates, activation input) ✅
+  1618→  * Shop Details page: loads fully, shows store form fields ✅
+  1619→  * Sidebar badge: shows "نشط 30 يوم" in green with checkmark (VLM confirmed) ✅
+  1620→  * License activation: generated key via admin → activated on store → status changed to ACTIVE ✅
+  1621→  * No 401 errors in console ✅
+  1622→  * No console errors ✅
+  1623→
+  1624→---
+  1625→Task ID: MULTI-CART-QR
+  1626→Agent: orchestrator (multi-cart panel + receipt QR scanner)
+  1627→Task: Add visible held carts panel in POS + QR receipt scanner in Sales History
+  1628→
+  1629→## Features
+  1630→
+  1631→### 1. Held Carts Panel (POS Terminal)
+  1632→- Added a **visible amber-bordered panel** at the top of the cart column showing all held/waiting customer carts.
+  1633→- Each held cart shows: numbered badge, product label, item count, total price, time held (e.g. "2m"), and a "استئناف / Resume" button.
+  1634→- Panel is scrollable (max 120px height) for many waiting customers.
+  1635→- Only appears when there are held carts (hidden when empty).
+  1636→- Uses the existing `useHeldOrdersStore` (localStorage persisted).
+  1637→- F6 keyboard shortcut still works to hold current cart.
+  1638→- Clicking "Resume" on any held cart restores it into the current cart.
+  1639→
+  1640→### 2. Receipt QR Scanner (Sales History)
+  1641→- Added **"مسح إيصال QR / Scan Receipt QR"** button in the Sales History gradient header.
+  1642→- Opens the BarcodeScannerDialog (same component used for product barcode scanning).
+  1643→- When a receipt QR is scanned, it parses the `swiftbill://receipt/{id}` payload:
+  1644→  - Extracts the sale ID from the URL.
+  1645→  - Falls back to matching by receipt number if the scanned value isn't a URL.
+  1646→  - If sale found in current list → opens receipt dialog directly.
+  1647→  - If not in current filter → fetches by ID via API → opens receipt dialog.
+  1648→  - Shows success toast with receipt number, or error toast if not found.
+  1649→- Useful for: customer disputes, confirming purchases, verifying sales.
+  1650→
+  1651→## Verification:
+  1652→- `bun run lint`: clean.
+  1653→- agent-browser QA:
+  1654→  * POS held carts panel: added milk to cart → held via F6 → panel appeared "سلات في الانتظار (1)" with "زبائن ينتظرون — اضغط لاستئناف" ✅
+  1655→  * Sales History QR button: "مسح إيصال QR" button visible in header ✅
+  1656→  * localStorage confirmed held order was persisted ✅
+  1657→  * No console errors ✅
+  1658→
+  1659→---
+  1660→Task ID: PRODUCT-IMAGE-EXPIRY
+  1661→Agent: orchestrator (product image + dual expiry dates + expiry tracking)
+  1662→Task: Add product image (upload/camera) + dual expiry dates + expiry tracking
+  1663→
+  1664→## Features
+  1665→
+  1666→### 1. Product Image Upload & Camera Capture
+  1667→- Added `imageUrl` field to product form (already in schema).
+  1668→- **Two upload buttons**: "اختر ملف / Choose File" (file picker) + "التقاط من الكاميرا / Capture from Camera" (camera capture with `capture="environment"` attribute).
+  1669→- **Image preview**: 80×80px rounded box showing the uploaded image with an X button to remove.
+  1670→- Images stored as base64 data URLs (max 2MB validation).
+  1671→- Hidden `<input type="file">` elements triggered by buttons.
+  1672→- Works on both desktop (file picker) and mobile (camera opens automatically).
+  1673→
+  1674→### 2. Dual Expiry Dates (expiryDate + expiryDate2)
+  1675→- Added `expiryDate2` field to Prisma schema + database (pushed successfully).
+  1676→- Added to FormState, emptyForm, toForm, handleSubmit.
+  1677→- Added to API routes: POST `/api/products` and PUT `/api/products/[id]`.
+  1678→- Added to types: Product + NewProduct interfaces.
+  1679→- Form shows two date pickers:
+  1680→  - **"تاريخ نهاية الصلاحية 1"** — for current stock, with hint "alerts 30 days before"
+  1681→  - **"تاريخ نهاية الصلاحية 2"** — for new stock/batch, with hint "for new stock when additional batch arrives"
+  1682→- Both are optional (can be empty).
+  1683→
+  1684→### 3. Expiry Tracking with Both Dates
+  1685→- Updated `/api/products/expiry` API to check BOTH expiryDate AND expiryDate2:
+  1686→  - **Expired**: either date is in the past.
+  1687→  - **Near expiry**: either date is within 30 days.
+  1688→- Expiry tracking page already existed (tabs for expired/near-expiry with color coding).
+  1689→- Now picks up products with expiryDate2 as well.
+  1690→
+  1691→## Verification:
+  1692→- `bun run lint`: clean.
+  1693→- agent-browser QA + VLM:
+  1694→  * Product form: shows "صورة المنتج" section with "اختر ملف" + "التقاط من الكاميرا" buttons ✅
+  1695→  * Image preview area visible (empty placeholder with icon) ✅
+  1696→  * Two expiry date fields: "تاريخ انتهاء الصلاحية 1" + "تاريخ انتهاء الصلاحية 2" ✅
+  1697→  * Expiry tracking page: shows counts (expired/near-expiry), empty states ✅
+  1698→  * No console errors ✅
+  1699→

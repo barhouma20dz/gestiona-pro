@@ -19,6 +19,9 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
+  Users,
+  UserCircle,
+  LayoutGrid,
 } from "lucide-react";
 import type { ViewKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -38,9 +41,13 @@ import { Dashboard } from "@/components/views/dashboard";
 import { Suppliers } from "@/components/views/suppliers";
 import { ExpiryTracking } from "@/components/views/expiry-tracking";
 import { AdminDashboard } from "@/components/views/admin-dashboard";
+import { SellerManagement } from "@/components/views/seller-management";
+import { SellerDashboard } from "@/components/views/seller-dashboard";
+import { SellerSettings } from "@/components/views/seller-settings";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { CommandPalette } from "@/components/command-palette";
+import { toast } from "sonner";
 
 interface NavItem {
   key: ViewKey;
@@ -53,7 +60,10 @@ interface NavItem {
     | "expiryTracking"
     | "shopDetails"
     | "settings"
-    | "adminDashboard";
+    | "adminDashboard"
+    | "sellerManagement"
+    | "sellerDashboard"
+    | "sellerSettings";
   descKey:
     | "storeOverview"
     | "scanBillCheckout"
@@ -63,20 +73,34 @@ interface NavItem {
     | "expiryTrackingSubtitle"
     | "businessInformation"
     | "appConfiguration"
-    | "adminSubtitle";
+    | "adminSubtitle"
+    | "sellerManagementSubtitle"
+    | "sellerDashboardSubtitle"
+    | "sellerSettingsSubtitle";
   icon: typeof ScanLine;
   superAdminOnly?: boolean;
+  ownerOnly?: boolean;
+  staffOnly?: boolean;
 }
 
 const NAV: NavItem[] = [
-  { key: "dashboard", labelKey: "dashboard", descKey: "storeOverview", icon: LayoutDashboard },
+  // Owner dashboard (owner only)
+  { key: "dashboard", labelKey: "dashboard", descKey: "storeOverview", icon: LayoutDashboard, ownerOnly: true },
+  // Seller dashboard (staff only)
+  { key: "sellerDashboard", labelKey: "sellerDashboard", descKey: "sellerDashboardSubtitle", icon: LayoutGrid, staffOnly: true },
+  // Shared store views
   { key: "pos", labelKey: "posTerminal", descKey: "scanBillCheckout", icon: ScanLine },
   { key: "products", labelKey: "products", descKey: "manageInventory", icon: Package },
   { key: "sales", labelKey: "salesHistory", descKey: "pastBills", icon: ReceiptText },
   { key: "suppliers", labelKey: "suppliers", descKey: "suppliersSubtitle", icon: Truck },
   { key: "expiry", labelKey: "expiryTracking", descKey: "expiryTrackingSubtitle", icon: CalendarClock },
-  { key: "shop", labelKey: "shopDetails", descKey: "businessInformation", icon: Store },
-  { key: "settings", labelKey: "settings", descKey: "appConfiguration", icon: Settings },
+  // Owner-only management views
+  { key: "sellerMgmt", labelKey: "sellerManagement", descKey: "sellerManagementSubtitle", icon: Users, ownerOnly: true },
+  { key: "shop", labelKey: "shopDetails", descKey: "businessInformation", icon: Store, ownerOnly: true },
+  { key: "settings", labelKey: "settings", descKey: "appConfiguration", icon: Settings, ownerOnly: true },
+  // Staff-only settings
+  { key: "sellerSettings", labelKey: "sellerSettings", descKey: "sellerSettingsSubtitle", icon: UserCircle, staffOnly: true },
+  // Super admin
   { key: "admin", labelKey: "adminDashboard", descKey: "adminSubtitle", icon: ShieldCheck, superAdminOnly: true },
 ];
 
@@ -86,6 +110,7 @@ function SidebarContent({
   shopName,
   lowStockCount,
   isSuperAdmin,
+  isStaff,
   onLogout,
   userEmail,
   subDaysRemaining,
@@ -96,16 +121,22 @@ function SidebarContent({
   shopName?: string;
   lowStockCount: number;
   isSuperAdmin: boolean;
+  isStaff: boolean;
   onLogout: () => void;
   userEmail?: string;
   subDaysRemaining: number | null;
   subStatus: string;
 }) {
   const { t } = useLanguage();
-  // Filter nav items: super admin sees only admin dashboard; store owners see everything except admin
+  // Filter nav items by role:
+  // - super admin: only admin dashboard
+  // - staff: staff-only + shared (no owner-only, no super-admin-only)
+  // - owner: owner-only + shared (no staff-only, no super-admin-only)
   const visibleNav = NAV.filter((item) => {
     if (isSuperAdmin) return item.superAdminOnly;
-    return !item.superAdminOnly;
+    if (isStaff) return item.staffOnly || (!item.ownerOnly && !item.superAdminOnly);
+    // owner
+    return item.ownerOnly || (!item.staffOnly && !item.superAdminOnly);
   });
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -182,8 +213,8 @@ function SidebarContent({
         })}
       </nav>
 
-      {/* Subscription status badge (store owners only) */}
-      {!isSuperAdmin && subDaysRemaining !== null && (
+      {/* Subscription status badge (store owners only — not staff, not super admin) */}
+      {!isSuperAdmin && !isStaff && subDaysRemaining !== null && (
         <div className="px-3 pb-2">
           <button
             onClick={() => onSelect("settings")}
@@ -236,6 +267,15 @@ function SidebarContent({
                 {userEmail || "admin"}
               </p>
             </>
+          ) : isStaff ? (
+            <>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+                {t("roleStaff")}
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-sidebar-accent-foreground">
+                {userEmail || "—"}
+              </p>
+            </>
           ) : (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
@@ -274,10 +314,28 @@ export function AppShell() {
   const { t, isRTL } = useLanguage();
   const { user, logout } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
-  const [view, setView] = useState<ViewKey>(isSuperAdmin ? "admin" : "dashboard");
+  const isStaff = user?.role === "STAFF";
+  const defaultView: ViewKey = isSuperAdmin
+    ? "admin"
+    : isStaff
+    ? "sellerDashboard"
+    : "dashboard";
+  const [view, setView] = useState<ViewKey>(defaultView);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const cartCount = useCartStore((s) => s.totalItems());
+
+  // When the user role changes (e.g., right after login), ensure the view is valid
+  useEffect(() => {
+    setView((current) => {
+      const item = NAV.find((n) => n.key === current);
+      if (!item) return defaultView;
+      if (isSuperAdmin && !item.superAdminOnly) return "admin";
+      if (isStaff && (item.ownerOnly || item.superAdminOnly)) return "sellerDashboard";
+      if (!isStaff && !isSuperAdmin && (item.staffOnly || item.superAdminOnly)) return "dashboard";
+      return current;
+    });
+  }, [isStaff, isSuperAdmin, defaultView]);
 
   const handleLogout = () => {
     logout();
@@ -289,14 +347,14 @@ export function AppShell() {
     enabled: !isSuperAdmin, // super admin has no store
   });
 
-  // Subscription query — for days remaining badge
+  // Subscription query — for days remaining badge (owner only)
   const { data: subscription } = useQuery({
     queryKey: ["subscription"],
     queryFn: () =>
       import("@/lib/api").then((m) =>
         m.subscriptionApi.get()
       ),
-    enabled: !isSuperAdmin,
+    enabled: !isSuperAdmin && !isStaff,
   });
 
   // Compute days remaining
@@ -352,19 +410,30 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // The admin nav item is filtered out of the sidebar for non-super-admins
-  // via the `superAdminOnly` flag, and `renderView` re-checks the role before
-  // rendering the admin surface — so we don't need a setState-in-effect here.
-
   const current = useMemo(
-    () => NAV.find((n) => n.key === view) ?? (isSuperAdmin ? NAV.find((n) => n.key === "admin")! : NAV[0]),
-    [view, isSuperAdmin]
+    () => NAV.find((n) => n.key === view) ??
+      (isSuperAdmin
+        ? NAV.find((n) => n.key === "admin")!
+        : isStaff
+        ? NAV.find((n) => n.key === "sellerDashboard")!
+        : NAV[0]),
+    [view, isSuperAdmin, isStaff]
   );
   const CurrentIcon = current.icon;
 
   const select = (v: ViewKey) => {
     // Super admin can only navigate to admin dashboard
     if (isSuperAdmin && v !== "admin") return;
+    // Staff cannot navigate to owner-only or super-admin-only views
+    if (isStaff) {
+      const item = NAV.find((n) => n.key === v);
+      if (item && (item.ownerOnly || item.superAdminOnly)) return;
+    }
+    // Owners cannot navigate to staff-only views
+    if (!isStaff && !isSuperAdmin) {
+      const item = NAV.find((n) => n.key === v);
+      if (item && item.staffOnly) return;
+    }
     setView(v);
     setMobileOpen(false);
   };
@@ -393,8 +462,18 @@ export function AppShell() {
         return <SettingsView />;
       case "admin":
         return <Dashboard onNavigate={select} />;
+      case "sellerDashboard":
+        return <SellerDashboard onNavigate={select} />;
+      case "sellerMgmt":
+        return <SellerManagement />;
+      case "sellerSettings":
+        return <SellerSettings />;
       default:
-        return <Dashboard onNavigate={select} />;
+        return isStaff ? (
+          <SellerDashboard onNavigate={select} />
+        ) : (
+          <Dashboard onNavigate={select} />
+        );
     }
   };
 
@@ -402,13 +481,13 @@ export function AppShell() {
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Desktop sidebar */}
       <aside className="hidden md:block w-64 shrink-0">
-        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
+        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} isStaff={isStaff} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
       </aside>
 
       {/* Mobile sidebar — opens from the right in RTL, left in LTR */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side={isRTL ? "right" : "left"} className="w-64 p-0">
-          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
+          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} isStaff={isStaff} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
         </SheetContent>
       </Sheet>
 
@@ -514,7 +593,11 @@ export function AppShell() {
             <span className="font-medium text-foreground/70">{t("appName")} POS</span>
             <span className="hidden sm:inline">·</span>
             <span className="hidden sm:inline">
-              {isSuperAdmin ? t("superAdmin") : (shop?.name || t("noStoreConfigured"))}
+              {isSuperAdmin
+                ? t("superAdmin")
+                : isStaff
+                ? (user?.name || user?.email || t("roleStaff"))
+                : (shop?.name || t("noStoreConfigured"))}
             </span>
           </div>
           <div className="flex items-center gap-3">

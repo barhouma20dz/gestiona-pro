@@ -24,6 +24,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   licenseKeys LicenseKey[] // created by super admin
+  sales       Sale[]       // sales made by this seller
 }
 
 // ─── Store (Tenant) ──────────────────────────────────────────────────────────
@@ -124,6 +125,8 @@ model Sale {
   id            String    @id @default(cuid())
   storeId       String
   store         Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sellerId      String?
+  seller        User?     @relation(fields: [sellerId], references: [id])
   receiptNo     String
   subtotal      Float
   taxAmount     Float     @default(0)
@@ -137,6 +140,7 @@ model Sale {
 
   @@unique([storeId, receiptNo])
   @@index([storeId, createdAt])
+  @@index([storeId, sellerId])
 }
 
 model SaleItem {
