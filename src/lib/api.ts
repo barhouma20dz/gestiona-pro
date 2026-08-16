@@ -20,6 +20,15 @@ import type {
   NewSeller,
   SellerEarnings,
   MyEarnings,
+  InventoryAudit,
+  NewInventoryAudit,
+  InventoryAuditStats,
+  ZakatSettings,
+  ZakatRecord,
+  ZakatCalculationInput,
+  ZakatCalculationResult,
+  SupplierPayment,
+  NewSupplierPayment,
 } from "./types";
 
 // Read stored JWT token from localStorage (set by auth-context on login)
@@ -229,4 +238,84 @@ export const sellersApi = {
 
 export const myEarningsApi = {
   get: () => request<MyEarnings>("/api/my-earnings"),
+};
+
+/* ---------------- Inventory Audit ---------------- */
+export const inventoryAuditApi = {
+  list: () => request<InventoryAudit[]>("/api/inventory-audits"),
+  create: (data: NewInventoryAudit) =>
+    request<InventoryAudit>("/api/inventory-audits", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  get: (id: string) => request<InventoryAudit>(`/api/inventory-audits/${id}`),
+  update: (
+    id: string,
+    data: Partial<{ notes: string; status: "DRAFT" | "COMPLETED" | "APPROVED" }>
+  ) =>
+    request<InventoryAudit>(`/api/inventory-audits/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<void>(`/api/inventory-audits/${id}`, { method: "DELETE" }),
+  updateItems: (
+    id: string,
+    items: { id: string; countedStock: number }[]
+  ) =>
+    request<InventoryAudit>(`/api/inventory-audits/${id}/items`, {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    }),
+  approve: (id: string) =>
+    request<InventoryAudit>(`/api/inventory-audits/${id}/approve`, {
+      method: "POST",
+    }),
+  stats: (id: string) =>
+    request<InventoryAuditStats>(`/api/inventory-audits/${id}/stats`),
+};
+
+/* ---------------- Zakat ---------------- */
+export const zakatApi = {
+  getSettings: () => request<ZakatSettings>("/api/zakat/settings"),
+  updateSettings: (data: Partial<ZakatSettings>) =>
+    request<ZakatSettings>("/api/zakat/settings", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  calculate: (data: ZakatCalculationInput) =>
+    request<ZakatCalculationResult>("/api/zakat/calculate", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getRecords: () => request<ZakatRecord[]>("/api/zakat/records"),
+  markPaid: (
+    id: string,
+    data: { status: "PAID"; paidDate?: string }
+  ) =>
+    request<ZakatRecord>(`/api/zakat/records/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+};
+
+/* ---------------- Supplier Payments ---------------- */
+export const supplierPaymentsApi = {
+  list: (invoiceId: string) =>
+    request<SupplierPayment[]>(
+      `/api/supplier-invoices/${invoiceId}/payments`
+    ),
+  create: (invoiceId: string, data: NewSupplierPayment) =>
+    request<SupplierPayment>(
+      `/api/supplier-invoices/${invoiceId}/payments`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    ),
+  delete: (invoiceId: string, paymentId: string) =>
+    request<void>(
+      `/api/supplier-invoices/${invoiceId}/payments/${paymentId}`,
+      { method: "DELETE" }
+    ),
 };

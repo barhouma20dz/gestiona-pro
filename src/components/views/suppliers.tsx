@@ -2,28 +2,30 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Plus,
   Search,
   Pencil,
   Trash2,
   Truck,
-  Wallet,
-  ShoppingBag,
   Loader2,
   X,
   Eye,
   FileText,
-  Phone,
-  Mail,
-  MapPin,
   AlertTriangle,
+  CreditCard,
+  ChevronDown,
+  ChevronUp,
+  Banknote,
+  CheckCircle2,
+  Clock,
 } from "lucide-react";
 
 import {
   suppliersApi,
   supplierInvoicesApi,
+  supplierPaymentsApi,
   shopApi,
   productsApi,
 } from "@/lib/api";
@@ -34,8 +36,10 @@ import type {
   NewSupplierInvoice,
   NewSupplierInvoiceItem,
   Product,
+  SupplierPayment,
+  PaymentMethod,
 } from "@/lib/types";
-import { formatMoney, formatDate } from "@/lib/format";
+import { formatMoney, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
 import type { TranslationKey } from "@/lib/i18n";
@@ -80,6 +84,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 type T = (key: TranslationKey) => string;
 
@@ -105,6 +114,35 @@ function statusBadge(status: SupplierInvoice["status"], t: T) {
       {t("unpaid")}
     </Badge>
   );
+}
+
+function PaymentMethodBadge({
+  method,
+  t,
+}: {
+  method: PaymentMethod;
+  t: T;
+}) {
+  const map: Record<PaymentMethod, { key: TranslationKey; cls: string }> = {
+    Cash: {
+      key: "paymentMethodCash",
+      cls: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/15 dark:text-emerald-400",
+    },
+    Bank: {
+      key: "paymentMethodBank",
+      cls: "bg-teal-500/15 text-teal-700 border-teal-500/30 hover:bg-teal-500/15 dark:text-teal-400",
+    },
+    Cheque: {
+      key: "paymentMethodCheque",
+      cls: "bg-amber-500/15 text-amber-700 border-amber-500/30 hover:bg-amber-500/15 dark:text-amber-400",
+    },
+    Other: {
+      key: "paymentMethodOther",
+      cls: "bg-slate-500/15 text-slate-700 border-slate-500/30 hover:bg-slate-500/15 dark:text-slate-300",
+    },
+  };
+  const entry = map[method] ?? map.Other;
+  return <Badge className={entry.cls}>{t(entry.key)}</Badge>;
 }
 
 /* ---------- supplier form state ---------- */
@@ -215,6 +253,34 @@ export function Suppliers() {
     loading: boolean;
   } | null>(null);
 
+  // Invoices viewer: search + filter within dialog
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [invoiceFilter, setInvoiceFilter] = useState<"ALL" | "PAID" | "PARTIAL" | "UNPAID">("ALL");
+
+  // Payment dialog state (recording a payment for an invoice)
+  const [paymentTarget, setPaymentTarget] = useState<SupplierInvoice | null>(null);
+  const [paymentFormOpen, setPaymentFormOpen] = useState(false);
+  const [paymentForm, setPaymentForm] = useState<{
+    amount: string;
+    paymentDate: string;
+    paymentMethod: PaymentMethod;
+    notes: string;
+  }>({
+    amount: "",
+    paymentDate: new Date().toISOString().slice(0, 10),
+    paymentMethod: "Cash",
+    notes: "",
+  });
+
+  // Payment history (collapsible per-invoice)
+  const [paymentsByInvoice, setPaymentsByInvoice] = useState<
+    Record<string, { payments: SupplierPayment[]; loading: boolean; open: boolean }>
+  >({});
+
+  // Delete payment state
+  const [deletePaymentTarget, setDeletePaymentTarget] =
+    useState<{ invoice: SupplierInvoice; payment: SupplierPayment } | null>(null);
+
   // Delete invoice state
   const [deleteInvoiceTarget, setDeleteInvoiceTarget] = useState<SupplierInvoice | null>(null);
 
@@ -222,16 +288,32 @@ export function Suppliers() {
   const stats = useMemo(() => {
     let totalOutstanding = 0;
     let totalPurchases = 0;
+    let totalPaid = 0;
+    let paidCount = 0;
+    let partialCount = 0;
+    let unpaidCount = 0;
+    const allInvoices: SupplierInvoice[] = [];
     suppliers.forEach((s) => {
       (s.invoices ?? []).forEach((inv) => {
         totalPurchases += inv.totalAmount;
+        totalPaid += inv.paidAmount;
         totalOutstanding += Math.max(0, inv.totalAmount - inv.paidAmount);
+        if (inv.status === "PAID") paidCount += 1;
+        else if (inv.status === "PARTIAL") partialCount += 1;
+        else unpaidCount += 1;
+        allInvoices.push(inv);
       });
     });
     return {
       total: suppliers.length,
       totalOutstanding,
       totalPurchases,
+      totalPaid,
+      totalInvoices: allInvoices.length,
+      paidCount,
+      partialCount,
+      unpaidCount,
+      allInvoices,
     };
   }, [suppliers]);
 
@@ -246,6 +328,25 @@ export function Suppliers() {
         s.email.toLowerCase().includes(q)
     );
   }, [suppliers, search]);
+
+  /* Filtered invoices within viewer */
+  const filteredViewerInvoices = useMemo(() => {
+    if (!invoicesViewer) return [];
+    const q = invoiceSearch.trim().toLowerCase();
+    return invoicesViewer.invoices.filter((inv) => {
+      if (invoiceFilter !== "ALL" && inv.status !== invoiceFilter) return false;
+      if (q !== "") {
+        const supplierName = invoicesViewer.supplier.name.toLowerCase();
+        if (
+          !inv.invoiceNo.toLowerCase().includes(q) &&
+          !supplierName.includes(q)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [invoicesViewer, invoiceFilter, invoiceSearch]);
 
   /* Mutations — supplier */
   const createSupplierMutation = useMutation({
@@ -310,6 +411,162 @@ export function Suppliers() {
     },
     onError: (e: Error) => toast.error(e.message || t("failedDeleteInvoice")),
   });
+
+  /* Mutations — supplier payment */
+  const createPaymentMutation = useMutation({
+    mutationFn: ({ invoiceId, data }: { invoiceId: string; data: typeof paymentForm }) =>
+      supplierPaymentsApi.create(invoiceId, {
+        amount: Number(data.amount),
+        paymentDate: data.paymentDate,
+        paymentMethod: data.paymentMethod,
+        notes: data.notes.trim(),
+      }),
+    onSuccess: async () => {
+      toast.success(t("paymentCreated"));
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      qc.invalidateQueries({ queryKey: ["supplier-invoices"] });
+      setPaymentFormOpen(false);
+      setPaymentTarget(null);
+      // Refresh invoices viewer (to reflect new paidAmount/status)
+      if (invoicesViewer) {
+        try {
+          const res = await suppliersApi.invoices(invoicesViewer.supplier.id);
+          setInvoicesViewer({
+            supplier: res.supplier,
+            invoices: res.invoices,
+            loading: false,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+      // Refresh payment history if open
+      if (paymentTarget) {
+        try {
+          const list = await supplierPaymentsApi.list(paymentTarget.id);
+          setPaymentsByInvoice((prev) => ({
+            ...prev,
+            [paymentTarget.id]: {
+              payments: list,
+              loading: false,
+              open: prev[paymentTarget.id]?.open ?? true,
+            },
+          }));
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    onError: (e: Error) => toast.error(e.message || t("paymentCreated")),
+  });
+
+  const deletePaymentMutation = useMutation({
+    mutationFn: ({
+      invoiceId,
+      paymentId,
+    }: {
+      invoiceId: string;
+      paymentId: string;
+    }) => supplierPaymentsApi.delete(invoiceId, paymentId),
+    onSuccess: async () => {
+      toast.success(t("paymentDeleted"));
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      qc.invalidateQueries({ queryKey: ["supplier-invoices"] });
+      const target = deletePaymentTarget;
+      setDeletePaymentTarget(null);
+      // Refresh invoices viewer (paidAmount may have changed)
+      if (invoicesViewer) {
+        try {
+          const res = await suppliersApi.invoices(invoicesViewer.supplier.id);
+          setInvoicesViewer({
+            supplier: res.supplier,
+            invoices: res.invoices,
+            loading: false,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+      // Refresh payment history for that invoice if it was open
+      if (target) {
+        try {
+          const list = await supplierPaymentsApi.list(target.invoice.id);
+          setPaymentsByInvoice((prev) => ({
+            ...prev,
+            [target.invoice.id]: {
+              payments: list,
+              loading: false,
+              open: prev[target.invoice.id]?.open ?? true,
+            },
+          }));
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    onError: (e: Error) => toast.error(e.message || t("paymentDeleted")),
+  });
+
+  /* Payment dialog helpers */
+  const openPaymentDialog = (inv: SupplierInvoice) => {
+    setPaymentTarget(inv);
+    const remaining = Math.max(0, inv.totalAmount - inv.paidAmount);
+    setPaymentForm({
+      amount: String(remaining > 0 ? remaining.toFixed(2) : "0"),
+      paymentDate: new Date().toISOString().slice(0, 10),
+      paymentMethod: "Cash",
+      notes: "",
+    });
+    setPaymentFormOpen(true);
+  };
+
+  const submitPayment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paymentTarget) return;
+    const amount = Number(paymentForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error(t("paymentAmount"));
+      return;
+    }
+    const remaining = paymentTarget.totalAmount - paymentTarget.paidAmount;
+    if (amount > remaining + 0.0001) {
+      toast.error(t("cannotExceedRemaining"));
+      return;
+    }
+    createPaymentMutation.mutate({
+      invoiceId: paymentTarget.id,
+      data: paymentForm,
+    });
+  };
+
+  const togglePaymentsFor = async (inv: SupplierInvoice) => {
+    setPaymentsByInvoice((prev) => {
+      const cur = prev[inv.id];
+      if (cur) {
+        return {
+          ...prev,
+          [inv.id]: { ...cur, open: !cur.open },
+        };
+      }
+      return {
+        ...prev,
+        [inv.id]: { payments: [], loading: true, open: true },
+      };
+    });
+    try {
+      const list = await supplierPaymentsApi.list(inv.id);
+      setPaymentsByInvoice((prev) => ({
+        ...prev,
+        [inv.id]: { payments: list, loading: false, open: true },
+      }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("paymentHistory"));
+      setPaymentsByInvoice((prev) => ({
+        ...prev,
+        [inv.id]: { payments: [], loading: false, open: true },
+      }));
+    }
+  };
 
   /* Form handlers — supplier */
   const openAddSupplier = () => {
@@ -432,6 +689,9 @@ export function Suppliers() {
 
   /* Invoices viewer */
   const openInvoicesViewer = async (s: Supplier) => {
+    setInvoiceFilter("ALL");
+    setInvoiceSearch("");
+    setPaymentsByInvoice({});
     setInvoicesViewer({ supplier: s, invoices: s.invoices ?? [], loading: true });
     try {
       const res = await suppliersApi.invoices(s.id);
@@ -446,25 +706,35 @@ export function Suppliers() {
     }
   };
 
-  /* Stat cards */
+  /* Stat cards — top of suppliers page */
   const statCards = [
     {
-      label: t("totalSuppliers"),
-      value: String(stats.total),
-      icon: Truck,
+      label: t("totalInvoices"),
+      value: String(stats.totalInvoices),
+      sub: formatMoney(stats.totalPurchases, currency),
+      icon: FileText,
       tint: "bg-emerald-500/15 text-emerald-600",
     },
     {
-      label: t("totalOutstanding"),
+      label: t("totalPaid"),
+      value: formatMoney(stats.totalPaid, currency),
+      sub: `${stats.paidCount} ${t("paidInvoices")}`,
+      icon: CheckCircle2,
+      tint: "bg-emerald-500/15 text-emerald-600",
+    },
+    {
+      label: t("totalRemaining"),
       value: formatMoney(stats.totalOutstanding, currency),
-      icon: Wallet,
+      sub: `${stats.partialCount + stats.unpaidCount} ${t("invoices")}`,
+      icon: Clock,
       tint: "bg-amber-500/15 text-amber-600",
     },
     {
-      label: t("totalPurchases"),
-      value: formatMoney(stats.totalPurchases, currency),
-      icon: ShoppingBag,
-      tint: "bg-emerald-500/15 text-emerald-600",
+      label: t("partialInvoices"),
+      value: String(stats.partialCount),
+      sub: `${stats.unpaidCount} ${t("unpaidInvoices")}`,
+      icon: Banknote,
+      tint: "bg-amber-500/15 text-amber-600",
     },
   ];
 
@@ -494,7 +764,7 @@ export function Suppliers() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {statCards.map((s, i) => {
           const Icon = s.icon;
           return (
@@ -510,8 +780,11 @@ export function Suppliers() {
                     <p className="text-xs font-medium text-muted-foreground">
                       {s.label}
                     </p>
-                    <p className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">
+                    <p className="mt-1 text-lg font-bold tracking-tight sm:text-xl">
                       {s.value}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">
+                      {s.sub}
                     </p>
                   </div>
                   <div
@@ -1203,13 +1476,52 @@ export function Suppliers() {
         open={invoicesViewer !== null}
         onOpenChange={(o) => !o && setInvoicesViewer(null)}
       >
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {invoicesViewer?.supplier.name} · {t("invoices")}
             </DialogTitle>
             <DialogDescription>{t("purchaseHistory")}</DialogDescription>
           </DialogHeader>
+
+          {/* Filter + search row */}
+          {(invoicesViewer?.invoices ?? []).length > 0 && (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex flex-wrap gap-1.5">
+                {(["ALL", "PAID", "PARTIAL", "UNPAID"] as const).map((f) => (
+                  <Button
+                    key={f}
+                    type="button"
+                    size="sm"
+                    variant={invoiceFilter === f ? "default" : "outline"}
+                    onClick={() => setInvoiceFilter(f)}
+                    className={cn(
+                      invoiceFilter === f &&
+                        "bg-emerald-600 hover:bg-emerald-700"
+                    )}
+                  >
+                    {f === "ALL"
+                      ? t("allInvoices")
+                      : f === "PAID"
+                        ? t("paidInvoices")
+                        : f === "PARTIAL"
+                          ? t("partialInvoices")
+                          : t("unpaidInvoices")}
+                  </Button>
+                ))}
+              </div>
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder={t("searchInvoice")}
+                  value={invoiceSearch}
+                  onChange={(e) => setInvoiceSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             {invoicesViewer?.loading ? (
               <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
@@ -1233,49 +1545,186 @@ export function Suppliers() {
                   {t("addFirstInvoice")}
                 </Button>
               </div>
+            ) : filteredViewerInvoices.length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                {t("noInvoicesMatch")}
+              </div>
             ) : (
               <ul className="divide-y rounded-lg border">
-                {invoicesViewer?.invoices.map((inv) => (
-                  <li key={inv.id} className="p-3">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-semibold">
-                            {inv.invoiceNo}
-                          </span>
-                          {statusBadge(inv.status, t)}
-                        </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {formatDate(inv.invoiceDate)}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {inv.items.length} {t("invoiceItemsCount")} ·{" "}
-                          {formatMoney(inv.totalAmount, currency)}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <span className="font-bold tabular-nums">
-                          {formatMoney(inv.totalAmount, currency)}
-                        </span>
-                        {inv.paidAmount > 0 &&
-                          inv.paidAmount < inv.totalAmount && (
-                            <span className="text-xs text-amber-600 dark:text-amber-400">
-                              {t("paid")}: {formatMoney(inv.paidAmount, currency)}
+                {filteredViewerInvoices.map((inv) => {
+                  const remaining = Math.max(0, inv.totalAmount - inv.paidAmount);
+                  const payState = paymentsByInvoice[inv.id];
+                  const isPaid = inv.status === "PAID";
+                  return (
+                    <li key={inv.id} className="p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-sm font-semibold">
+                              {inv.invoiceNo}
                             </span>
+                            {statusBadge(inv.status, t)}
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {formatDate(inv.invoiceDate)}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {inv.items.length} {t("invoiceItemsCount")} ·{" "}
+                            {formatMoney(inv.totalAmount, currency)}
+                          </p>
+                          {inv.paidAmount > 0 && (
+                            <p className="mt-0.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+                              {t("totalPaid")}: {formatMoney(inv.paidAmount, currency)}
+                              {remaining > 0 && (
+                                <span className="ms-2 text-amber-600 dark:text-amber-400">
+                                  · {t("remainingAmount")}:{" "}
+                                  {formatMoney(remaining, currency)}
+                                </span>
+                              )}
+                            </p>
                           )}
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-7 w-7 text-red-600"
-                          onClick={() => setDeleteInvoiceTarget(inv)}
-                          aria-label={t("deleteInvoice")}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="font-bold tabular-nums">
+                            {formatMoney(inv.totalAmount, currency)}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400"
+                              onClick={() => openPaymentDialog(inv)}
+                              disabled={isPaid}
+                            >
+                              <CreditCard className="h-3.5 w-3.5" />
+                              {t("recordPayment")}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => togglePaymentsFor(inv)}
+                              aria-label={t("paymentHistory")}
+                              title={t("paymentHistory")}
+                            >
+                              {payState?.open ? (
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7 text-red-600"
+                              onClick={() => setDeleteInvoiceTarget(inv)}
+                              aria-label={t("deleteInvoice")}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
+
+                      {/* Payment history collapsible */}
+                      <Collapsible
+                        open={payState?.open ?? false}
+                        onOpenChange={() => togglePaymentsFor(inv)}
+                        className="mt-2"
+                      >
+                        <CollapsibleContent className="space-y-2">
+                          <div className="rounded-lg border bg-muted/30 p-2.5">
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                              {t("paymentHistory")}
+                            </p>
+                            {payState?.loading ? (
+                              <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                {t("loadingInvoices")}
+                              </div>
+                            ) : (payState?.payments ?? []).length === 0 ? (
+                              <p className="py-3 text-center text-xs text-muted-foreground">
+                                {t("noPaymentsYet")}
+                              </p>
+                            ) : (
+                              <div className="overflow-x-auto">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow className="border-border/50">
+                                      <TableHead className="h-8 text-[11px]">
+                                        {t("paymentDate")}
+                                      </TableHead>
+                                      <TableHead className="h-8 text-[11px]">
+                                        {t("paymentAmount")}
+                                      </TableHead>
+                                      <TableHead className="h-8 text-[11px]">
+                                        {t("paymentMethod")}
+                                      </TableHead>
+                                      <TableHead className="h-8 text-[11px]">
+                                        {t("paymentNotes")}
+                                      </TableHead>
+                                      <TableHead className="h-8 text-[11px]">
+                                        {t("recordedBy")}
+                                      </TableHead>
+                                      <TableHead className="h-8 text-[11px] text-right">
+                                        {t("actions")}
+                                      </TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {payState?.payments.map((pmt) => (
+                                      <TableRow
+                                        key={pmt.id}
+                                        className="border-border/40"
+                                      >
+                                        <TableCell className="py-2 text-xs">
+                                          {formatDate(pmt.paymentDate)}
+                                        </TableCell>
+                                        <TableCell className="py-2 text-xs font-semibold tabular-nums">
+                                          {formatMoney(pmt.amount, currency)}
+                                        </TableCell>
+                                        <TableCell className="py-2 text-xs">
+                                          <PaymentMethodBadge
+                                            method={pmt.paymentMethod}
+                                            t={t}
+                                          />
+                                        </TableCell>
+                                        <TableCell className="py-2 text-xs text-muted-foreground">
+                                          {pmt.notes || "—"}
+                                        </TableCell>
+                                        <TableCell className="py-2 text-xs text-muted-foreground">
+                                          {pmt.user?.name ??
+                                            pmt.user?.email ??
+                                            "—"}
+                                        </TableCell>
+                                        <TableCell className="py-2 text-right">
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-red-600"
+                                            onClick={() =>
+                                              setDeletePaymentTarget({
+                                                invoice: inv,
+                                                payment: pmt,
+                                              })
+                                            }
+                                            aria-label={t("delete")}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            )}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -1295,6 +1744,202 @@ export function Suppliers() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Record payment dialog */}
+      <Dialog open={paymentFormOpen} onOpenChange={setPaymentFormOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("recordPayment")}</DialogTitle>
+            <DialogDescription>
+              {paymentTarget?.invoiceNo} ·{" "}
+              {paymentTarget
+                ? formatMoney(paymentTarget.totalAmount, currency)
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitPayment} className="space-y-4">
+            {paymentTarget && (
+              <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/30 p-3 text-xs">
+                <div>
+                  <p className="text-muted-foreground">{t("totalAmount")}</p>
+                  <p className="font-semibold tabular-nums">
+                    {formatMoney(paymentTarget.totalAmount, currency)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">{t("paidAmount")}</p>
+                  <p className="font-semibold tabular-nums">
+                    {formatMoney(paymentTarget.paidAmount, currency)}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-muted-foreground">{t("remainingAmount")}</p>
+                  <p className="font-bold tabular-nums text-amber-600 dark:text-amber-400">
+                    {formatMoney(
+                      Math.max(
+                        0,
+                        paymentTarget.totalAmount - paymentTarget.paidAmount
+                      ),
+                      currency
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="pmt-amount">{t("paymentAmount")}</Label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  {currency}
+                </span>
+                <Input
+                  id="pmt-amount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  value={paymentForm.amount}
+                  onChange={(e) =>
+                    setPaymentForm((f) => ({ ...f, amount: e.target.value }))
+                  }
+                  className="pl-8 tabular-nums"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="pmt-date">{t("paymentDate")}</Label>
+                <Input
+                  id="pmt-date"
+                  type="date"
+                  value={paymentForm.paymentDate}
+                  onChange={(e) =>
+                    setPaymentForm((f) => ({
+                      ...f,
+                      paymentDate: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("paymentMethod")}</Label>
+                <Select
+                  value={paymentForm.paymentMethod}
+                  onValueChange={(v) =>
+                    setPaymentForm((f) => ({
+                      ...f,
+                      paymentMethod: v as PaymentMethod,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Cash">
+                      {t("paymentMethodCash")}
+                    </SelectItem>
+                    <SelectItem value="Bank">
+                      {t("paymentMethodBank")}
+                    </SelectItem>
+                    <SelectItem value="Cheque">
+                      {t("paymentMethodCheque")}
+                    </SelectItem>
+                    <SelectItem value="Other">
+                      {t("paymentMethodOther")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="pmt-notes">{t("paymentNotes")}</Label>
+              <Textarea
+                id="pmt-notes"
+                rows={2}
+                value={paymentForm.notes}
+                onChange={(e) =>
+                  setPaymentForm((f) => ({ ...f, notes: e.target.value }))
+                }
+              />
+            </div>
+
+            <DialogFooter className="gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPaymentFormOpen(false)}
+                disabled={createPaymentMutation.isPending}
+              >
+                <X className="h-4 w-4" />
+                {t("cancel")}
+              </Button>
+              <Button
+                type="submit"
+                disabled={createPaymentMutation.isPending}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                {createPaymentMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CreditCard className="h-4 w-4" />
+                )}
+                {t("recordPayment")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete payment confirmation */}
+      <AlertDialog
+        open={deletePaymentTarget !== null}
+        onOpenChange={(o) => !o && setDeletePaymentTarget(null)}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("delete")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("paymentDeleted")} ·{" "}
+              <span className="font-semibold">
+                {deletePaymentTarget
+                  ? formatMoney(deletePaymentTarget.payment.amount, currency)
+                  : ""}
+              </span>
+              ?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletePaymentMutation.isPending}>
+              {t("cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault();
+                if (deletePaymentTarget) {
+                  deletePaymentMutation.mutate({
+                    invoiceId: deletePaymentTarget.invoice.id,
+                    paymentId: deletePaymentTarget.payment.id,
+                  });
+                }
+              }}
+              disabled={deletePaymentMutation.isPending}
+            >
+              {deletePaymentMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              {t("delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete supplier confirmation */}
       <AlertDialog

@@ -22,6 +22,8 @@ import {
   Users,
   UserCircle,
   LayoutGrid,
+  ClipboardCheck,
+  HandHeart,
 } from "lucide-react";
 import type { ViewKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -44,6 +46,8 @@ import { AdminDashboard } from "@/components/views/admin-dashboard";
 import { SellerManagement } from "@/components/views/seller-management";
 import { SellerDashboard } from "@/components/views/seller-dashboard";
 import { SellerSettings } from "@/components/views/seller-settings";
+import { InventoryAudit } from "@/components/views/inventory-audit";
+import { Zakat } from "@/components/views/zakat";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { CommandPalette } from "@/components/command-palette";
@@ -63,7 +67,9 @@ interface NavItem {
     | "adminDashboard"
     | "sellerManagement"
     | "sellerDashboard"
-    | "sellerSettings";
+    | "sellerSettings"
+    | "inventoryAudit"
+    | "zakat";
   descKey:
     | "storeOverview"
     | "scanBillCheckout"
@@ -76,7 +82,9 @@ interface NavItem {
     | "adminSubtitle"
     | "sellerManagementSubtitle"
     | "sellerDashboardSubtitle"
-    | "sellerSettingsSubtitle";
+    | "sellerSettingsSubtitle"
+    | "annualAuditDesc"
+    | "zakatDesc";
   icon: typeof ScanLine;
   superAdminOnly?: boolean;
   ownerOnly?: boolean;
@@ -95,6 +103,8 @@ const NAV: NavItem[] = [
   { key: "suppliers", labelKey: "suppliers", descKey: "suppliersSubtitle", icon: Truck },
   { key: "expiry", labelKey: "expiryTracking", descKey: "expiryTrackingSubtitle", icon: CalendarClock },
   // Owner-only management views
+  { key: "inventoryAudit", labelKey: "inventoryAudit", descKey: "annualAuditDesc", icon: ClipboardCheck, ownerOnly: true },
+  { key: "zakat", labelKey: "zakat", descKey: "zakatDesc", icon: HandHeart, ownerOnly: true },
   { key: "sellerMgmt", labelKey: "sellerManagement", descKey: "sellerManagementSubtitle", icon: Users, ownerOnly: true },
   { key: "shop", labelKey: "shopDetails", descKey: "businessInformation", icon: Store, ownerOnly: true },
   { key: "settings", labelKey: "settings", descKey: "appConfiguration", icon: Settings, ownerOnly: true },
@@ -468,6 +478,10 @@ export function AppShell() {
         return <SellerManagement />;
       case "sellerSettings":
         return <SellerSettings />;
+      case "inventoryAudit":
+        return <InventoryAudit />;
+      case "zakat":
+        return <Zakat />;
       default:
         return isStaff ? (
           <SellerDashboard onNavigate={select} />
