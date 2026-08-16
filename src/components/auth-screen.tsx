@@ -244,7 +244,7 @@ export function AuthScreen() {
                           value={storeName}
                           onChange={(e) => setStoreName(e.target.value)}
                           placeholder={t("authStoreName")}
-                          className="ps-9"
+                          className="ps-9 text-black placeholder:text-gray-400"
                           disabled={loading}
                         />
                       </div>
@@ -310,7 +310,7 @@ export function AuthScreen() {
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
                           placeholder={t("authPhone")}
-                          className="ps-9"
+                          className="ps-9 text-black placeholder:text-gray-400"
                           disabled={loading}
                           dir="ltr"
                         />
@@ -332,7 +332,7 @@ export function AuthScreen() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@example.com"
-                      className="ps-9"
+                      className="ps-9 text-black placeholder:text-gray-400"
                       disabled={loading}
                       dir="ltr"
                     />
@@ -354,7 +354,7 @@ export function AuthScreen() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="ps-9"
+                      className="ps-9 text-black placeholder:text-gray-400"
                       disabled={loading}
                       dir="ltr"
                     />
