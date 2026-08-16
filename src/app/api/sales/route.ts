@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireStoreOwner } from "@/lib/session";
+import { requireAuth, requireStoreOwner } from "@/lib/session";
 import { handleRouteError } from "@/lib/api-error";
+import type { Prisma } from "@prisma/client";
 
 type PaymentMethod = "Cash" | "UPI" | "Card";
 const VALID_PAYMENT_METHODS: PaymentMethod[] = ["Cash", "UPI", "Card"];
@@ -15,6 +16,7 @@ interface CreateSaleBody {
   items: SaleItemInput[];
   discount: number;
   paymentMethod: PaymentMethod;
+  sellerId?: string | null;
 }
 
 function pad(n: number, width = 4): string {
@@ -28,12 +30,35 @@ function dateStamp(d: Date): string {
   return `${y}${m}${day}`;
 }
 
-// GET /api/sales — list sales for the current store (newest first), include items
-export async function GET() {
+/**
+ * GET /api/sales
+ * - STAFF: only their own sales (where sellerId === session.userId)
+ * - OWNER: all store sales, optionally filtered by ?sellerId=
+ */
+export async function GET(request: Request) {
   try {
-    const session = await requireStoreOwner();
+    const session = await requireAuth();
+    if (!session.storeId) {
+      return NextResponse.json(
+        { error: "No store associated with this account" },
+        { status: 403 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const where: Prisma.SaleWhereInput = { storeId: session.storeId };
+
+    if (session.role === "STAFF") {
+      where.sellerId = session.userId;
+    } else if (session.role === "OWNER") {
+      const sellerId = searchParams.get("sellerId");
+      if (sellerId) {
+        where.sellerId = sellerId;
+      }
+    }
+
     const sales = await db.sale.findMany({
-      where: { storeId: session.storeId },
+      where,
       include: { items: true },
       orderBy: { createdAt: "desc" },
     });
@@ -43,7 +68,11 @@ export async function GET() {
   }
 }
 
-// POST /api/sales — create a sale (atomic transaction, store-scoped)
+/**
+ * POST /api/sales — create a sale (atomic transaction, store-scoped)
+ * - STAFF: sellerId is forced to session.userId
+ * - OWNER: sellerId can be passed in body or null
+ */
 export async function POST(request: Request) {
   try {
     const session = await requireStoreOwner();
@@ -93,7 +122,27 @@ export async function POST(request: Request) {
       }
     }
 
-    const storeId = session.storeId;
+    const storeId = session.storeId!;
+
+    // Determine sellerId:
+    // - STAFF: forced to their own userId
+    // - OWNER: optional from body, validated to belong to the same store
+    let sellerId: string | null = null;
+    if (session.role === "STAFF") {
+      sellerId = session.userId;
+    } else if (session.role === "OWNER" && body.sellerId) {
+      const seller = await db.user.findFirst({
+        where: {
+          id: body.sellerId,
+          storeId,
+          role: "STAFF",
+        },
+        select: { id: true },
+      });
+      if (seller) {
+        sellerId = seller.id;
+      }
+    }
 
     // Fetch store (for taxRate) — outside transaction to avoid extra locks
     const store = await db.store.findUnique({
@@ -178,6 +227,7 @@ export async function POST(request: Request) {
           paymentMethod,
           itemCount,
           store: { connect: { id: storeId } },
+          ...(sellerId ? { seller: { connect: { id: sellerId } } } : {}),
           items: {
             create: saleItemLines.map((l) => ({
               productId: l.product.id,

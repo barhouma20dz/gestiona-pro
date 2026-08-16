@@ -60,6 +60,7 @@ export interface Sale {
   total: number;
   paymentMethod: string;
   itemCount: number;
+  sellerId?: string | null;
   createdAt: string;
   items: SaleItem[];
 }
@@ -78,7 +79,10 @@ export type ViewKey =
   | "expiry"
   | "shop"
   | "settings"
-  | "admin";
+  | "admin"
+  | "sellerDashboard"
+  | "sellerMgmt"
+  | "sellerSettings";
 
 export interface DailyStats {
   totalSales: number;
@@ -240,4 +244,47 @@ export interface LicenseKey {
   createdBy?: { id: string; email: string; name: string | null };
   activatedAt: string | null;
   createdAt: string;
+}
+
+/* ---------------- Seller (Staff) types ---------------- */
+
+export interface Seller {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+  storeId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // Optional aggregates returned by /api/sellers (computed server-side)
+  totalSales?: number;
+  totalRevenue?: number;
+  totalProfit?: number;
+}
+
+export interface NewSeller {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface SellerEarnings {
+  sellerId: string;
+  totalRevenue: number;
+  totalProfit: number;
+  todayRevenue: number;
+  todaySales: number;
+  weekRevenue: number;
+  weekSales: number;
+  monthRevenue: number;
+  monthSales: number;
+  totalSales: number;
+  // Optional daily series for charts
+  dailySeries?: { date: string; revenue: number; profit: number }[];
+}
+
+export interface MyEarnings extends SellerEarnings {
+  scope: "STORE" | "SELLER";
+  storeName?: string | null;
+  sellerName?: string | null;
 }

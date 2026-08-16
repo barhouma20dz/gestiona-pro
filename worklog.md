@@ -1696,3 +1696,70 @@ Task: Add product image (upload/camera) + dual expiry dates + expiry tracking
   * Two expiry date fields: "تاريخ انتهاء الصلاحية 1" + "تاريخ انتهاء الصلاحية 2" ✅
   * Expiry tracking page: shows counts (expired/near-expiry), empty states ✅
   * No console errors ✅
+
+---
+Task ID: SELLER-SYSTEM
+Agent: orchestrator + full-stack-developer (seller accounts system)
+Task: Build seller/staff accounts with limited permissions, earnings tracking, and seller management
+
+## Features Built
+
+### 1. Database
+- Added `sellerId` (optional) to `Sale` model — links each sale to the seller who made it.
+- Added `sales Sale[]` relation on `User` model.
+- Schema pushed successfully.
+
+### 2. Seller Management API (Store Owner)
+- `GET /api/sellers` — list all STAFF users in the store.
+- `POST /api/sellers` — create a STAFF user (name, email, password hashed with bcryptjs).
+- `PUT /api/sellers/[id]` — update seller name/email.
+- `DELETE /api/sellers/[id]` — delete seller.
+- `GET /api/sellers/[id]/earnings` — daily/weekly/monthly revenue + profit + sales count.
+- `POST /api/sellers/[id]/change-password` — change seller password.
+
+### 3. Seller Self-Service API
+- `GET /api/my-earnings` — seller's own earnings (auto-detected from session).
+- Sales API updated: STAFF sees only their own sales; OWNER sees all (optional `?sellerId=` filter).
+- Sale creation: STAFF's sellerId forced to session.userId; OWNER can pass sellerId in body.
+
+### 4. Seller Dashboard (for STAFF role)
+- Gradient hero: "مرحباً [name]" + "لوحة البائع".
+- 4 KPI cards: Today's Revenue, Weekly Revenue, Monthly Revenue, Total Sales (AnimatedNumber).
+- Profit vs Revenue comparison.
+- Recent sales table (their own only).
+- Quick actions.
+
+### 5. Seller Management View (for OWNER role)
+- Gradient header: "إدارة البائعين".
+- Stats: total sellers, total sales, total revenue, total profit.
+- Seller table: name, email, total sales, revenue, profit, actions (earnings dialog, edit, delete).
+- Add Seller dialog: name, email, password.
+- Earnings dialog per seller: daily/weekly/monthly breakdown.
+
+### 6. Seller Settings (for STAFF role)
+- Shows seller name, email (read-only).
+- Change password form.
+- No store settings (tax, currency — those are owner-only).
+
+### 7. AppShell Role-Based Navigation
+- **STAFF sees**: لوحة البائع، نقطة البيع، المنتجات، سجل المبيعات، الموردون، تتبع الصلاحية، إعدادات البائع.
+- **OWNER sees**: all existing + "إدارة البائعين".
+- **SUPER_ADMIN sees**: admin dashboard only (unchanged).
+- Subscription badge hidden for STAFF.
+- Cart pill visible for STAFF.
+
+## Verification:
+- `bun run lint`: clean.
+- agent-browser QA:
+  * Store owner: "إدارة البائعين" appears in nav ✅
+  * Created seller "أحمد البائع" (ahmed@nour.store / 123456) ✅
+  * Seller appears in management table with name + email ✅
+  * Seller login: sees restricted nav (لوحة البائع, نقطة البيع, المنتجات, سجل المبيعات, الموردون, تتبع الصلاحية, إعدادات البائع) ✅
+  * Seller dashboard: VLM confirmed gradient greeting + 4 KPI cards (today/week/month/sales) + Arabic RTL ✅
+  * No owner-only items visible to seller ✅
+  * No console errors ✅
+
+## Credentials:
+- Store owner: nour@store.com / 123456
+- Seller: ahmed@nour.store / 123456
+- Super admin: admin@swiftbill.pos / admin123

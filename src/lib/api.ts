@@ -16,6 +16,10 @@ import type {
   AdminStore,
   LicenseKey,
   SubscriptionPlan,
+  Seller,
+  NewSeller,
+  SellerEarnings,
+  MyEarnings,
 } from "./types";
 
 // Read stored JWT token from localStorage (set by auth-context on login)
@@ -189,4 +193,32 @@ export const adminApi = {
       `/api/admin/stores/${id}/suspend`,
       { method: "POST" }
     ),
+};
+
+/* ---------------- Sellers (Staff) ---------------- */
+export const sellersApi = {
+  list: () => request<Seller[]>("/api/sellers"),
+  create: (data: NewSeller) =>
+    request<Seller>("/api/sellers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<{ name: string; email: string }>) =>
+    request<Seller>(`/api/sellers/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<void>(`/api/sellers/${id}`, { method: "DELETE" }),
+  earnings: (id: string) =>
+    request<SellerEarnings>(`/api/sellers/${id}/earnings`),
+  changePassword: (id: string, password: string) =>
+    request<{ message: string }>(`/api/sellers/${id}/change-password`, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+};
+
+export const myEarningsApi = {
+  get: () => request<MyEarnings>("/api/my-earnings"),
 };
