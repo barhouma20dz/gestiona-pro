@@ -25,6 +25,8 @@ model User {
 
   licenseKeys LicenseKey[] // created by super admin
   sales       Sale[]       // sales made by this seller
+  payments    SupplierPayment[]
+  auditApprovals InventoryAudit[]
 }
 
 // ─── Store (Tenant) ──────────────────────────────────────────────────────────
@@ -52,8 +54,12 @@ model Store {
   sales         Sale[]
   suppliers     Supplier[]
   invoices      SupplierInvoice[]
+  payments      SupplierPayment[]
   licenseKeys   LicenseKey[]
   subscription  Subscription?
+  inventoryAudits InventoryAudit[]
+  zakatRecords  ZakatRecord[]
+  zakatSettings  ZakatSettings?
 }
 
 // ─── Subscription & Licensing ────────────────────────────────────────────────
@@ -111,8 +117,9 @@ model Product {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  saleItems    SaleItem[]
-  invoiceItems SupplierInvoiceItem[]
+  saleItems      SaleItem[]
+  invoiceItems   SupplierInvoiceItem[]
+  auditItems     InventoryAuditItem[]
 
   @@unique([storeId, barcode])
   @@index([storeId])
@@ -191,7 +198,8 @@ model SupplierInvoice {
   notes         String   @default("")
   createdAt     DateTime @default(now())
 
-  items SupplierInvoiceItem[]
+  items    SupplierInvoiceItem[]
+  payments SupplierPayment[]
 
   @@unique([storeId, invoiceNo])
   @@index([storeId])
@@ -205,9 +213,113 @@ model SupplierInvoiceItem {
   productId   String?
   product     Product?          @relation(fields: [productId], references: [id])
   productName String
-  quantity    Int
+  quantity    Float
   unitPrice   Float
   total       Float
 
   @@index([invoiceId])
+}
+
+// ─── Supplier Payments ─────────────────────────────────────────────────────
+
+model SupplierPayment {
+  id            String   @id @default(cuid())
+  invoiceId     String
+  invoice       SupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  amount        Float
+  paymentDate   DateTime @default(now())
+  paymentMethod String   @default("Cash") // Cash | Bank | Cheque | Other
+  notes         String   @default("")
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([storeId])
+}
+
+// ─── Inventory Audit (الجرد السنوي) ─────────────────────────────────────────
+
+model InventoryAudit {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  year        Int
+  auditDate   DateTime  @default(now())
+  status      String    @default("DRAFT") // DRAFT | COMPLETED | APPROVED
+  approvedAt  DateTime?
+  approvedBy  String?
+  approver    User?     @relation(fields: [approvedBy], references: [id])
+  notes       String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items InventoryAuditItem[]
+
+  @@index([storeId])
+  @@index([storeId, year])
+}
+
+model InventoryAuditItem {
+  id             String   @id @default(cuid())
+  auditId        String
+  audit          InventoryAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id])
+  productName    String
+  barcode        String
+  unitType       String   // "count" | "kg"
+  systemStock    Float    // stock from system at time of audit
+  countedStock   Float    // actual counted stock entered by user
+  difference     Float    // countedStock - systemStock
+  costPrice      Float    // cost price at time of audit
+  differenceValue Float   // difference * costPrice
+  createdAt      DateTime @default(now())
+
+  @@index([auditId])
+}
+
+// ─── Zakat System (نظام الزكاة) ─────────────────────────────────────────────
+
+model ZakatSettings {
+  id              String   @id @default(cuid())
+  storeId         String   @unique
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  zakatRate       Float    @default(2.5) // percentage (2.5%)
+  nisabAmount     Float    @default(0) // nisab threshold in store currency
+  haulStartDate   DateTime? // start of the zakat year (haul)
+  cashOnHand      Float    @default(0) // cash available
+  receivables     Float    @default(0) // debts owed to the store
+  liabilities     Float    @default(0) // deductibles / obligations
+  includeInventory Boolean @default(true) // include stock value in zakat base
+  includeCash     Boolean  @default(true)
+  includeReceivables Boolean @default(true)
+  valuationMethod String   @default("cost") // "cost" | "selling"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ZakatRecord {
+  id              String   @id @default(cuid())
+  storeId         String
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  year            Int
+  calculationDate DateTime @default(now())
+  inventoryValue  Float    @default(0) // value of goods for sale
+  cashValue       Float    @default(0) // cash
+  receivablesValue Float   @default(0) // debts owed to store
+  liabilitiesValue Float  @default(0) // deductions
+  zakatBase       Float    @default(0) // total zakat base
+  zakatRate       Float    @default(2.5) // percentage used
+  zakatAmount     Float    @default(0) // final zakat amount
+  status          String   @default("UNPAID") // UNPAID | PAID
+  paidDate        DateTime?
+  notes           String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([storeId])
+  @@index([storeId, year])
 }

@@ -84,7 +84,9 @@ export type ViewKey =
   | "admin"
   | "sellerDashboard"
   | "sellerMgmt"
-  | "sellerSettings";
+  | "sellerSettings"
+  | "inventoryAudit"
+  | "zakat";
 
 export interface DailyStats {
   totalSales: number;
@@ -289,4 +291,123 @@ export interface MyEarnings extends SellerEarnings {
   scope: "STORE" | "SELLER";
   storeName?: string | null;
   sellerName?: string | null;
+}
+
+/* ---------------- Inventory Audit types ---------------- */
+
+export type AuditStatus = "DRAFT" | "COMPLETED" | "APPROVED";
+
+export interface InventoryAuditItem {
+  id: string;
+  auditId: string;
+  productId: string;
+  productName: string;
+  barcode: string;
+  unitType: string; // "count" | "kg"
+  systemStock: number;
+  countedStock: number;
+  difference: number;
+  costPrice: number;
+  differenceValue: number;
+  createdAt: string;
+}
+
+export interface InventoryAudit {
+  id: string;
+  year: number;
+  auditDate: string;
+  status: AuditStatus;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  approver?: { id: string; name: string | null; email: string } | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  items: InventoryAuditItem[];
+}
+
+export interface NewInventoryAudit {
+  year: number;
+  auditDate?: string;
+  notes?: string;
+}
+
+export interface InventoryAuditStats {
+  totalProducts: number;
+  matchedCount: number;
+  shortageCount: number;
+  surplusCount: number;
+  shortageValue: number;
+  surplusValue: number;
+}
+
+/* ---------------- Zakat types ---------------- */
+
+export interface ZakatSettings {
+  id: string;
+  zakatRate: number;
+  nisabAmount: number;
+  haulStartDate: string | null;
+  cashOnHand: number;
+  receivables: number;
+  liabilities: number;
+  includeInventory: boolean;
+  includeCash: boolean;
+  includeReceivables: boolean;
+  valuationMethod: "cost" | "selling";
+  updatedAt: string;
+}
+
+export type ZakatStatus = "UNPAID" | "PAID";
+
+export interface ZakatRecord {
+  id: string;
+  year: number;
+  calculationDate: string;
+  inventoryValue: number;
+  cashValue: number;
+  receivablesValue: number;
+  liabilitiesValue: number;
+  zakatBase: number;
+  zakatRate: number;
+  zakatAmount: number;
+  status: ZakatStatus;
+  paidDate: string | null;
+  notes: string;
+  createdAt: string;
+}
+
+export interface ZakatCalculationInput {
+  year: number;
+  inventoryValue?: number;
+  cashValue?: number;
+  receivablesValue?: number;
+  liabilitiesValue?: number;
+  notes?: string;
+}
+
+// A computed zakat calculation result is identical in shape to a ZakatRecord.
+export type ZakatCalculationResult = ZakatRecord;
+
+/* ---------------- Supplier Payment types ---------------- */
+
+export type PaymentMethod = "Cash" | "Bank" | "Cheque" | "Other";
+
+export interface SupplierPayment {
+  id: string;
+  invoiceId: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: PaymentMethod;
+  notes: string;
+  userId: string | null;
+  user?: { id: string; name: string | null; email: string } | null;
+  createdAt: string;
+}
+
+export interface NewSupplierPayment {
+  amount: number;
+  paymentDate?: string;
+  paymentMethod: PaymentMethod;
+  notes?: string;
 }

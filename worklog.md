@@ -1995,3 +1995,124 @@ Added `adminApi.activateSubscription(id, durationDays, plan)` to `src/lib/api.ts
   * VLM confirmed all elements ✅
   * Clicked 365 days + Extend → toast "تم تفعيل الاشتراك بنجاح" ✅
   * No console errors ✅
+
+---
+Task ID: MODULES-1
+Agent: orchestrator + full-stack-developer
+Task: Build 3 new modules — Inventory Audit, Zakat System, Supplier Payments
+
+## Features
+
+### MODULE 1: Inventory Audit (الجرد السنوي)
+
+#### API Routes (5)
+- `GET  /api/inventory-audits` — list all audits for the store (includes items + approver).
+- `POST /api/inventory-audits` — create audit + auto-populate items from current products (snapshot of `systemStock`, `costPrice`, `unitType`, `barcode`, `productName`; `countedStock` defaults to `systemStock`; `difference = 0`; `differenceValue = 0`; status = "DRAFT").
+- `GET  /api/inventory-audits/:id` — single audit with items.
+- `PUT  /api/inventory-audits/:id` — update notes / status (DRAFT → COMPLETED only; APPROVED is locked to the approve endpoint).
+- `DELETE /api/inventory-audits/:id` — only allowed if status is DRAFT.
+- `PUT  /api/inventory-audits/:id/items` — bulk update `countedStock` for items; recomputes `difference = countedStock - systemStock` and `differenceValue = difference * costPrice` server-side. Refuses to modify an APPROVED audit.
+- `POST /api/inventory-audits/:id/approve` — sets status → APPROVED, stamps `approvedAt` + `approvedBy = session.userId`. **Transaction**: for every audit item, updates `product.stock = item.countedStock`. Only allowed if status is COMPLETED.
+- `GET  /api/inventory-audits/:id/stats` — returns `{ totalProducts, matchedCount, shortageCount, surplusCount, shortageValue, surplusValue }`.
+
+#### View — `src/components/views/inventory-audit.tsx`
+- `export function InventoryAudit()`.
+- Gradient header (emerald→teal) with "الجرد السنوي / Annual Inventory Audit" + "Create New Audit" button.
+- Audit list: each card shows year, audit date, status badge, item count, notes; click to open detail. DRAFT allows delete.
+- Status badges: DRAFT=amber, COMPLETED=slate, APPROVED=emerald.
+- Detail view (animated): back button, status badge, "Print Audit", "Save Counted", "Mark Completed", "Approve Audit" buttons.
+  - Stats row: total products, matched, shortage count+value, surplus count+value (live-computed from local draft).
+  - Items table (desktop) + cards (mobile): product name, barcode, unit type (count/kg with suffix), system stock, editable counted-stock input, difference (color-coded), cost price, difference value (color-coded).
+  - "حفظ" → items PUT; "اعتماد" → approve API (with AlertDialog confirmation); "طباعة" → window.print().
+  - Kg products accept decimal inputs (step=0.001) and show "كغ" suffix; count products use step=1.
+
+### MODULE 2: Zakat System (نظام الزكاة)
+
+#### API Routes (4)
+- `GET /api/zakat/settings` — returns ZakatSettings (auto-creates with defaults if missing).
+- `PUT /api/zakat/settings` — updates any subset of fields (rate, nisab, haul start date, cash, receivables, liabilities, toggles, valuation method).
+- `POST /api/zakat/calculate` — body `{ year, inventoryValue?, cashValue?, receivablesValue?, liabilitiesValue?, notes? }`. Auto-computes inventoryValue from `sum(product.{costPrice|price} * product.stock)` (depends on `valuationMethod`), and falls back to settings for cash/receivables/liabilities. Computes `zakatBase = includes * (inventory + cash + receivables) - liabilities`, `zakatAmount = zakatBase * rate/100`. Saves as ZakatRecord (status=UNPAID).
+- `GET /api/zakat/records` — list records (newest first).
+- `PUT /api/zakat/records/:id` — mark as PAID with optional paidDate.
+
+#### View — `src/components/views/zakat.tsx`
+- `export function Zakat()`.
+- Gradient header with `HandHeart` icon + "الزكاة / Zakat".
+- Tabs: Calculator / Records / Settings.
+- **Calculator**: year selector + 4 input cards (inventory/cash/receivables/liabilities with currency prefix). Big result card for Zakat Base (slate) + Zakat Amount (emerald). Save + Print buttons. Notes textarea.
+- **Records**: desktop table + mobile list. Columns: year, calculation date, base, rate, amount, status badge (PAID=emerald, UNPAID=amber), "Mark as Paid" button (AlertDialog confirmation).
+- **Settings**: form with all settings fields including 3 switches for include toggles, valuation method Select (cost/selling), haul start date input, save button.
+
+### MODULE 3: Supplier Payments (تسجيل دفعات الموردين)
+
+#### API Routes (2)
+- `GET  /api/supplier-invoices/:id/payments` — list all payments for an invoice (with user info).
+- `POST /api/supplier-invoices/:id/payments` — body `{ amount, paymentDate?, paymentMethod, notes? }`. Validates amount > 0 and amount ≤ (totalAmount - paidAmount). In a **transaction**: creates SupplierPayment, increments invoice.paidAmount, recomputes invoice.status (PAID/PARTIAL/UNPAID). Returns 201.
+- `DELETE /api/supplier-invoices/:id/payments/:paymentId` — reverses the effect (subtracts amount from paidAmount, recomputes status). Transaction.
+
+#### Updated Suppliers view
+- Summary cards (top of page): total invoices value, total paid, total remaining, count of PAID/PARTIAL/UNPAID (4 cards replacing 3).
+- Invoice viewer dialog: filter buttons (All/PAID/PARTIAL/UNPAID) + search input (by invoice no or supplier name).
+- Each invoice entry:
+  - Status badge with proper colors (PAID=emerald, PARTIAL=amber, UNPAID=red).
+  - "Record Payment" button (disabled if PAID) → opens payment dialog.
+  - Collapsible chevron → loads payment history table (date, amount, method badge with translated label, notes, recorded by user, delete payment button).
+- Payment dialog: invoice summary (total/paid/remaining), amount input (defaults to remaining balance), date, method (Cash/Bank/Cheque/Other), notes.
+- Delete payment confirmation dialog (reverses paidAmount on server).
+
+### 4. Cross-cutting changes
+
+**`src/lib/types.ts`** — Added to ViewKey: `"inventoryAudit" | "zakat"`. Added interfaces: `InventoryAudit`, `InventoryAuditItem`, `NewInventoryAudit`, `InventoryAuditStats`, `ZakatSettings`, `ZakatRecord`, `ZakatCalculationInput`, `ZakatCalculationResult` (type alias for ZakatRecord), `SupplierPayment`, `NewSupplierPayment`, `PaymentMethod`. Added `AuditStatus` and `ZakatStatus` union types.
+
+**`src/lib/api.ts`** — Added three new API client objects: `inventoryAuditApi` (list, create, get, update, delete, updateItems, approve, stats), `zakatApi` (getSettings, updateSettings, calculate, getRecords, markPaid), `supplierPaymentsApi` (list, create, delete).
+
+**`src/lib/i18n.ts`** — Added 90+ new translation keys covering all inventory-audit, zakat, and supplier-payment labels in both `ar` and `en` locales. Also added `status` key.
+
+**`src/components/app-shell.tsx`** — Imported `ClipboardCheck` + `HandHeart` icons. Added 2 new nav items: `inventoryAudit` (ownerOnly, with `annualAuditDesc` description) and `zakat` (ownerOnly, with `zakatDesc`). Wired both into the `renderView` switch and added them to the `labelKey`/`descKey` union types.
+
+## Technical notes
+- All quantities use Float (Prisma SQLite doesn't support Decimal well).
+- All API routes use `requireStoreOwner()` for tenant isolation and `handleRouteError()` for consistent error mapping.
+- Audit approval + payment create/delete use `db.$transaction()` for atomicity.
+- AuditDetail component is keyed by `auditId` so local itemDraft state naturally resets when switching audits — no setState-in-effect pattern.
+- Zakat Calculator + Settings tabs split into outer loader + inner form components, mounted only after settings load (avoids setState-in-effect lint rule).
+- Emerald theme throughout. NO indigo/blue colors used (PaymentMethod badges use emerald/teal/amber/slate).
+- All shadcn/ui: Card, Button, Input, Label, Badge, Dialog, AlertDialog, Table, Select, Tabs, Switch, Textarea, Collapsible.
+- framer-motion for entrance animations.
+- Mobile-first responsive design with dedicated desktop table + mobile card layouts in audit detail and zakat records.
+
+## Verification
+- `bun run lint`: clean (exit 0).
+- Dev server compiles successfully on every code change (no errors in dev.log).
+- All new Prisma models already in schema from previous task; client is up to date.
+- No runtime errors detected.
+
+---
+Task ID: MODULES-1-FINAL
+Agent: orchestrator (3 new modules verification)
+Task: Verify inventory audit + zakat + supplier payments modules
+
+## Verification Results:
+- `bun run lint`: clean (exit 0).
+- Dev server: compiles cleanly, no runtime errors.
+
+### Module 1: Inventory Audit (الجرد السنوي)
+- Created audit via API: 5 products auto-populated with system stock, difference=0, status=DRAFT ✅
+- Audit page shows: list with 1 audit, year 2026, status "مسودة" (DRAFT), 5 items ✅
+- Detail view: table with all products showing name, barcode, unit (كغ/عدد), system stock, editable counted stock, difference, cost price, difference value ✅
+- Stats: total products=5, matched=5, shortage=0, surplus=0 ✅
+- Buttons: حفظ الكميات (save), مكتمل (complete), طباعة (print) ✅
+
+### Module 2: Zakat (الزكاة)
+- Settings API: auto-created with defaults (rate=2.5%, includeInventory=true) ✅
+- Calculate API: computed inventory value=15825, zakatBase=15825, zakatAmount=395.625 ✅
+- Zakat page: 3 tabs (الحساب/السجل/الإعدادات), year selector, editable fields, auto-compute button ✅
+- Shows: inventory value, cash, receivables, liabilities, zakat base, zakat amount ✅
+
+### Module 3: Supplier Payments (تسجيل دفعات الموردين)
+- Payment API: created payment of 100 on invoice (total=225) → status changed from UNPAID to PARTIAL, paidAmount=100 ✅
+- Payment history: 1 payment recorded with amount, method, notes ✅
+- Suppliers page: summary cards showing total invoices=2, total paid=550, remaining=125, PAID=1, PARTIAL=1 ✅
+- Filter buttons (All/PAID/PARTIAL/UNPAID) visible ✅
+
+### All 3 modules verified working via API + browser.
