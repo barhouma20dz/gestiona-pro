@@ -231,7 +231,7 @@ export function SettingsView() {
                 {shop.name}
               </p>
               <p className="text-sm text-muted-foreground">
-                SwiftBill POS {APP_VERSION}
+                Gestiona Pro {APP_VERSION}
               </p>
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
                 <Badge variant="secondary" className="gap-1">
@@ -574,7 +574,7 @@ export function SettingsView() {
       <div className="print-receipt hidden" aria-hidden>
         <div style={{ fontFamily: "monospace", fontSize: 12, lineHeight: 1.4 }}>
           <p style={{ textAlign: "center", fontWeight: 700, fontSize: 14 }}>
-            {shop.name?.toUpperCase() || "SWIFTBILL POS"}
+            {shop.name?.toUpperCase() || "GESTIONA PRO"}
           </p>
           {shop.addressLine1 && (
             <p style={{ textAlign: "center" }}>{shop.addressLine1}</p>
@@ -586,7 +586,7 @@ export function SettingsView() {
             <p style={{ textAlign: "center" }}>Ph: {shop.phoneNumber}</p>
           )}
           <p style={{ borderTop: "1px dashed #999", margin: "8px 0" }} />
-          <p>This is a test print from SwiftBill POS.</p>
+          <p>This is a test print from Gestiona Pro.</p>
           <p style={{ borderTop: "1px dashed #999", margin: "8px 0" }} />
           <p style={{ textAlign: "center" }}>
             {shop.footerText || "Thank you, visit again!"}
@@ -821,7 +821,7 @@ function ExportProductsButton({ t }: { t: (k: "exportedProducts" | "failedExport
       const a = document.createElement("a");
       a.href = url;
       const stamp = new Date().toISOString().slice(0, 10);
-      a.download = `swiftbill-products-${stamp}.csv`;
+      a.download = `gestiona-products-${stamp}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

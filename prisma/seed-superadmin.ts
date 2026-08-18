@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 
-// Seed a SUPER_ADMIN account for SwiftBill POS.
+// Seed a SUPER_ADMIN account for Gestiona Pro.
 // Run via `bun prisma/seed-superadmin.ts`.
 //
 // Email:    admin@swiftbill.pos
@@ -13,7 +13,7 @@ const ADMIN_EMAIL = "admin@swiftbill.pos";
 const ADMIN_PASSWORD = "admin123";
 
 async function main() {
-  console.log("Seeding SwiftBill POS super admin...");
+  console.log("Seeding Gestiona Pro super admin...");
 
   const existing = await db.user.findUnique({
     where: { email: ADMIN_EMAIL },

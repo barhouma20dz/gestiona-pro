@@ -29,7 +29,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
     const titleSize = is58 ? "text-sm" : "text-base";
 
     // Digital receipt QR payload — encodes receipt summary as a URL fragment
-    const qrData = `swiftbill://receipt/${sale.id}?no=${encodeURIComponent(
+    const qrData = `gestiona://receipt/${sale.id}?no=${encodeURIComponent(
       sale.receiptNo
     )}&total=${sale.total.toFixed(2)}&items=${sale.itemCount}`;
 
@@ -130,7 +130,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         <div className="text-center">
           <p>{shop.footerText || "Thank you!"}</p>
           <p className="mt-1 text-[10px] text-black/50">
-            Powered by SwiftBill POS
+            Powered by Gestiona Pro
           </p>
         </div>
       </div>
