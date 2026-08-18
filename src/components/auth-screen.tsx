@@ -437,11 +437,6 @@ export function AuthScreen() {
               )}
             </div>
           </div>
-
-          {/* Demo admin hint */}
-          <p className="mt-4 text-center text-xs text-white/70">
-            {t("authDemoHint")}
-          </p>
         </motion.div>
       </div>
     </div>

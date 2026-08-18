@@ -1,4 +1,4 @@
-// SwiftBill POS — Multi-Tenant SaaS Store Management System
+// Gestiona Pro — Multi-Tenant SaaS Store Management System
 // Architecture: Row-level data isolation via storeId on all tenant tables
 
 generator client {

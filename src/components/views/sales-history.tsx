@@ -287,7 +287,7 @@ export function SalesHistory() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `swiftbill-sales-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `gestiona-sales-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -300,12 +300,12 @@ export function SalesHistory() {
     setReceiptOpen(true);
   };
 
-  // Handle receipt QR scan — parse swiftbill://receipt/{id} and look up the sale
+  // Handle receipt QR scan — parse gestiona://receipt/{id} and look up the sale
   const handleReceiptScan = (scannedValue: string) => {
-    // Try to parse the QR data: swiftbill://receipt/{id}?no=...&total=...
+    // Try to parse the QR data: gestiona://receipt/{id}?no=...&total=...
     let saleId: string | null = null;
 
-    // Match swiftbill://receipt/{id}
+    // Match gestiona://receipt/{id}
     const match = scannedValue.match(/receipt\/([^?]+)/);
     if (match) {
       saleId = match[1];

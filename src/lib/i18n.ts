@@ -1,4 +1,4 @@
-// SwiftBill POS — Internationalization (i18n) translations
+// Gestiona Pro — Internationalization (i18n) translations
 // Supports Arabic (ar) and English (en)
 
 export type Locale = "ar" | "en";
@@ -6,7 +6,7 @@ export type Locale = "ar" | "en";
 export const translations = {
   ar: {
     // App
-    appName: "سويفت بيل",
+    appName: "Gestiona Pro",
     appTagline: "نظام نقاط البيع",
     // Navigation
     dashboard: "لوحة التحكم",
@@ -266,7 +266,7 @@ export const translations = {
     adminOnly: "للمسؤول فقط",
     exportProducts: "تصدير المنتجات (CSV)",
     about: "حول",
-    aboutDesc: "تطبيق سويفت بيل — نظام نقاط بيع للمتاجر. مبني بـ Next.js و Prisma و Tailwind CSS",
+    aboutDesc: "تطبيق جيستيون برو — نظام نقاط بيع للمتاجر. مبني بـ Next.js و Prisma و Tailwind CSS",
     // Common
     save: "حفظ",
     loading: "جارٍ التحميل...",
@@ -817,7 +817,7 @@ export const translations = {
     cannotExceedRemaining: "المبلغ يتجاوز المتبقي على الفاتورة",
   },
   en: {
-    appName: "SwiftBill",
+    appName: "Gestiona Pro",
     appTagline: "POS System",
     dashboard: "Dashboard",
     posTerminal: "POS Terminal",
@@ -1070,7 +1070,7 @@ export const translations = {
     adminOnly: "Admin only",
     exportProducts: "Export Products (CSV)",
     about: "About",
-    aboutDesc: "SwiftBill POS — a retail Point of Sale system. Built with Next.js, Prisma, and Tailwind CSS",
+    aboutDesc: "Gestiona Pro — a retail Point of Sale system. Built with Next.js, Prisma, and Tailwind CSS",
     save: "Save",
     loading: "Loading...",
     back: "Back",

@@ -604,7 +604,7 @@ export function AppShell() {
         {/* Status footer (always pinned) */}
         <footer className="flex h-9 shrink-0 items-center justify-between border-t bg-card px-4 text-[11px] text-muted-foreground md:px-6">
           <div className="flex items-center gap-3">
-            <span className="font-medium text-foreground/70">{t("appName")} POS</span>
+            <span className="font-medium text-foreground/70">{t("appName")}</span>
             <span className="hidden sm:inline">·</span>
             <span className="hidden sm:inline">
               {isSuperAdmin
