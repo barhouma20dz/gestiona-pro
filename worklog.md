@@ -2116,3 +2116,41 @@ Task: Verify inventory audit + zakat + supplier payments modules
 - Filter buttons (All/PAID/PARTIAL/UNPAID) visible ✅
 
 ### All 3 modules verified working via API + browser.
+
+---
+Task ID: DEPLOY-NEON-GITHUB
+Agent: orchestrator
+Task: Switch to PostgreSQL (Neon) + push to GitHub
+
+## Changes:
+
+### 1. Database switched from SQLite to PostgreSQL (Neon)
+- Updated `prisma/schema.prisma`: `provider = "postgresql"`
+- Updated `.env`: `DATABASE_URL="postgresql://neondb_owner:...@ep-broad-poetry...neon.tech/neondb?sslmode=require"`
+- Updated `src/lib/db.ts`: added explicit `datasources.db.url` from `process.env.DATABASE_URL`
+- Installed `pg` package
+- Ran `prisma db push --accept-data-loss` → all tables created on Neon ✅
+- Seeded super admin on Neon ✅
+
+### 2. GitHub Repository Created
+- Created repo: https://github.com/barhouma20dz/swiftbill-pos
+- All code pushed to `main` branch ✅
+- 158 files tracked (no .env, no node_modules, no db/)
+
+### 3. Verified on Neon
+- Login as super admin: ✅ `admin@swiftbill.pos` / `admin123`
+- Register new store: ✅ `nour@store.com` / `123456` → trial subscription
+- All API endpoints working with PostgreSQL
+
+## Next Steps for Vercel:
+1. Go to https://vercel.com → Import from GitHub → select `barhouma20dz/swiftbill-pos`
+2. Add Environment Variables:
+   - `DATABASE_URL` = `postgresql://neondb_owner:npg_lqZ37XOTAKbt@ep-broad-poetry-b13vghx7.c-5.eu-central-1.aws.neon.tech/neondb?sslmode=require`
+   - `JWT_SECRET` = `swiftbill-pos-jwt-secret-2024-secure`
+3. Deploy
+
+## Credentials:
+- Super Admin: admin@swiftbill.pos / admin123
+- Store Owner: nour@store.com / 123456
+- GitHub: https://github.com/barhouma20dz/swiftbill-pos
+- Neon DB: ep-broad-poetry-b13vghx7.c-5.eu-central-1.aws.neon.tech/neondb
