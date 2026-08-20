@@ -6,7 +6,7 @@ export type Locale = "ar" | "en";
 export const translations = {
   ar: {
     // App
-    appName: "سويفت بيل",
+    appName: "Gestiona Pro",
     appTagline: "نظام إدارة المتاجر",
     // Navigation
     dashboard: "لوحة التحكم",
@@ -824,7 +824,7 @@ export const translations = {
     cannotExceedRemaining: "المبلغ يتجاوز المتبقي على الفاتورة",
   },
   en: {
-    appName: "SwiftBill",
+    appName: "Gestiona Pro",
     appTagline: "Store Management",
     dashboard: "Dashboard",
     posTerminal: "POS Terminal",
