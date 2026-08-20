@@ -18,10 +18,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "سويفت بيل — نظام نقاط البيع",
+  title: "Gestiona Pro — نظام احترافي لإدارة المتاجر",
   description: "Gestiona Pro — نظام احترافي متكامل لتسيير وإدارة المتاجر. إدارة المبيعات، المخزون، الفواتير، الموردين والجرد بسهولة.",
-  keywords: ["POS", "نقاط البيع", "فوترة", "تجزئة", "فاتورة", "باركود"],
-  authors: [{ name: "SwiftBill" }],
+  keywords: ["POS", "نقاط البيع", "فوترة", "تجزئة", "فاتورة", "باركود", "Gestiona Pro"],
+  authors: [{ name: "FlashNet20DZ" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
