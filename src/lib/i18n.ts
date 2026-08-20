@@ -1,4 +1,4 @@
-// Gestiona Pro — Internationalization (i18n) translations
+// SwiftBill POS — Internationalization (i18n) translations
 // Supports Arabic (ar) and English (en)
 
 export type Locale = "ar" | "en";
@@ -6,8 +6,8 @@ export type Locale = "ar" | "en";
 export const translations = {
   ar: {
     // App
-    appName: "Gestiona Pro",
-    appTagline: "نظام نقاط البيع",
+    appName: "سويفت بيل",
+    appTagline: "نظام إدارة المتاجر",
     // Navigation
     dashboard: "لوحة التحكم",
     posTerminal: "نقطة البيع",
@@ -266,7 +266,14 @@ export const translations = {
     adminOnly: "للمسؤول فقط",
     exportProducts: "تصدير المنتجات (CSV)",
     about: "حول",
-    aboutDesc: "تطبيق جيستيون برو — نظام نقاط بيع للمتاجر. مبني بـ Next.js و Prisma و Tailwind CSS",
+    app: "التطبيق",
+    version: "الإصدار",
+    developer: "المطور",
+    phone: "الهاتف",
+    stack: "التقنيات",
+    docs: "الوثائق",
+    viewUserGuide: "عرض دليل المستخدم (داخل التطبيق)",
+    aboutDesc: "Gestiona Pro — نظام احترافي متكامل لتسيير وإدارة المتاجر، يساعدك على إدارة المبيعات، المخزون، الفواتير، الموردين والجرد بسهولة.",
     // Common
     save: "حفظ",
     loading: "جارٍ التحميل...",
@@ -434,7 +441,7 @@ export const translations = {
     authHaveAccount: "لديك حساب بالفعل؟",
     authSignUpHere: "سجّل هنا",
     authSignInHere: "ادخل من هنا",
-    authTagline: "نظام نقاط البيع للمنشآت",
+    authTagline: "نظام احترافي لإدارة المتاجر",
     authWelcomeBack: "مرحباً بعودتك",
     authCreateAccount: "أنشئ متجرك في دقيقة",
     authSelectBusinessType: "اختر نوع نشاطك التجاري",
@@ -817,8 +824,8 @@ export const translations = {
     cannotExceedRemaining: "المبلغ يتجاوز المتبقي على الفاتورة",
   },
   en: {
-    appName: "Gestiona Pro",
-    appTagline: "POS System",
+    appName: "SwiftBill",
+    appTagline: "Store Management",
     dashboard: "Dashboard",
     posTerminal: "POS Terminal",
     products: "Products",
@@ -1070,7 +1077,14 @@ export const translations = {
     adminOnly: "Admin only",
     exportProducts: "Export Products (CSV)",
     about: "About",
-    aboutDesc: "Gestiona Pro — a retail Point of Sale system. Built with Next.js, Prisma, and Tailwind CSS",
+    app: "App",
+    version: "Version",
+    developer: "Developer",
+    phone: "Phone",
+    stack: "Stack",
+    docs: "Docs",
+    viewUserGuide: "View user guide (in-app)",
+    aboutDesc: "Gestiona Pro — a professional integrated system for store management, helping you manage sales, inventory, invoices, suppliers, and auditing with ease. Built with Next.js, Prisma, and Tailwind CSS",
     save: "Save",
     loading: "Loading...",
     back: "Back",
@@ -1236,7 +1250,7 @@ export const translations = {
     authHaveAccount: "Already have an account?",
     authSignUpHere: "Sign up",
     authSignInHere: "Sign in",
-    authTagline: "SaaS POS System for Stores",
+    authTagline: "Professional Store Management System",
     authWelcomeBack: "Welcome back",
     authCreateAccount: "Set up your store in a minute",
     authSelectBusinessType: "Select your business type",
