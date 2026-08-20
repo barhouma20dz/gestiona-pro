@@ -1,4 +1,4 @@
-// Formatting helpers for Gestiona Pro
+// Formatting helpers for SwiftBill POS
 
 export function formatMoney(amount: number, currency = "₹"): string {
   const value = Number.isFinite(amount) ? amount : 0;

@@ -52,6 +52,8 @@ import {
 
 const AUTOPRINT_KEY = "swiftbill_autoprint";
 const APP_VERSION = "v1.0.0";
+const DEVELOPER_NAME = "FlashNet20DZ";
+const DEVELOPER_PHONE = "0664451250";
 
 const cardMotion = {
   initial: { opacity: 0, y: 8 },
@@ -542,15 +544,23 @@ export function SettingsView() {
       >
         <Card>
           <CardHeader>
-            <CardTitle>{t("about")}</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              {t("about")}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="grid grid-cols-1 gap-1 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <span className="text-muted-foreground">{t("app")}</span>
-              <span className="sm:col-span-2 font-medium">{t("appName")} POS</span>
+              <span className="sm:col-span-2 font-medium">{t("appName")}</span>
 
               <span className="text-muted-foreground">{t("version")}</span>
               <span className="sm:col-span-2 font-medium">{APP_VERSION}</span>
+
+              <span className="text-muted-foreground">{t("developer")}</span>
+              <span className="sm:col-span-2 font-medium">{DEVELOPER_NAME}</span>
+
+              <span className="text-muted-foreground">{t("phone")}</span>
+              <span className="sm:col-span-2 font-medium" dir="ltr">{DEVELOPER_PHONE}</span>
 
               <span className="text-muted-foreground">{t("stack")}</span>
               <span className="sm:col-span-2 font-medium">
@@ -563,7 +573,7 @@ export function SettingsView() {
               </span>
             </div>
             <Separator />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs leading-relaxed text-muted-foreground">
               {t("aboutDesc")}
             </p>
           </CardContent>
@@ -821,7 +831,7 @@ function ExportProductsButton({ t }: { t: (k: "exportedProducts" | "failedExport
       const a = document.createElement("a");
       a.href = url;
       const stamp = new Date().toISOString().slice(0, 10);
-      a.download = `gestiona-products-${stamp}.csv`;
+      a.download = `swiftbill-products-${stamp}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
