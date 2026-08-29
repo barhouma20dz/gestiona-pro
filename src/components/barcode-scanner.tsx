@@ -19,7 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/lib/language-context";
-import { toast } from "sonner";
+import { playScanBeep, vibrateScan } from "@/lib/scan-feedback";
 
 interface BarcodeScannerDialogProps {
   open: boolean;
@@ -55,7 +55,6 @@ function ScannerBody({
 }) {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const readerRef = useRef<unknown>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -64,6 +63,8 @@ function ScannerBody({
 
   useEffect(() => {
     let cancelled = false;
+    let lastCode = "";
+    let lastAt = 0;
 
     async function startCamera() {
       try {
@@ -73,6 +74,7 @@ function ScannerBody({
 
         if (!videoRef.current) return;
 
+        // Restrict to retail formats → faster + fewer misreads.
         const hints = new Map();
         hints.set(DecodeHintType.POSSIBLE_FORMATS, [
           BarcodeFormat.EAN_13,
@@ -83,32 +85,49 @@ function ScannerBody({
           BarcodeFormat.CODE_39,
           BarcodeFormat.CODE_93,
           BarcodeFormat.ITF,
+          BarcodeFormat.CODABAR,
           BarcodeFormat.QR_CODE,
           BarcodeFormat.DATA_MATRIX,
         ]);
+        hints.set(DecodeHintType.TRY_HARDER, true);
 
-        const reader = new BrowserMultiFormatReader(hints);
-        readerRef.current = reader;
+        // Speed fix: zxing's default delayBetweenScanAttempts is 500ms
+        // (only 2 decode tries/second). 30ms → ~30 tries/second.
+        const reader = new BrowserMultiFormatReader(hints, {
+          delayBetweenScanAttempts: 30,
+          delayBetweenScanSuccess: 300,
+        });
 
-        const controls = await reader.decodeFromVideoDevice(
-          undefined, // use default camera (environment on mobile)
+        const controls = await reader.decodeFromConstraints(
+          {
+            video: {
+              facingMode: "environment",
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          },
           videoRef.current,
           (result, _err) => {
-            if (result && !cancelled) {
-              const text = result.getText();
-              if (text) {
-                setDetectedCode(text);
-                // Vibrate on mobile
-                if (navigator.vibrate) navigator.vibrate(100);
-                // Auto-submit after short delay
-                setTimeout(() => {
-                  if (!cancelled) {
-                    onScan(text);
-                    onOpenChange(false);
-                  }
-                }, 500);
+            if (!result || cancelled) return;
+            const text = result.getText();
+            if (!text) return;
+            const now = Date.now();
+            // Ignore the same code re-detected within 1.5s (staying in frame).
+            if (text === lastCode && now - lastAt < 1500) return;
+            lastCode = text;
+            lastAt = now;
+
+            // Instant feedback, then submit quickly (was 500ms).
+            playScanBeep(true);
+            vibrateScan(true);
+            setDetectedCode(text);
+            setTimeout(() => {
+              if (!cancelled) {
+                onScan(text);
+                onOpenChange(false);
               }
-            }
+            }, 150);
           }
         );
 
@@ -141,6 +160,8 @@ function ScannerBody({
   const submitManual = () => {
     const code = manualCode.trim();
     if (!code) return;
+    playScanBeep(true);
+    vibrateScan(true);
     onScan(code);
     setManualCode("");
     onOpenChange(false);
@@ -242,7 +263,11 @@ function ScannerBody({
         </label>
         <div className="flex gap-2">
           <Input
-            autoFocus={!!cameraError}
+            autoFocus={
+              !!cameraError ||
+              (typeof window !== "undefined" &&
+                window.matchMedia("(pointer: fine)").matches)
+            }
             value={manualCode}
             placeholder="e.g. 8901030867531"
             onChange={(e) => setManualCode(e.target.value)}
@@ -250,6 +275,8 @@ function ScannerBody({
               if (e.key === "Enter") submitManual();
             }}
             className="font-mono"
+            inputMode="text"
+            autoComplete="off"
           />
           <Button type="button" onClick={submitManual} disabled={!manualCode.trim()}>
             <Check className="h-4 w-4" />

@@ -1069,6 +1069,18 @@ export function ProductManager() {
         onScan={(code) => {
           setForm((f) => ({ ...f, barcode: code }));
           toast.success(t("barcodeScanned"));
+          // Instant duplicate check — avoids a failed save later.
+          const duplicate = (products ?? []).find(
+            (p) =>
+              p.barcode.toLowerCase() === code.toLowerCase() &&
+              p.id !== editing?.id
+          );
+          if (duplicate) {
+            toast.warning(t("barcodeAlreadyExists"), {
+              description: `${t("product")}: ${duplicate.name}`,
+              duration: 5000,
+            });
+          }
         }}
       />
 
