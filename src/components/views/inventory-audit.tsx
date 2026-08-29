@@ -178,7 +178,7 @@ export function InventoryAudit() {
           </div>
           <Button
             onClick={() => setCreateOpen(true)}
-            className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+            className="bg-card text-primary shadow-md hover:bg-primary/10"
           >
             <Plus className="h-4 w-4" />
             {t("createAudit")}
@@ -295,7 +295,7 @@ export function InventoryAudit() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-red-600 hover:bg-red-500/10"
+                            className="h-8 w-8 text-red-600 dark:text-red-400 hover:bg-red-500/10"
                             onClick={() => setDeleteTarget(a)}
                             aria-label={t("delete")}
                           >
@@ -585,7 +585,7 @@ function AuditDetail({ auditId, onBack, onApprove }: AuditDetailProps) {
       label: t("shortageProducts"),
       value: `${s.shortageCount} · ${formatMoney(s.shortageValue, currency)}`,
       icon: TrendingDown,
-      tint: "bg-red-500/15 text-red-600",
+      tint: "bg-red-500/15 text-red-600 dark:text-red-400",
     },
     {
       label: t("surplusProducts"),

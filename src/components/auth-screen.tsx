@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 import type { TranslationKey } from "@/lib/i18n";
 
 type Mode = "login" | "register";
@@ -73,7 +74,7 @@ function ModeToggle({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void 
         className={cn(
           "rounded-lg px-3 py-2 text-sm font-semibold transition-all",
           mode === "login"
-            ? "bg-white text-emerald-700 shadow-md"
+            ? "bg-card text-primary shadow-md"
             : "text-white/80 hover:text-white"
         )}
       >
@@ -85,7 +86,7 @@ function ModeToggle({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void 
         className={cn(
           "rounded-lg px-3 py-2 text-sm font-semibold transition-all",
           mode === "register"
-            ? "bg-white text-emerald-700 shadow-md"
+            ? "bg-card text-primary shadow-md"
             : "text-white/80 hover:text-white"
         )}
       >
@@ -97,7 +98,7 @@ function ModeToggle({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void 
 
 function FieldIcon({ icon: Icon }: { icon: typeof Mail }) {
   return (
-    <div className="pointer-events-none absolute inset-y-0 start-0 flex items-center ps-3 text-gray-500">
+    <div className="pointer-events-none absolute inset-y-0 start-0 flex items-center ps-3 text-muted-foreground">
       <Icon className="h-4 w-4" />
     </div>
   );
@@ -194,12 +195,17 @@ export function AuthScreen() {
   return (
     <div
       dir={isRTL ? "rtl" : "ltr"}
-      className="relative min-h-screen overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800"
+      className="relative min-h-screen overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 dark:from-emerald-900 dark:via-emerald-950 dark:to-teal-950 dark:text-foreground"
     >
       {/* Decorative blurred orbs */}
       <div className="pointer-events-none absolute -top-32 -start-32 h-96 w-96 rounded-full bg-emerald-400/30 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-40 -end-24 h-[28rem] w-[28rem] rounded-full bg-teal-300/25 blur-3xl" />
-      <div className="pointer-events-none absolute top-1/3 end-1/4 h-72 w-72 rounded-full bg-emerald-200/20 blur-3xl" />
+      <div className="pointer-events-none absolute top-1/3 end-1/4 h-72 w-72 rounded-full bg-emerald-200/20 blur-3xl dark:bg-emerald-400/10" />
+
+      {/* Floating theme toggle (day/night) */}
+      <div className="absolute end-4 top-4 z-20">
+        <ThemeToggle />
+      </div>
 
       <div className="relative z-10 flex min-h-screen items-center justify-center p-4 sm:p-6">
         <motion.div
@@ -214,15 +220,15 @@ export function AuthScreen() {
           </div>
 
           {/* Card */}
-          <div className="rounded-3xl bg-white/95 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl">
+          <div className="rounded-3xl bg-card/95 shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl">
             <div className="p-6 sm:p-8">
               {/* Heading */}
               <div className="mb-6 text-center">
-                <h2 className="text-xl font-bold text-black">
+                <h2 className="text-xl font-bold text-card-foreground">
                   {mode === "login" ? t("authWelcomeBack") : t("authCreateAccount")}
                 </h2>
                 {mode === "register" && (
-                  <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                  <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary ring-1 ring-primary/20">
                     <Sparkles className="h-3.5 w-3.5" />
                     {t("authTrialBadge")}
                   </span>
@@ -244,7 +250,7 @@ export function AuthScreen() {
                       transition={{ duration: 0.25 }}
                       className="space-y-1.5 overflow-hidden"
                     >
-                      <Label htmlFor="storeName" className="text-sm font-medium text-black">
+                      <Label htmlFor="storeName" className="text-sm font-medium text-card-foreground">
                         {t("authStoreName")}
                       </Label>
                       <div className="relative">
@@ -256,7 +262,7 @@ export function AuthScreen() {
                           value={storeName}
                           onChange={(e) => setStoreName(e.target.value)}
                           placeholder={t("authStoreName")}
-                          className="ps-9 text-black placeholder:text-gray-400"
+                          className="ps-9 text-card-foreground placeholder:text-muted-foreground/60"
                           disabled={loading}
                         />
                       </div>
@@ -274,7 +280,7 @@ export function AuthScreen() {
                       transition={{ duration: 0.25 }}
                       className="space-y-1.5 overflow-hidden"
                     >
-                      <Label htmlFor="businessType" className="text-sm font-medium text-black">
+                      <Label htmlFor="businessType" className="text-sm font-medium text-card-foreground">
                         {t("authBusinessType")}
                       </Label>
                       <Select
@@ -310,7 +316,7 @@ export function AuthScreen() {
                       transition={{ duration: 0.25 }}
                       className="space-y-1.5 overflow-hidden"
                     >
-                      <Label htmlFor="phone" className="text-sm font-medium text-black">
+                      <Label htmlFor="phone" className="text-sm font-medium text-card-foreground">
                         {t("authPhone")}
                       </Label>
                       <div className="relative">
@@ -322,7 +328,7 @@ export function AuthScreen() {
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
                           placeholder={t("authPhone")}
-                          className="ps-9 text-black placeholder:text-gray-400"
+                          className="ps-9 text-card-foreground placeholder:text-muted-foreground/60"
                           disabled={loading}
                           dir="ltr"
                         />
@@ -332,7 +338,7 @@ export function AuthScreen() {
                 </AnimatePresence>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-sm font-medium text-black">
+                  <Label htmlFor="email" className="text-sm font-medium text-card-foreground">
                     {t("authEmail")}
                   </Label>
                   <div className="relative">
@@ -344,7 +350,7 @@ export function AuthScreen() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@example.com"
-                      className="ps-9 text-black placeholder:text-gray-400"
+                      className="ps-9 text-card-foreground placeholder:text-muted-foreground/60"
                       disabled={loading}
                       dir="ltr"
                     />
@@ -352,7 +358,7 @@ export function AuthScreen() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="password" className="text-sm font-medium text-black">
+                  <Label htmlFor="password" className="text-sm font-medium text-card-foreground">
                     {t("authPassword")}
                   </Label>
                   <div className="relative">
@@ -366,7 +372,7 @@ export function AuthScreen() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="ps-9 text-black placeholder:text-gray-400"
+                      className="ps-9 text-card-foreground placeholder:text-muted-foreground/60"
                       disabled={loading}
                       dir="ltr"
                     />
@@ -381,7 +387,7 @@ export function AuthScreen() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
                       role="alert"
-                      className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 ring-1 ring-red-200"
+                      className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive ring-1 ring-destructive/25"
                     >
                       {error}
                     </motion.div>
@@ -414,14 +420,14 @@ export function AuthScreen() {
                 </Button>
 
                 {/* Toggle link */}
-                <div className="pt-2 text-center text-sm text-gray-700">
+                <div className="pt-2 text-center text-sm text-muted-foreground">
                   {mode === "login" ? (
                     <>
                       {t("authNoAccount")}{" "}
                       <button
                         type="button"
                         onClick={() => switchMode("register")}
-                        className="font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                        className="font-semibold text-primary hover:text-primary/80 hover:underline"
                       >
                         {t("authSignUpHere")}
                       </button>
@@ -432,7 +438,7 @@ export function AuthScreen() {
                       <button
                         type="button"
                         onClick={() => switchMode("login")}
-                        className="font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                        className="font-semibold text-primary hover:text-primary/80 hover:underline"
                       >
                         {t("authSignInHere")}
                       </button>
@@ -443,7 +449,7 @@ export function AuthScreen() {
 
               {/* Trial features hint in register mode */}
               {mode === "register" && (
-                <p className="mt-5 text-center text-xs text-gray-600">
+                <p className="mt-5 text-center text-xs text-muted-foreground">
                   {t("authTrialFeatures")}
                 </p>
               )}

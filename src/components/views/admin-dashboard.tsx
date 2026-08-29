@@ -258,7 +258,7 @@ export function AdminDashboard() {
         label: t("expiredOrSuspended"),
         value: String(stats.expiredSubscriptions + stats.suspendedStores),
         icon: Ban,
-        tint: "bg-red-500/15 text-red-600",
+        tint: "bg-red-500/15 text-red-600 dark:text-red-400",
       },
       {
         label: t("estimatedRevenue"),
@@ -287,7 +287,7 @@ export function AdminDashboard() {
             onClick={() => {
               qc.invalidateQueries({ queryKey: ["admin"] });
             }}
-            className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+            className="bg-card text-primary shadow-md hover:bg-primary/10"
           >
             <RefreshCw className="h-4 w-4" />
             {t("refresh")}
@@ -581,7 +581,7 @@ export function AdminDashboard() {
                               className={cn(
                                 "font-semibold tabular-nums",
                                 days === 0
-                                  ? "text-red-600"
+                                  ? "text-red-600 dark:text-red-400"
                                   : days <= 7
                                     ? "text-amber-600"
                                     : "text-emerald-600"
@@ -707,7 +707,7 @@ export function AdminDashboard() {
                                   className={cn(
                                     "font-semibold",
                                     days === 0
-                                      ? "text-red-600"
+                                      ? "text-red-600 dark:text-red-400"
                                       : days <= 7
                                         ? "text-amber-600"
                                         : "text-emerald-600"
@@ -786,7 +786,7 @@ export function AdminDashboard() {
                       ? "text-emerald-600"
                       : subDialogStore.subscription.status === "TRIAL"
                       ? "text-amber-600"
-                      : "text-red-600"
+                      : "text-red-600 dark:text-red-400"
                   )}>
                     {subDialogStore.subscription.status}
                   </span>
@@ -888,7 +888,7 @@ export function AdminAccessDenied() {
     <div className="mx-auto w-full max-w-md">
       <Card className="gap-0 p-0">
         <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-          <div className="grid size-14 place-items-center rounded-full bg-red-500/10 text-red-600">
+          <div className="grid size-14 place-items-center rounded-full bg-red-500/10 text-red-600 dark:text-red-400">
             <Lock className="h-6 w-6" />
           </div>
           <p className="text-base font-semibold">{t("adminAccessDenied")}</p>

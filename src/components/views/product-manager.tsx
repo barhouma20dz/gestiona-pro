@@ -89,7 +89,7 @@ function stockBadge(
   const isKg = unitType === "kg";
   if (stock === 0) {
     return (
-      <Badge className="bg-red-500/15 text-red-600 border-red-500/30 hover:bg-red-500/15">
+      <Badge className="bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30 hover:bg-red-500/15">
         {t("outOfStock")}
       </Badge>
     );
@@ -430,7 +430,7 @@ export function ProductManager() {
           </div>
           <Button
             onClick={openAdd}
-            className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+            className="bg-card text-primary shadow-md hover:bg-primary/10"
           >
             <Plus className="h-4 w-4" />
             {t("addProduct")}
@@ -603,7 +603,7 @@ export function ProductManager() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-red-600 hover:bg-red-500/10 hover:text-red-700"
+                          className="h-8 w-8 text-red-600 dark:text-red-400 hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300"
                           onClick={() => setDeleteTarget(p)}
                           aria-label={`${t("delete")} ${p.name}`}
                         >
@@ -677,7 +677,7 @@ export function ProductManager() {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8 text-red-600"
+                          className="h-8 w-8 text-red-600 dark:text-red-400"
                           onClick={() => setDeleteTarget(p)}
                           aria-label={`${t("delete")} ${p.name}`}
                         >
@@ -715,7 +715,7 @@ export function ProductManager() {
                 autoFocus
               />
               {formErrors.name && (
-                <p className="text-xs text-red-600">{formErrors.name}</p>
+                <p className="text-xs text-red-600 dark:text-red-400">{formErrors.name}</p>
               )}
             </div>
 
@@ -748,7 +748,7 @@ export function ProductManager() {
                 {t("tipUseScanner")}
               </p>
               {formErrors.barcode && (
-                <p className="text-xs text-red-600">{formErrors.barcode}</p>
+                <p className="text-xs text-red-600 dark:text-red-400">{formErrors.barcode}</p>
               )}
             </div>
 
@@ -815,7 +815,7 @@ export function ProductManager() {
                   />
                 </div>
                 {formErrors.price && (
-                  <p className="text-xs text-red-600">{formErrors.price}</p>
+                  <p className="text-xs text-red-600 dark:text-red-400">{formErrors.price}</p>
                 )}
               </div>
               <div className="space-y-1.5">
@@ -839,7 +839,7 @@ export function ProductManager() {
                   />
                 </div>
                 {formErrors.costPrice && (
-                  <p className="text-xs text-red-600">{formErrors.costPrice}</p>
+                  <p className="text-xs text-red-600 dark:text-red-400">{formErrors.costPrice}</p>
                 )}
               </div>
               <div className="col-span-2 space-y-1.5 sm:col-span-1">
@@ -859,7 +859,7 @@ export function ProductManager() {
                   className="tabular-nums"
                 />
                 {formErrors.stock && (
-                  <p className="text-xs text-red-600">{formErrors.stock}</p>
+                  <p className="text-xs text-red-600 dark:text-red-400">{formErrors.stock}</p>
                 )}
               </div>
             </div>
@@ -879,7 +879,7 @@ export function ProductManager() {
                       <span
                         className={cn(
                           "font-semibold tabular-nums",
-                          positive ? "text-emerald-600" : "text-red-600"
+                          positive ? "text-emerald-600" : "text-red-600 dark:text-red-400"
                         )}
                       >
                         {positive ? "+" : ""}

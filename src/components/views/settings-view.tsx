@@ -712,7 +712,7 @@ function SubscriptionCard({
                     className={
                       "text-2xl font-bold tabular-nums " +
                       (status === "EXPIRED"
-                        ? "text-red-600"
+                        ? "text-red-600 dark:text-red-400"
                         : status === "TRIAL"
                           ? "text-amber-600"
                           : "text-emerald-600")

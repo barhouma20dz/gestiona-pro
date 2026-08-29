@@ -756,7 +756,7 @@ export function Suppliers() {
           </div>
           <Button
             onClick={openAddSupplier}
-            className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+            className="bg-card text-primary shadow-md hover:bg-primary/10"
           >
             <Plus className="h-4 w-4" />
             {t("addSupplier")}
@@ -945,7 +945,7 @@ export function Suppliers() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-red-600 hover:bg-red-500/10 hover:text-red-700"
+                            className="h-8 w-8 text-red-600 dark:text-red-400 hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300"
                             onClick={() => setDeleteSupplierTarget(s)}
                             aria-label={`${t("delete")} ${s.name}`}
                           >
@@ -1037,7 +1037,7 @@ export function Suppliers() {
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8 text-red-600"
+                            className="h-8 w-8 text-red-600 dark:text-red-400"
                             onClick={() => setDeleteSupplierTarget(s)}
                             aria-label={t("delete")}
                           >
@@ -1077,7 +1077,7 @@ export function Suppliers() {
                 autoFocus
               />
               {supplierFormErrors.name && (
-                <p className="text-xs text-red-600">{supplierFormErrors.name}</p>
+                <p className="text-xs text-red-600 dark:text-red-400">{supplierFormErrors.name}</p>
               )}
             </div>
 
@@ -1184,7 +1184,7 @@ export function Suppliers() {
                     </SelectContent>
                   </Select>
                   {invoiceFormErrors.supplierId && (
-                    <p className="text-xs text-red-600">
+                    <p className="text-xs text-red-600 dark:text-red-400">
                       {invoiceFormErrors.supplierId}
                     </p>
                   )}
@@ -1203,7 +1203,7 @@ export function Suppliers() {
                     className="font-mono"
                   />
                   {invoiceFormErrors.invoiceNo && (
-                    <p className="text-xs text-red-600">
+                    <p className="text-xs text-red-600 dark:text-red-400">
                       {invoiceFormErrors.invoiceNo}
                     </p>
                   )}
@@ -1222,7 +1222,7 @@ export function Suppliers() {
                     }
                   />
                   {invoiceFormErrors.invoiceDate && (
-                    <p className="text-xs text-red-600">
+                    <p className="text-xs text-red-600 dark:text-red-400">
                       {invoiceFormErrors.invoiceDate}
                     </p>
                   )}
@@ -1338,7 +1338,7 @@ export function Suppliers() {
                           className="h-9"
                         />
                         {invoiceFormErrors[`item-${idx}-name`] && (
-                          <p className="text-[10px] text-red-600">
+                          <p className="text-[10px] text-red-600 dark:text-red-400">
                             {invoiceFormErrors[`item-${idx}-name`]}
                           </p>
                         )}
@@ -1363,7 +1363,7 @@ export function Suppliers() {
                           className="h-9 tabular-nums"
                         />
                         {invoiceFormErrors[`item-${idx}-qty`] && (
-                          <p className="text-[10px] text-red-600">
+                          <p className="text-[10px] text-red-600 dark:text-red-400">
                             {invoiceFormErrors[`item-${idx}-qty`]}
                           </p>
                         )}
@@ -1388,7 +1388,7 @@ export function Suppliers() {
                           className="h-9 tabular-nums"
                         />
                         {invoiceFormErrors[`item-${idx}-price`] && (
-                          <p className="text-[10px] text-red-600">
+                          <p className="text-[10px] text-red-600 dark:text-red-400">
                             {invoiceFormErrors[`item-${idx}-price`]}
                           </p>
                         )}
@@ -1398,7 +1398,7 @@ export function Suppliers() {
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-red-600 hover:bg-red-500/10"
+                          className="h-8 w-8 text-red-600 dark:text-red-400 hover:bg-red-500/10"
                           onClick={() =>
                             setInvoiceForm((f) => {
                               if (!f) return f;
@@ -1617,7 +1617,7 @@ export function Suppliers() {
                             <Button
                               variant="outline"
                               size="icon"
-                              className="h-7 w-7 text-red-600"
+                              className="h-7 w-7 text-red-600 dark:text-red-400"
                               onClick={() => setDeleteInvoiceTarget(inv)}
                               aria-label={t("deleteInvoice")}
                             >
@@ -1702,7 +1702,7 @@ export function Suppliers() {
                                           <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="h-6 w-6 text-red-600"
+                                            className="h-6 w-6 text-red-600 dark:text-red-400"
                                             onClick={() =>
                                               setDeletePaymentTarget({
                                                 invoice: inv,

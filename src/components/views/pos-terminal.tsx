@@ -255,7 +255,7 @@ function WeightDialogBody({
             className="text-center text-2xl font-bold tabular-nums"
           />
           {exceedsStock && (
-            <p className="text-xs text-red-600">
+            <p className="text-xs text-red-600 dark:text-red-400">
               {t("inStockKg")}: {inStock} {t("kg")}
             </p>
           )}
