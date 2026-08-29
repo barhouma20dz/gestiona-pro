@@ -2312,3 +2312,24 @@ Work Log:
 Stage Summary:
 - سببا الفشل الحقيقيان مُعالجان: زر الإرسال خارج الشاشة على النوافذ القصيرة + رسائل خطأ عامة تخفي أخطاء الحافة
 - أي فشل شبكي قادم سيُظهر سببه الفعلي (HTTP xxx / مهلة / انقطاع) بدل "حدث خطأ"
+
+---
+Task ID: 12
+Agent: Super Z (main)
+Task: "الحسابات لا تعمل في الموقع my-project-five-liard-35.vercel.app" — الجذر الحقيقي
+
+Work Log:
+- الكشف الحاسم: المستخدم يختبر على نشر Vercel وليس معاينة الساندبوكس!
+- اختبار Vercel مباشرة: login 500 "Failed to sign in"، register 500 "Failed to create account"، /me 401 سليم → كل عمليات قاعدة البيانات تنهار
+- الجذر: origin/main يحمل schema.prisma بـ provider=sqlite (حالة التطوير المحلي رُفعت لـ GitHub) بينما DATABASE_URL على Vercel هو Neon PostgreSQL → عميل SQLite يتصل بعنوان postgres → انهيار 500 لكل استعلام
+- الإصلاح الدائم (cb687de):
+  - prisma/schema.postgres.prisma: نسخة مطابقة بـ provider=postgresql للإنتاج
+  - vercel.json: البناء الآن = generate(postgres schema) + db push (ينشئ/يحدّث جداول Neon تلقائياً مع كل نشر!) + next build — لم يعد بإمكان حالة التطوير المحلي كسر النشر أبداً
+  - db-switch.sh: يزامن schema.postgres.prisma من schema.prisma تلقائياً — لا انحراف بين المخططين
+- الاختبار: validate + generate لمخطط postgres ناجح، استعادة عميل sqlite المحلي، دخول محلي 200
+- ملاحظة: db push عند البناء يفشل بصاخب إن غاب DATABASE_URL — مقصود (فشل مرئي أفضل من نشر صامت مكسور)
+- الحسابات التجريبية المحلية لا توجد على Vercel — المستخدم يسجل حساباً جديداً هناك ويزال trial تلقائي 14 يوماً
+
+Stage Summary:
+- Vercel سيعاد بناؤه تلقائياً من cb687de: المخطط سليم + الجداول تُنشأ ذاتياً
+- على المستخدم: التأكد من متغيري DATABASE_URL و JWT_SECRET في إعدادات Vercel ثم تسجيل حساب جديد على الموقع
