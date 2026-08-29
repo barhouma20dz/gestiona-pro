@@ -274,7 +274,93 @@ async function main() {
     },
   });
 
-  console.log("✓ Demo data created:");
+  // ── Customers (العملاء) ──────────────────────────────────────────────────
+  const customerDefs = [
+    { name: "خالد مرابط", phone: "0550 11 22 33", address: "بئر مراد رايس", notes: "عميل دائم — مقهى", points: 34 },
+    { name: "نادية حمدي", phone: "0661 44 55 66", address: "الحراش", notes: "", points: 12 },
+    { name: "مطعم الأصدقاء", phone: "0770 77 88 99", address: "رويبة — الحي التجاري", notes: "طلبيات أسبوعية", points: 58 },
+    { name: "عموري بلقاسم", phone: "0540 10 20 30", address: "القبة", notes: "يدفع نقداً دائماً", points: 5 },
+    { name: "سعاد بوعلام", phone: "0698 33 22 11", address: "حسين داي", notes: "", points: 21 },
+  ];
+  const customers = [];
+  for (const c of customerDefs) {
+    customers.push(
+      await db.customer.create({
+        data: {
+          storeId: store.id,
+          name: c.name,
+          phone: c.phone,
+          address: c.address,
+          notes: c.notes,
+          loyaltyPoints: c.points,
+        },
+      })
+    );
+  }
+
+  // ── Credit sales (بيع آجل) + partial repayment ──────────────────────────
+  const creditItems1 = productIds.slice(0, 3).map((p) => ({
+    productId: p.id,
+    productName: p.name,
+    unitPrice: p.price,
+    quantity: 2,
+    total: 2 * p.price,
+  }));
+  const creditTotal1 = creditItems1.reduce((s, it) => s + it.total, 0);
+  const creditSale1 = await db.sale.create({
+    data: {
+      storeId: store.id,
+      customerId: customers[2].id, // مطعم الأصدقاء
+      receiptNo: `INV-${new Date(now.getTime() - 3 * day).toISOString().slice(0, 10).replace(/-/g, "")}-9001`,
+      subtotal: creditTotal1,
+      taxAmount: 0,
+      discount: 0,
+      total: creditTotal1,
+      paymentMethod: "CREDIT",
+      itemCount: 3,
+      createdAt: new Date(now.getTime() - 3 * day),
+      items: { create: creditItems1 },
+    },
+  });
+  await db.customerPayment.create({
+    data: {
+      storeId: store.id,
+      customerId: customers[2].id,
+      saleId: creditSale1.id,
+      amount: Math.round(creditTotal1 * 0.5),
+      paymentMethod: "Cash",
+      notes: "تسديد جزئي — الباقي نهاية الشهر",
+      userId: owner.id,
+    },
+  });
+
+  const creditItems2 = productIds.slice(3, 5).map((p) => ({
+    productId: p.id,
+    productName: p.name,
+    unitPrice: p.price,
+    quantity: 3,
+    total: 3 * p.price,
+  }));
+  const creditTotal2 = creditItems2.reduce((s, it) => s + it.total, 0);
+  await db.sale.create({
+    data: {
+      storeId: store.id,
+      customerId: customers[0].id, // خالد مرابط
+      receiptNo: `INV-${new Date(now.getTime() - 1 * day).toISOString().slice(0, 10).replace(/-/g, "")}-9002`,
+      subtotal: creditTotal2,
+      taxAmount: 0,
+      discount: 0,
+      total: creditTotal2,
+      paymentMethod: "CREDIT",
+      itemCount: 2,
+      createdAt: new Date(now.getTime() - 1 * day),
+      items: { create: creditItems2 },
+    },
+  });
+
+  console.log("  Customers: 5 (2 with outstanding credit)");
+
+    console.log("✓ Demo data created:");
   console.log("  Store:    سوق الأمانة (DZD)");
   console.log("  Owner:    owner@gestiona.dz / owner123");
   console.log("  Staff:    caissier@gestiona.dz / caissier123");

@@ -7,6 +7,7 @@ export function paymentLabelKey(method: string): TranslationKey {
   if (m === "baridimob" || m === "upi") return "baridimob";
   if (m === "card") return "card";
   if (m === "cheque") return "cheque";
+  if (m === "credit") return "credit";
   return "cash";
 }
 

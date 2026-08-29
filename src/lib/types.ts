@@ -40,6 +40,9 @@ export interface Shop {
   footerText: string;
   currency: string;
   taxRate: number;
+  loyaltyEnabled?: boolean;
+  loyaltyEarnRate?: number;
+  loyaltyPointValue?: number;
   updatedAt: string;
 }
 
@@ -63,6 +66,10 @@ export interface Sale {
   paymentMethod: string;
   itemCount: number;
   sellerId?: string | null;
+  customerId?: string | null;
+  customer?: { id: string; name: string } | null;
+  loyaltyPointsEarned?: number;
+  loyaltyPointsRedeemed?: number;
   createdAt: string;
   items: SaleItem[];
 }
@@ -77,6 +84,7 @@ export type ViewKey =
   | "pos"
   | "products"
   | "sales"
+  | "customers"
   | "suppliers"
   | "expiry"
   | "shop"
@@ -410,4 +418,40 @@ export interface NewSupplierPayment {
   paymentDate?: string;
   paymentMethod: PaymentMethod;
   notes?: string;
+}
+
+
+/* ---------------- Customers & Loyalty ---------------- */
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  notes: string;
+  loyaltyPoints: number;
+  totalSales: number;
+  salesCount: number;
+  creditOutstanding: number;
+  lastSaleAt: string | null;
+  createdAt: string;
+}
+
+export interface NewCustomer {
+  name: string;
+  phone?: string;
+  address?: string;
+  notes?: string;
+}
+
+export interface CustomerPayment {
+  id: string;
+  customerId: string;
+  saleId: string | null;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: string;
+  notes: string;
+  user?: { name: string | null } | null;
+  createdAt: string;
 }

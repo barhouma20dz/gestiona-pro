@@ -27,6 +27,7 @@ model User {
   sales       Sale[]       // sales made by this seller
   payments    SupplierPayment[]
   auditApprovals InventoryAudit[]
+  customerPayments CustomerPayment[] // debt repayments recorded by this user
 }
 
 // ─── Store (Tenant) ──────────────────────────────────────────────────────────
@@ -46,6 +47,10 @@ model Store {
   logoUrl       String?
   timezone      String   @default("Africa/Algiers")
   status        String   @default("ACTIVE") // ACTIVE | SUSPENDED
+  // Loyalty program settings (نقاط الولاء)
+  loyaltyEnabled    Boolean @default(true)
+  loyaltyEarnRate   Float   @default(100)  // كل X دج من قيمة البيع = نقطة واحدة
+  loyaltyPointValue Float   @default(1)    // قيمة النقطة عند الاستبدال (بالعملة)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -60,6 +65,8 @@ model Store {
   inventoryAudits InventoryAudit[]
   zakatRecords  ZakatRecord[]
   zakatSettings  ZakatSettings?
+  customers     Customer[]
+  customerPayments CustomerPayment[]
 }
 
 // ─── Subscription & Licensing ────────────────────────────────────────────────
@@ -135,20 +142,70 @@ model Sale {
   store         Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   sellerId      String?
   seller        User?     @relation(fields: [sellerId], references: [id])
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   receiptNo     String
   subtotal      Float
   taxAmount     Float     @default(0)
   discount      Float     @default(0)
   total         Float
-  paymentMethod String    @default("Cash")
+  paymentMethod String    @default("Cash") // Cash | BARIDIMOB | CARD | CHEQUE | CREDIT (آجل)
   itemCount     Int
+  loyaltyPointsEarned Int   @default(0) // points awarded for this sale
+  loyaltyPointsRedeemed Int @default(0) // points redeemed as discount
   createdAt     DateTime  @default(now())
 
-  items SaleItem[]
+  items        SaleItem[]
+  debtPayments CustomerPayment[]
 
   @@unique([storeId, receiptNo])
   @@index([storeId, createdAt])
   @@index([storeId, sellerId])
+  @@index([customerId])
+}
+
+// ─── Customers & Loyalty (العملاء والولاء) ────────────────────────────────
+
+model Customer {
+  id            String   @id @default(cuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name          String
+  phone         String   @default("")
+  address       String   @default("")
+  notes         String   @default("")
+  loyaltyPoints Int      @default(0) // available balance (accrual − redemption)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sales         Sale[]
+  payments      CustomerPayment[]
+
+  @@unique([storeId, phone])
+  @@index([storeId])
+  @@index([storeId, name])
+}
+
+// Debt repayment (تسديد ديون العملاء) — either tied to one CREDIT sale or
+// applied to the customer's overall outstanding balance.
+model CustomerPayment {
+  id            String   @id @default(cuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  saleId        String?
+  sale          Sale?    @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  amount        Float
+  paymentDate   DateTime @default(now())
+  paymentMethod String   @default("Cash") // Cash | BARIDIMOB | CARD | CHEQUE
+  notes         String   @default("")
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([customerId])
+  @@index([storeId])
 }
 
 model SaleItem {

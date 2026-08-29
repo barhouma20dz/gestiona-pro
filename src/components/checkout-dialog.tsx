@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
@@ -10,9 +10,16 @@ import {
   Printer,
   RotateCcw,
   ShieldCheck,
+  Star,
+  UserRound,
 } from "lucide-react";
 
-import { salesApi, shopApi, type CreateSalePayload } from "@/lib/api";
+import {
+  salesApi,
+  shopApi,
+  customersApi,
+  type CreateSalePayload,
+} from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
 import { useLanguage } from "@/lib/language-context";
 import { formatMoney } from "@/lib/format";
@@ -28,6 +35,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Receipt } from "@/components/receipt";
@@ -44,6 +59,8 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
   const queryClient = useQueryClient();
   const [stage, setStage] = useState<DialogStage>("review");
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
+  const [customerId, setCustomerId] = useState<string>("none");
+  const [redeemPoints, setRedeemPoints] = useState(0);
 
   // Cart store slices
   const items = useCartStore((s) => s.items);
@@ -56,16 +73,40 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
     queryFn: shopApi.get,
   });
 
+  const { data: customers } = useQuery({
+    queryKey: ["customers"],
+    queryFn: customersApi.list,
+    enabled: open && stage === "review",
+  });
+
+  const selectedCustomer = useMemo(
+    () => customers?.find((c) => c.id === customerId) ?? null,
+    [customers, customerId]
+  );
+
   const currency = shop?.currency || "دج";
   const taxRate = shop?.taxRate ?? 0;
+  const pointValue = shop ? 1 : 1; // loyaltyPointValue — placeholder kept simple (1 DZD/point)
 
   const subtotal = items.reduce(
     (sum, i) => sum + i.product.price * i.quantity,
     0
   );
-  const taxableAmount = Math.max(0, subtotal - discount);
+  const pointsDiscount = Math.min(
+    redeemPoints * pointValue,
+    selectedCustomer ? selectedCustomer.loyaltyPoints * pointValue : 0,
+    subtotal - discount > 0 ? subtotal - discount : 0
+  );
+  const effectiveDiscount = Math.min(discount + pointsDiscount, subtotal);
+  const taxableAmount = Math.max(0, subtotal - effectiveDiscount);
   const taxAmount = (taxableAmount * taxRate) / 100;
   const grandTotal = taxableAmount + taxAmount;
+  const isCredit = paymentMethod === "CREDIT";
+  const creditBlocked = isCredit && !selectedCustomer;
+  const expectedPoints =
+    selectedCustomer && !isCredit && shop?.loyaltyEnabled !== false
+      ? Math.floor(grandTotal / (shop?.loyaltyEarnRate ?? 100))
+      : 0;
 
   const ripNumber = shop?.ripNumber?.trim() ?? "";
   const showRipQR = paymentMethod === "BARIDIMOB" && ripNumber.length > 0;
@@ -85,10 +126,11 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
       });
       // Keep a local copy of sale for the receipt, then clear cart store
       clearCart();
-      // Invalidate stats + sales lists
+      // Invalidate stats + sales lists + customers (loyalty balance changed)
       queryClient.invalidateQueries({ queryKey: ["sales"] });
       queryClient.invalidateQueries({ queryKey: ["salesStats"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
     },
     onError: (err: unknown) => {
       const message =
@@ -99,6 +141,10 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
 
   const handleComplete = () => {
     if (items.length === 0) return;
+    if (isCredit && !selectedCustomer) {
+      toast.error(t("creditRequiresCustomer"));
+      return;
+    }
     const payload: CreateSalePayload = {
       items: items.map((i) => ({
         productId: i.product.id,
@@ -106,6 +152,8 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
       })),
       discount,
       paymentMethod,
+      customerId: selectedCustomer ? selectedCustomer.id : null,
+      redeemPoints: pointsDiscount > 0 ? redeemPoints : 0,
     };
     createSale.mutate(payload);
   };
@@ -118,6 +166,8 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
       setTimeout(() => {
         setStage("review");
         setCompletedSale(null);
+        setCustomerId("none");
+        setRedeemPoints(0);
       }, 200);
     }
   };
@@ -127,6 +177,8 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
     setTimeout(() => {
       setStage("review");
       setCompletedSale(null);
+      setCustomerId("none");
+      setRedeemPoints(0);
     }, 200);
   };
 
@@ -243,6 +295,106 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                 </div>
               )}
 
+              {/* Customer selection */}
+              <div className="space-y-2 rounded-lg border bg-card p-3">
+                <div className="flex items-center gap-2">
+                  <UserRound className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">
+                    {t("selectCustomer")}
+                  </span>
+                </div>
+                <Select
+                  value={customerId}
+                  onValueChange={(v) => {
+                    setCustomerId(v);
+                    setRedeemPoints(0);
+                  }}
+                >
+                  <SelectTrigger dir="auto" className="w-full">
+                    <SelectValue placeholder={t("walkInCustomer")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t("walkInCustomer")}</SelectItem>
+                    {(customers ?? []).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                        {c.phone ? ` — ${c.phone}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {selectedCustomer && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <Badge
+                      variant="outline"
+                      className="gap-1 border-amber-500/30 bg-amber-500/10 text-amber-600"
+                    >
+                      <Star className="h-3 w-3" />
+                      {selectedCustomer.loyaltyPoints} {t("pointsAvailable")}
+                    </Badge>
+                    {selectedCustomer.creditOutstanding > 0 && (
+                      <Badge
+                        variant="outline"
+                        className="border-destructive/30 bg-destructive/10 text-destructive"
+                      >
+                        {t("creditOutstanding")}:{" "}
+                        {formatMoney(selectedCustomer.creditOutstanding, currency)}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+
+                {/* Points redemption */}
+                {selectedCustomer &&
+                  !isCredit &&
+                  selectedCustomer.loyaltyPoints > 0 &&
+                  shop?.loyaltyEnabled !== false && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">
+                          {t("redeemPoints")}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          −{formatMoney(pointsDiscount, currency)}
+                        </span>
+                      </div>
+                      <Input
+                        dir="ltr"
+                        type="number"
+                        min={0}
+                        max={selectedCustomer.loyaltyPoints}
+                        value={redeemPoints || ""}
+                        onChange={(e) =>
+                          setRedeemPoints(
+                            Math.max(
+                              0,
+                              Math.min(
+                                Math.floor(Number(e.target.value) || 0),
+                                selectedCustomer.loyaltyPoints
+                              )
+                            )
+                          )
+                        }
+                        placeholder="0"
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                  )}
+
+                {expectedPoints > 0 && (
+                  <p className="text-[11px] text-emerald-600">
+                    ★ +{expectedPoints} {t("pointsWillEarn")}
+                  </p>
+                )}
+
+                {creditBlocked && (
+                  <p className="text-[11px] font-medium text-destructive">
+                    {t("creditRequiresCustomer")}
+                  </p>
+                )}
+              </div>
+
               {/* Totals */}
               <div className="space-y-1.5 rounded-lg border bg-card p-3 text-sm">
                 <div className="flex justify-between text-muted-foreground">
@@ -251,11 +403,11 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                     {formatMoney(subtotal, currency)}
                   </span>
                 </div>
-                {discount > 0 && (
+                {effectiveDiscount > 0 && (
                   <div className="flex justify-between text-muted-foreground">
                     <span>{t("discount")}</span>
                     <span className="tabular-nums">
-                      − {formatMoney(discount, currency)}
+                      − {formatMoney(effectiveDiscount, currency)}
                     </span>
                   </div>
                 )}
@@ -293,7 +445,9 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
               </Button>
               <Button
                 onClick={handleComplete}
-                disabled={createSale.isPending || items.length === 0}
+                disabled={
+                  createSale.isPending || items.length === 0 || creditBlocked
+                }
                 className="min-w-[160px]"
               >
                 {createSale.isPending ? (

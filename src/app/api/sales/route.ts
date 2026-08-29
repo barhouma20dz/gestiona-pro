@@ -4,12 +4,21 @@ import { requireAuth, requireStoreOwner } from "@/lib/session";
 import { handleRouteError } from "@/lib/api-error";
 import type { Prisma } from "@prisma/client";
 
-type PaymentMethod = "Cash" | "BARIDIMOB" | "CARD" | "CHEQUE" | "UPI" | "Card";
+type PaymentMethod =
+  | "Cash"
+  | "BARIDIMOB"
+  | "CARD"
+  | "CHEQUE"
+  | "CREDIT"
+  // Legacy values kept so old records/clients still validate:
+  | "UPI"
+  | "Card";
 const VALID_PAYMENT_METHODS: PaymentMethod[] = [
   "Cash",
   "BARIDIMOB",
   "CARD",
   "CHEQUE",
+  "CREDIT", // بيع آجل (على الحساب) — يتطلب عميلاً
   // Legacy values kept so old records/clients still validate:
   "UPI",
   "Card",
@@ -25,6 +34,8 @@ interface CreateSaleBody {
   discount: number;
   paymentMethod: PaymentMethod;
   sellerId?: string | null;
+  customerId?: string | null; // required when paymentMethod === "CREDIT"
+  redeemPoints?: number; // loyalty points to redeem as discount
 }
 
 function pad(n: number, width = 4): string {
@@ -67,7 +78,10 @@ export async function GET(request: Request) {
 
     const sales = await db.sale.findMany({
       where,
-      include: { items: true },
+      include: {
+        items: true,
+        customer: { select: { id: true, name: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(sales);
@@ -151,10 +165,11 @@ export async function POST(request: Request) {
       }
     }
 
-    // Fetch store (for taxRate) — outside transaction to avoid extra locks
+    // Fetch store (for taxRate + loyalty settings) — outside transaction to
+    // avoid extra locks inside it.
     const store = await db.store.findUnique({
       where: { id: storeId },
-      select: { taxRate: true },
+      select: { taxRate: true, loyaltyEnabled: true, loyaltyEarnRate: true, loyaltyPointValue: true },
     });
     if (!store) {
       return NextResponse.json(
@@ -196,7 +211,47 @@ export async function POST(request: Request) {
         (sum, l) => sum + l.lineTotal,
         0
       );
-      const effectiveDiscount = Math.min(discount, subtotal);
+
+      // ── Customer / credit / loyalty resolution ──────────────────────────
+      let customer: { id: string; loyaltyPoints: number } | null = null;
+      if (body.customerId) {
+        const found = await tx.customer.findFirst({
+          where: { id: body.customerId, storeId },
+          select: { id: true, loyaltyPoints: true },
+        });
+        if (!found) throw new Error("Customer not found in your store");
+        customer = found;
+      }
+
+      if (paymentMethod === "CREDIT" && !customer) {
+        throw new Error("CREDIT sales require a registered customer");
+      }
+
+      // Points redemption: only for non-credit sales with a customer.
+      // Each point is worth store.loyaltyPointValue of discount; the redeemed
+      // value is capped by the customer's balance and by the subtotal.
+      const pointValue = store.loyaltyPointValue ?? 1;
+      const loyaltyEnabled = store.loyaltyEnabled ?? true;
+
+      let pointsRedeemed = 0;
+      if (customer && loyaltyEnabled && paymentMethod !== "CREDIT") {
+        const requested = Math.floor(Number(body.redeemPoints ?? 0));
+        if (requested > 0) {
+          const maxByBalance = customer.loyaltyPoints;
+          const maxByValue = Math.floor(subtotal / pointValue);
+          pointsRedeemed = Math.max(
+            0,
+            Math.min(requested, maxByBalance, maxByValue)
+          );
+        }
+      }
+      const pointsDiscount = pointsRedeemed * pointValue;
+
+      const manualDiscount = Math.max(0, discount);
+      const effectiveDiscount = Math.min(
+        manualDiscount + pointsDiscount,
+        subtotal
+      );
       const taxableBase = Math.max(0, subtotal - effectiveDiscount);
       const taxRate = store.taxRate ?? 0;
       const taxAmount = (taxableBase * taxRate) / 100;
@@ -204,6 +259,13 @@ export async function POST(request: Request) {
       // Each distinct line item counts as 1 toward itemCount,
       // regardless of quantity (works for both count and kg products).
       const itemCount = saleItemLines.length;
+
+      // Loyalty accrual: points for paid (non-credit) sales only.
+      const earnRate = store.loyaltyEarnRate ?? 100;
+      const pointsEarned =
+        customer && loyaltyEnabled && paymentMethod !== "CREDIT" && total > 0
+          ? Math.floor(total / earnRate)
+          : 0;
 
       // Generate receipt number unique per store: INV-YYYYMMDD-XXXX
       const today = new Date();
@@ -236,8 +298,11 @@ export async function POST(request: Request) {
           total,
           paymentMethod,
           itemCount,
+          loyaltyPointsEarned: pointsEarned,
+          loyaltyPointsRedeemed: pointsRedeemed,
           store: { connect: { id: storeId } },
           ...(sellerId ? { seller: { connect: { id: sellerId } } } : {}),
+          ...(customer ? { customer: { connect: { id: customer.id } } } : {}),
           items: {
             create: saleItemLines.map((l) => ({
               productId: l.product.id,
@@ -256,6 +321,18 @@ export async function POST(request: Request) {
         await tx.product.update({
           where: { id: l.product.id },
           data: { stock: newStock },
+        });
+      }
+
+      // Apply loyalty balance change (+earned − redeemed) atomically.
+      if (customer && (pointsEarned > 0 || pointsRedeemed > 0)) {
+        await tx.customer.update({
+          where: { id: customer.id },
+          data: {
+            loyaltyPoints: {
+              increment: pointsEarned - pointsRedeemed,
+            },
+          },
         });
       }
 

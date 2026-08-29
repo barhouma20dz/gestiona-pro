@@ -23,6 +23,9 @@ import type {
   InventoryAudit,
   NewInventoryAudit,
   InventoryAuditStats,
+  Customer,
+  NewCustomer,
+  CustomerPayment,
   ZakatSettings,
   ZakatRecord,
   ZakatCalculationInput,
@@ -98,7 +101,16 @@ export const shopApi = {
 export interface CreateSalePayload {
   items: { productId: string; quantity: number }[];
   discount: number;
-  paymentMethod: "Cash" | "BARIDIMOB" | "CARD" | "CHEQUE" | "UPI" | "Card";
+  paymentMethod:
+    | "Cash"
+    | "BARIDIMOB"
+    | "CARD"
+    | "CHEQUE"
+    | "CREDIT"
+    | "UPI"
+    | "Card";
+  customerId?: string | null;
+  redeemPoints?: number;
 }
 
 export const salesApi = {
@@ -113,6 +125,32 @@ export const salesApi = {
 };
 
 /* ---------------- Suppliers ---------------- */
+export const customersApi = {
+  list: () => request<Customer[]>("/api/customers"),
+  create: (data: NewCustomer) =>
+    request<Customer>("/api/customers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<NewCustomer>) =>
+    request<Customer>(`/api/customers/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<void>(`/api/customers/${id}`, { method: "DELETE" }),
+  payments: (id: string) =>
+    request<CustomerPayment[]>(`/api/customers/${id}/payments`),
+  addPayment: (
+    id: string,
+    data: { amount: number; paymentMethod?: string; notes?: string; saleId?: string }
+  ) =>
+    request<CustomerPayment>(`/api/customers/${id}/payments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};
+
 export const suppliersApi = {
   list: () => request<Supplier[]>("/api/suppliers"),
   create: (data: NewSupplier) =>

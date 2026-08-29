@@ -58,6 +58,13 @@ function paymentBadge(method: string, t: T) {
       </Badge>
     );
   }
+  if (m === "credit") {
+    return (
+      <Badge className="bg-rose-500/15 text-rose-600 border-rose-500/30 hover:bg-rose-500/15">
+        {t("credit")}
+      </Badge>
+    );
+  }
   if (m === "cheque") {
     return (
       <Badge className="bg-violet-500/15 text-violet-600 border-violet-500/30 hover:bg-violet-500/15">

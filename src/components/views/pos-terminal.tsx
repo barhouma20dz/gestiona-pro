@@ -27,6 +27,7 @@ import {
   Users,
   Scale,
   ScrollText,
+  HandCoins,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
@@ -69,6 +70,7 @@ const PAYMENT_METHODS = [
   { key: "BARIDIMOB", labelKey: "baridimob" as const, icon: QrCode },
   { key: "CARD", labelKey: "card" as const, icon: CreditCard },
   { key: "CHEQUE", labelKey: "cheque" as const, icon: ScrollText },
+  { key: "CREDIT", labelKey: "creditSale" as const, icon: HandCoins },
 ] as const;
 
 function stockBadge(
