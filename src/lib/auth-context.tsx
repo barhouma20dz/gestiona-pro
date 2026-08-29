@@ -71,7 +71,13 @@ interface AuthContextValue {
 
 const TOKEN_KEY = "swiftbill-token";
 
+// In-memory copy survives even when localStorage is blocked entirely
+// (e.g. Safari ITP in third-party iframes) — as long as the SPA lives,
+// every request carries the Bearer token and the session works.
+let memoryToken: string | null = null;
+
 export function getStoredToken(): string | null {
+  if (memoryToken) return memoryToken;
   try {
     return localStorage.getItem(TOKEN_KEY);
   } catch {
@@ -80,6 +86,7 @@ export function getStoredToken(): string | null {
 }
 
 export function setStoredToken(token: string | null) {
+  memoryToken = token;
   try {
     if (token) {
       localStorage.setItem(TOKEN_KEY, token);
@@ -87,7 +94,7 @@ export function setStoredToken(token: string | null) {
       localStorage.removeItem(TOKEN_KEY);
     }
   } catch {
-    // ignore
+    // storage blocked (private mode / third-party iframe) — memory copy still holds
   }
 }
 
@@ -103,8 +110,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const [loading, setLoading] = useState(true);
 
-  // Fetch /api/auth/me — uses cookie OR Authorization header as fallback
-  const refresh = useCallback(async () => {
+  // Fetch /api/auth/me — uses cookie OR Authorization header as fallback.
+  // keepOnFail: don't wipe a session that was just established directly from
+  // a login/register response (e.g. when /me hiccups right after auth).
+  const refresh = useCallback(async (opts?: { keepOnFail?: boolean }) => {
     try {
       const token = getStoredToken();
       const headers: Record<string, string> = {};
@@ -122,15 +131,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSubscription(data.subscription);
       } else {
         // If 401, clear any stale token
-        setStoredToken(null);
+        if (!opts?.keepOnFail) {
+          setStoredToken(null);
+          setUser(null);
+          setStore(null);
+          setSubscription(null);
+        }
+      }
+    } catch {
+      if (!opts?.keepOnFail) {
         setUser(null);
         setStore(null);
         setSubscription(null);
       }
-    } catch {
-      setUser(null);
-      setStore(null);
-      setSubscription(null);
     } finally {
       setLoading(false);
     }
@@ -159,8 +172,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStoredToken(data.token);
     }
 
-    // Re-fetch /me to populate store + subscription fully
-    await refresh();
+    // Enter the app immediately from the response itself — independent of
+    // cookie acceptance or storage availability. Then hydrate the rest.
+    setUser(data.user);
+    setStore(data.store ?? null);
+    setSubscription(data.subscription ?? null);
+    setLoading(false);
+
+    // Best-effort full hydration (store + subscription) via /me with Bearer
+    await refresh({ keepOnFail: true });
   }, [refresh]);
 
   const register = useCallback(
@@ -183,7 +203,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStoredToken(body.token);
       }
 
-      await refresh();
+      // Enter the app immediately — independent of cookies/storage
+      setUser(body.user);
+      setStore(body.store ?? null);
+      setSubscription(body.subscription ?? null);
+      setLoading(false);
+
+      await refresh({ keepOnFail: true });
     },
     [refresh]
   );

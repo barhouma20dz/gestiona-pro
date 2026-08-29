@@ -49,22 +49,50 @@ export function getSessionDuration(): number {
  *
  * Per the cookie spec, `SameSite=None` requires the `Secure` attribute —
  * browsers REJECT `SameSite=None; Secure=false` cookies entirely.
- * The preview environment is served over HTTPS (behind a proxy), so we detect
- * `x-forwarded-proto: https` and emit a valid cross-site cookie there, while
- * local HTTP development gets a classic SameSite=Lax cookie.
+ *
+ * Detection is intentionally defensive because the public preview chain
+ * (edge TLS → internal hops → Caddy) REWRITES `x-forwarded-proto` to "http"
+ * on the last hop, so trusting that header alone emitted SameSite=Lax
+ * cookies that browsers refuse in the HTTPS preview iframe.
+ *
+ * Rule: treat the request as HTTPS (cross-site-safe cookie) when EITHER
+ * - any entry of the x-forwarded-proto chain says "https", OR
+ * - the Host is not local (in this sandbox the app is only publicly
+ *   reachable through the HTTPS edge, so a public Host implies HTTPS).
+ * Plain local development over HTTP keeps the classic SameSite=Lax cookie.
  */
 export function sessionCookieOptions(request?: Request) {
-  const proto =
-    request?.headers.get("x-forwarded-proto") ??
-    (() => {
-      try {
-        return request?.url ? new URL(request.url).protocol.replace(":", "") : null;
-      } catch {
-        return null;
-      }
-    })();
+  const headerList = (name: string): string[] => {
+    const raw = request?.headers.get(name) ?? "";
+    return raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  };
 
-  const isHttps = proto === "https";
+  const protos = headerList("x-forwarded-proto");
+  try {
+    if (request?.url) {
+      protos.push(new URL(request.url).protocol.replace(":", ""));
+    }
+  } catch {
+    // ignore malformed URL
+  }
+
+  const hostHeader = request?.headers.get("host") ?? "";
+  let urlHost = "";
+  try {
+    urlHost = request?.url ? new URL(request.url).host : "";
+  } catch {
+    // ignore
+  }
+  const isLocalHost = [hostHeader, urlHost].every(
+    (h) =>
+      h === "" ||
+      /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?$/i.test(h)
+  );
+
+  const isHttps = protos.includes("https") || !isLocalHost;
 
   return isHttps
     ? {

@@ -34,13 +34,12 @@ import type {
   NewSupplierPayment,
 } from "./types";
 
-// Read stored JWT token from localStorage (set by auth-context on login)
+// Read stored JWT token — shared accessor with auth-context so the in-memory
+// copy works even when localStorage is blocked (Safari third-party iframes).
+import { getStoredToken } from "./auth-context";
+
 function getAuthToken(): string | null {
-  try {
-    return localStorage.getItem("swiftbill-token");
-  } catch {
-    return null;
-  }
+  return getStoredToken();
 }
 
 async function request<T>(
