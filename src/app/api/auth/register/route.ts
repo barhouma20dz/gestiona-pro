@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import {
   signToken,
   getSessionCookieName,
-  getSessionDuration,
+  sessionCookieOptions,
 } from "@/lib/auth";
 
 interface RegisterBody {
@@ -101,15 +101,13 @@ export async function POST(request: Request) {
       storeId: result.store.id,
     });
 
-    // Set cookie — use sameSite=none + secure=false for cross-origin preview environments
+    // Set cookie — protocol-aware so browsers actually accept it on HTTPS preview
     const cookieStore = await cookies();
-    cookieStore.set(getSessionCookieName(), token, {
-      httpOnly: false,
-      sameSite: "none",
-      secure: false,
-      maxAge: getSessionDuration(),
-      path: "/",
-    });
+    cookieStore.set(
+      getSessionCookieName(),
+      token,
+      sessionCookieOptions(request)
+    );
 
     return NextResponse.json(
       {
