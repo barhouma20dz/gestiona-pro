@@ -55,7 +55,7 @@ import { BarcodeScannerDialog } from "@/components/barcode-scanner";
 
 function paymentBadge(
   method: string,
-  t: (k: "upi" | "card" | "cash" | "baridimob" | "cheque") => string
+  t: (k: "upi" | "card" | "cash" | "baridimob" | "cheque" | "credit") => string
 ) {
   const m = method.toLowerCase();
   if (m === "upi" || m === "baridimob") {
@@ -69,6 +69,13 @@ function paymentBadge(
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
         {t("card")}
+      </Badge>
+    );
+  }
+  if (m === "credit") {
+    return (
+      <Badge className="bg-rose-500/15 text-rose-600 border-rose-500/30 hover:bg-rose-500/15">
+        {t("credit")}
       </Badge>
     );
   }

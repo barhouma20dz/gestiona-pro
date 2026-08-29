@@ -15,7 +15,7 @@ export function isKgProduct(
 interface CartState {
   items: CartItem[];
   discount: number;
-  paymentMethod: "Cash" | "BARIDIMOB" | "CARD" | "CHEQUE" | "UPI" | "Card";
+  paymentMethod: "Cash" | "BARIDIMOB" | "CARD" | "CHEQUE" | "CREDIT" | "UPI" | "Card";
   addProduct: (product: Product) => void;
   /**
    * Add a product with an arbitrary quantity (used for kg / weight products).
@@ -29,7 +29,7 @@ interface CartState {
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
   setDiscount: (amount: number) => void;
-  setPaymentMethod: (method: "Cash" | "BARIDIMOB" | "CARD" | "CHEQUE" | "UPI" | "Card") => void;
+  setPaymentMethod: (method: "Cash" | "BARIDIMOB" | "CARD" | "CHEQUE" | "CREDIT" | "UPI" | "Card") => void;
   subtotal: () => number;
   totalItems: () => number;
 }

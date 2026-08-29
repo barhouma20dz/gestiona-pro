@@ -21,6 +21,7 @@ import {
   AlertCircle,
   Users,
   UserCircle,
+  UserRound,
   LayoutGrid,
   ClipboardCheck,
   HandHeart,
@@ -48,6 +49,7 @@ import { SellerDashboard } from "@/components/views/seller-dashboard";
 import { SellerSettings } from "@/components/views/seller-settings";
 import { InventoryAudit } from "@/components/views/inventory-audit";
 import { Zakat } from "@/components/views/zakat";
+import { Customers } from "@/components/views/customers";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { CommandPalette } from "@/components/command-palette";
@@ -61,6 +63,7 @@ interface NavItem {
     | "products"
     | "salesHistory"
     | "suppliers"
+    | "customers"
     | "expiryTracking"
     | "shopDetails"
     | "settings"
@@ -76,6 +79,7 @@ interface NavItem {
     | "manageInventory"
     | "pastBills"
     | "suppliersSubtitle"
+    | "customersSubtitle"
     | "expiryTrackingSubtitle"
     | "businessInformation"
     | "appConfiguration"
@@ -101,6 +105,7 @@ const NAV: NavItem[] = [
   { key: "products", labelKey: "products", descKey: "manageInventory", icon: Package },
   { key: "sales", labelKey: "salesHistory", descKey: "pastBills", icon: ReceiptText },
   { key: "suppliers", labelKey: "suppliers", descKey: "suppliersSubtitle", icon: Truck },
+  { key: "customers", labelKey: "customers", descKey: "customersSubtitle", icon: UserRound, ownerOnly: true },
   { key: "expiry", labelKey: "expiryTracking", descKey: "expiryTrackingSubtitle", icon: CalendarClock },
   // Owner-only management views
   { key: "inventoryAudit", labelKey: "inventoryAudit", descKey: "annualAuditDesc", icon: ClipboardCheck, ownerOnly: true },
@@ -478,6 +483,8 @@ export function AppShell() {
         return <SellerManagement />;
       case "sellerSettings":
         return <SellerSettings />;
+      case "customers":
+        return <Customers />;
       case "inventoryAudit":
         return <InventoryAudit />;
       case "zakat":
