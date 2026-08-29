@@ -2229,3 +2229,26 @@ Work Log:
 Stage Summary:
 - جميع التحديثات مرفوعة إلى github.com/barhouma20dz/gestiona-pro
 - لا عوائق متبقية — المستخدم يستطيع السحب/النشر، والمسألة الموالية: التأكد أن التسجيل يعمل لديه فعلاً عبر المعاينة
+
+---
+Task ID: 8
+Agent: Super Z (main)
+Task: تجديد الواجهة الأمامية — الألوان والخطوط والوضع النهاري/الليلي (المرحلة 5 من خارطة الطريق)
+
+Work Log:
+- الخط: استبدال Geist (لاتيني فقط!) بخط Cairo عبر next/font/google (subsets: arabic+latin) — العربية كانت تُعرض بخط النظام الافتراضي، الآن كامل التطبيق بخط Cairo الاحترافي؛ إبقاء Geist Mono للأرقام/الباركود
+- globals.css: لوحة محسّنة للوضعين — primary زمردي أعمق (تباين AA على الأبيض 0.596→0.56)، أسطح داكنة أغنى بخضة خفيفة، إضافة color-scheme للأدوات الأصلية (قوائم/تمرير)، شريط تمرير متكيف مع الثيم عبر color-mix، لون تحديد النص، توكني success/warning جديدين
+- الوضع الليلي كان موجوداً بنياً لكن مكسوراً فعلياً: 22 ملفاً فيها ألوان صلبة (bg-white/text-black/text-gray-*/bg-slate-*)
+  - auth-screen: البطاقة كاملة بالتوكنات الدلالية (bg-card/95, text-card-foreground, placeholder→muted) + تدرج داكن ليلاً + زر ThemeToggle عائم
+  - page.tsx: شاشة التحميل بتدرج داكن ليلاً
+  - 8 واجهات رئيسية (dashboard/sales/sellers/suppliers/products/admin/inventory/expiry): أزرار الـ hero صارت bg-card/text-primary متكيفة
+  - سكربت scripts/fix_dark_colors.py: استبدالات دقيقة + regex بحارس lookbehind لإلحاق dark: variants للنصوص الحمراء/الرمادية الناقصة (63 استبدالاً) دون لمس hover:/hover prefixes أو المستبعدات المقصودة (ورق الإيصال أبيض دائماً، QR أبيض، ميداليات، gradients الزمرّية المقصودة)
+  - لمسة أخيرة: dark:hover:text-red-300 لأزرار الحذف
+- ThemeToggle: تسميات aria/title محلية (switchToLight/switchToDark/toggleColorTheme موجودة ar/en)
+- الاختبار (agent-browser): فاتح→داكن على شاشة الدخول (html.dark + خلفية lab(3))، استمرارية بعد reload، دخول كامل، لوحة التحكم/POS/المنتجات في الوضعين، Cairo يعمل (getComputedStyle يؤكد)، لا أخطاء كونسول أو dev.log
+- الفحوصات: src/ TSC 0 أخطاء، ESLint نظيف
+- الالتزامان b08e077 + 64ebf51 مدفوعان إلى GitHub (تنظيف: إزالة لقطات الاختبار من التتبع + تجاهل download/)
+
+Stage Summary:
+- الهوية البصرية مكتملة: خط Cairo عربي احترافي، لوحة زمرّية منقّحة، وضع ليلي حقيقي يعمل في كل الشاشات مع استمرارية ومفتاح في شاشة الدخول والتطبيق
+- لقطات توضيحية في download/ui-*.png (فاتح/داكن × دخول/لوحة/POS/منتجات)
