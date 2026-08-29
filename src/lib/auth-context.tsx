@@ -71,6 +71,73 @@ interface AuthContextValue {
 
 const TOKEN_KEY = "swiftbill-token";
 
+// ─── Resilient fetch for auth calls ─────────────────────────────────────────
+// Preview URLs sit behind an HTTPS edge + internal proxy. Occasionally the
+// edge answers with 502/503/504 (cold start, restart) or drops the request.
+// authFetch adds: 15s timeout, one automatic retry, and PRECISE error
+// messages so the UI can show the real cause instead of a generic one.
+
+const AUTH_TIMEOUT_MS = 15000;
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function isAbort(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "AbortError";
+}
+
+async function attemptOnce(
+  url: string,
+  init?: RequestInit
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function authFetch(url: string, init?: RequestInit): Promise<Response> {
+  let res: Response;
+  try {
+    res = await attemptOnce(url, init);
+  } catch (e) {
+    // First attempt failed at network level — wait briefly, retry once.
+    try {
+      await sleep(900);
+      res = await attemptOnce(url, init);
+    } catch (e2) {
+      if (isAbort(e2)) {
+        throw new Error("Network timeout — the server did not respond");
+      }
+      throw new Error("Failed to fetch — the server could not be reached");
+    }
+  }
+
+  if (RETRYABLE_STATUS.has(res.status)) {
+    try {
+      await sleep(900);
+      const retry = await attemptOnce(url, init);
+      if (!RETRYABLE_STATUS.has(retry.status)) return retry;
+      throw new Error(`Server error (HTTP ${retry.status})`);
+    } catch (e2) {
+      if (e2 instanceof Error && e2.message.startsWith("Server error")) throw e2;
+      if (isAbort(e2)) {
+        throw new Error("Network timeout — the server did not respond");
+      }
+      throw new Error("Failed to fetch — the server could not be reached");
+    }
+  }
+
+  return res;
+}
+
 // In-memory copy survives even when localStorage is blocked entirely
 // (e.g. Safari ITP in third-party iframes) — as long as the SPA lives,
 // every request carries the Bearer token and the session works.
@@ -120,15 +187,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
-      const res = await fetch("/api/auth/me", {
-        credentials: "same-origin",
-        headers,
-      });
+      const res = await authFetch("/api/auth/me", { headers });
       if (res.ok) {
-        const data: MeResponse = await res.json();
-        setUser(data.user);
-        setStore(data.store);
-        setSubscription(data.subscription);
+        const data: MeResponse = await res.json().catch(() => null);
+        if (data?.user) {
+          setUser(data.user);
+          setStore(data.store ?? null);
+          setSubscription(data.subscription ?? null);
+        } else if (!opts?.keepOnFail) {
+          setStoredToken(null);
+          setUser(null);
+          setStore(null);
+          setSubscription(null);
+        }
       } else {
         // If 401, clear any stale token
         if (!opts?.keepOnFail) {
@@ -154,17 +225,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await fetch("/api/auth/login", {
+    const res = await authFetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
       body: JSON.stringify({ email, password }),
     });
 
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(() => null);
 
     if (!res.ok) {
-      throw new Error(data.error || "Failed to sign in");
+      throw new Error(
+        data?.error || `Server error (HTTP ${res.status})`
+      );
+    }
+    if (!data?.user || !data?.token) {
+      throw new Error(`Server error (HTTP ${res.status}) — incomplete response`);
     }
 
     // Store token as fallback for cross-origin environments where cookies don't work
@@ -185,17 +260,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (data: RegisterPayload) => {
-      const res = await fetch("/api/auth/register", {
+      const res = await authFetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
         body: JSON.stringify(data),
       });
 
-      const body = await res.json().catch(() => ({}));
+      const body = await res.json().catch(() => null);
 
       if (!res.ok) {
-        throw new Error(body.error || "Failed to create account");
+        throw new Error(
+          body?.error || `Server error (HTTP ${res.status})`
+        );
+      }
+      if (!body?.user || !body?.token) {
+        throw new Error(`Server error (HTTP ${res.status}) — incomplete response`);
       }
 
       // Store token as fallback
