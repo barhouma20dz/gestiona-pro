@@ -227,7 +227,7 @@ export function Suppliers() {
     queryKey: ["products"],
     queryFn: productsApi.list,
   });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   // Filter state
   const [search, setSearch] = useState("");
@@ -248,7 +248,8 @@ export function Suppliers() {
 
   // Invoices viewer dialog
   const [invoicesViewer, setInvoicesViewer] = useState<{
-    supplier: Supplier;
+    // Lightweight supplier reference — only id/name are needed here
+    supplier: Pick<Supplier, "id" | "name">;
     invoices: SupplierInvoice[];
     loading: boolean;
   } | null>(null);
@@ -813,7 +814,7 @@ export function Suppliers() {
             className="pl-9"
           />
         </div>
-        <Button onClick={openAddInvoice} className="w-full sm:w-auto">
+        <Button onClick={() => openAddInvoice()} className="w-full sm:w-auto">
           <FileText className="h-4 w-4" />
           {t("addInvoice")}
         </Button>
@@ -1323,7 +1324,7 @@ export function Suppliers() {
                       </div>
                       <div className="col-span-7 sm:col-span-3">
                         <Input
-                          placeholder={t("itemName")}
+                          placeholder={t("itemNameField")}
                           value={item.productName}
                           onChange={(e) => {
                             const v = e.target.value;

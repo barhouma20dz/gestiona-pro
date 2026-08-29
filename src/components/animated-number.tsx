@@ -7,13 +7,13 @@ interface AnimatedNumberProps {
   value: number;
   /** Number of decimal places to display */
   decimals?: number;
-  /** Prefix string (e.g. "₹") */
+  /** Prefix string (e.g. "دج") */
   prefix?: string;
   /** Suffix string (e.g. "%") */
   suffix?: string;
   /** Animation duration in ms (default 800) */
   duration?: number;
-  /** Locale for number formatting (default "en-IN") */
+  /** Locale for number formatting (default "fr-DZ") */
   locale?: string;
   className?: string;
 }
@@ -29,7 +29,7 @@ export function AnimatedNumber({
   prefix = "",
   suffix = "",
   duration = 800,
-  locale = "en-IN",
+  locale = "fr-DZ",
   className,
 }: AnimatedNumberProps) {
   const animated = useCountUp(value, duration);

@@ -48,7 +48,7 @@ export function ExpiryTracking() {
     queryKey: ["suppliers"],
     queryFn: suppliersApi.list,
   });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   // Map supplierId → supplier name for display
   const supplierNameById = useMemo(() => {

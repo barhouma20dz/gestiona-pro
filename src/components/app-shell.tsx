@@ -616,7 +616,7 @@ export function AppShell() {
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden md:inline">
-              {new Date().toLocaleDateString("en-US", {
+              {new Date().toLocaleDateString("ar-DZ-u-nu-latn", {
                 weekday: "short",
                 day: "numeric",
                 month: "short",

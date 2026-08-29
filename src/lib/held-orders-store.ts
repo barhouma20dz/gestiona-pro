@@ -9,7 +9,7 @@ export interface HeldOrder {
   label: string;
   items: CartItem[];
   discount: number;
-  paymentMethod: "Cash" | "UPI" | "Card";
+  paymentMethod: "Cash" | "BARIDIMOB" | "CARD" | "CHEQUE" | "UPI" | "Card";
   heldAt: number; // epoch ms
 }
 

@@ -98,7 +98,7 @@ export const shopApi = {
 export interface CreateSalePayload {
   items: { productId: string; quantity: number }[];
   discount: number;
-  paymentMethod: "Cash" | "UPI" | "Card";
+  paymentMethod: "Cash" | "BARIDIMOB" | "CARD" | "CHEQUE" | "UPI" | "Card";
 }
 
 export const salesApi = {

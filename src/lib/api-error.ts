@@ -42,7 +42,7 @@ export function mapAuthError(
 export async function handleRouteError(
   error: unknown,
   label: string
-): NextResponse {
+): Promise<NextResponse> {
   const message =
     error instanceof Error ? error.message : "Internal server error";
   const mapped = mapAuthError(message);

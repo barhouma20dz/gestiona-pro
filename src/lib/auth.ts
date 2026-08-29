@@ -11,6 +11,11 @@ export interface SessionPayload {
   storeId: string | null;
 }
 
+/** Session guaranteed to be bound to a tenant store (returned by requireStoreOwner). */
+export interface StoreSessionPayload extends SessionPayload {
+  storeId: string;
+}
+
 const SESSION_COOKIE = "swiftbill-session";
 const SESSION_DURATION = 7 * 24 * 60 * 60; // 7 days in seconds
 

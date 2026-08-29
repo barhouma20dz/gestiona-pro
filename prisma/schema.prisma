@@ -39,12 +39,12 @@ model Store {
   email         String   @default("")
   addressLine1  String   @default("")
   addressLine2  String   @default("")
-  upiId         String   @default("")
-  footerText    String   @default("Thank you, visit again!")
-  currency      String   @default("₹")
+  ripNumber     String   @default("") // رقم الحساب البريدي RIP (بريدي موب) لعرض QR عند الدفع
+  footerText    String   @default("شكراً لزيارتكم!")
+  currency      String   @default("دج")
   taxRate       Float    @default(0.0)
   logoUrl       String?
-  timezone      String   @default("UTC")
+  timezone      String   @default("Africa/Algiers")
   status        String   @default("ACTIVE") // ACTIVE | SUSPENDED
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

@@ -155,7 +155,7 @@ export function AdminDashboard() {
     queryKey: ["shop"],
     queryFn: shopApi.get,
   });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   const [plan, setPlan] = useState<SubscriptionPlan>("MONTHLY");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);

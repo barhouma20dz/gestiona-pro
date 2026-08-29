@@ -1,7 +1,12 @@
 // Server-side session helper — reads JWT from cookies OR Authorization header
 import { cookies } from "next/headers";
 import { headers } from "next/headers";
-import { verifyToken, getSessionCookieName, type SessionPayload } from "./auth";
+import {
+  verifyToken,
+  getSessionCookieName,
+  type SessionPayload,
+  type StoreSessionPayload,
+} from "./auth";
 
 export async function getSession(): Promise<SessionPayload | null> {
   // 1. Try cookie first
@@ -32,12 +37,14 @@ export async function requireAuth(): Promise<SessionPayload> {
   return session;
 }
 
-export async function requireStoreOwner(): Promise<SessionPayload> {
+export async function requireStoreOwner(): Promise<StoreSessionPayload> {
   const session = await requireAuth();
   if (!session.storeId) {
     throw new Error("NO_STORE");
   }
-  return session;
+  // storeId is guaranteed non-null here — expose the narrowed type so callers
+  // can pass session.storeId straight into Prisma filters without casts.
+  return session as StoreSessionPayload;
 }
 
 export async function requireSuperAdmin(): Promise<SessionPayload> {

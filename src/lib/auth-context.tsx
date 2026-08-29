@@ -26,7 +26,7 @@ export interface AuthStore {
   email?: string;
   addressLine1?: string;
   addressLine2?: string;
-  upiId?: string;
+  ripNumber?: string;
   footerText?: string;
   currency?: string;
   taxRate?: number;
