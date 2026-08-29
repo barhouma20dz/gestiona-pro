@@ -10,7 +10,7 @@ import { Loader2 } from "lucide-react";
 function LoadingScreen() {
   const { t } = useLanguage();
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 dark:from-emerald-900 dark:via-emerald-950 dark:to-teal-950">
       <div className="pointer-events-none absolute -top-32 -start-32 h-96 w-96 rounded-full bg-emerald-400/30 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-40 -end-24 h-[28rem] w-[28rem] rounded-full bg-teal-300/25 blur-3xl" />
       <motion.div

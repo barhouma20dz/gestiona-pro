@@ -284,7 +284,7 @@ export function SellerManagement() {
           </div>
           <Button
             onClick={openAdd}
-            className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+            className="bg-card text-primary shadow-md hover:bg-primary/10"
           >
             <Plus className="h-4 w-4" />
             {t("addSeller")}
@@ -442,7 +442,7 @@ export function SellerManagement() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-red-600 hover:bg-red-500/10 hover:text-red-700"
+                          className="h-8 w-8 text-red-600 dark:text-red-400 hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300"
                           onClick={() => setDeleteTarget(s)}
                           aria-label={`${t("delete")} ${s.name ?? ""}`}
                         >
@@ -517,7 +517,7 @@ export function SellerManagement() {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8 text-red-600"
+                          className="h-8 w-8 text-red-600 dark:text-red-400"
                           onClick={() => setDeleteTarget(s)}
                           aria-label={t("delete")}
                         >

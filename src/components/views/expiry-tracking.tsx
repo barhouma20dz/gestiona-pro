@@ -84,7 +84,7 @@ export function ExpiryTracking() {
       label: t("productsExpired"),
       value: String(stats.expiredCount),
       icon: CalendarX,
-      tint: "bg-red-500/15 text-red-600",
+      tint: "bg-red-500/15 text-red-600 dark:text-red-400",
     },
     {
       label: t("productsNearExpiry"),
@@ -127,7 +127,7 @@ export function ExpiryTracking() {
           <Button
             onClick={() => refetch()}
             disabled={isFetching}
-            className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+            className="bg-card text-primary shadow-md hover:bg-primary/10"
           >
             {isFetching ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -325,7 +325,7 @@ function ProductGrid({
                   className={cn(
                     "grid size-11 shrink-0 place-items-center rounded-xl",
                     isExpired
-                      ? "bg-red-500/15 text-red-600"
+                      ? "bg-red-500/15 text-red-600 dark:text-red-400"
                       : "bg-amber-500/15 text-amber-600"
                   )}
                 >
@@ -366,9 +366,9 @@ function ProductGrid({
                     className={cn(
                       "tabular-nums",
                       p.stock === 0
-                        ? "border-red-500/40 text-red-600"
+                        ? "border-red-500/40 text-red-600 dark:text-red-400"
                         : isExpired
-                          ? "border-red-500/40 text-red-600"
+                          ? "border-red-500/40 text-red-600 dark:text-red-400"
                           : "border-amber-500/40 text-amber-600"
                     )}
                   >

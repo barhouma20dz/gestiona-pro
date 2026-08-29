@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
 import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/lib/language-context";
 
 // React-canonical way to detect client-side mounting without setState-in-effect.
 // Returns false during SSR / first render, true after hydration on the client.
@@ -16,6 +17,7 @@ function useMounted() {
 
 export function ThemeToggle() {
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const { t } = useLanguage();
   const mounted = useMounted();
 
   if (!mounted) {
@@ -24,7 +26,7 @@ export function ThemeToggle() {
         variant="ghost"
         size="icon"
         className="h-9 w-9"
-        aria-label="Toggle theme"
+        aria-label={t("toggleColorTheme")}
         suppressHydrationWarning
       >
         <Sun className="h-[18px] w-[18px]" />
@@ -40,8 +42,8 @@ export function ThemeToggle() {
       size="icon"
       className="h-9 w-9 relative overflow-hidden"
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      title={isDark ? "Light mode" : "Dark mode"}
+      aria-label={isDark ? t("switchToLight") : t("switchToDark")}
+      title={isDark ? t("switchToLight") : t("switchToDark")}
     >
       <Sun
         className={`h-[18px] w-[18px] transition-all duration-300 ${

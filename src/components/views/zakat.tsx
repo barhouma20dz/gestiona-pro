@@ -257,7 +257,7 @@ function ZakatCalculatorForm({
       value: liabilitiesValue,
       setter: setLiabilitiesValue,
       icon: Coins,
-      tint: "bg-red-500/15 text-red-600",
+      tint: "bg-red-500/15 text-red-600 dark:text-red-400",
       placeholder: "0.00",
     },
   ];

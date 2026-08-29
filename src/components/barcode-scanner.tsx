@@ -239,7 +239,7 @@ function ScannerBody({
                   <Button
                     size="sm"
                     onClick={confirmDetected}
-                    className="shrink-0 bg-white text-emerald-600 hover:bg-emerald-50"
+                    className="shrink-0 bg-card text-primary hover:bg-primary/10"
                   >
                     {t("confirm")}
                   </Button>

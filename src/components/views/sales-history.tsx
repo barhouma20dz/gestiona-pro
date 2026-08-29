@@ -87,7 +87,7 @@ function paymentBadge(
     );
   }
   return (
-    <Badge className="bg-slate-500/15 text-slate-600 border-slate-500/30 hover:bg-slate-500/15">
+    <Badge className="bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30 hover:bg-slate-500/15">
       {t("cash")}
     </Badge>
   );
@@ -454,7 +454,7 @@ export function SalesHistory() {
       decimals: 2,
       prefix: currency,
       icon: Calculator,
-      tint: "bg-slate-500/15 text-slate-600",
+      tint: "bg-slate-500/15 text-slate-600 dark:text-slate-300",
     },
   ];
 
@@ -656,12 +656,12 @@ export function SalesHistory() {
             {/* Cost */}
             <div className="rounded-lg border bg-slate-500/5 p-3">
               <div className="flex items-center gap-1.5">
-                <Wallet className="h-3.5 w-3.5 text-slate-600" />
+                <Wallet className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
                 <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   {t("cost")}
                 </p>
               </div>
-              <p className="mt-1 text-lg font-bold tabular-nums text-slate-600 sm:text-xl">
+              <p className="mt-1 text-lg font-bold tabular-nums text-slate-600 dark:text-slate-300 sm:text-xl">
                 {formatMoney(profitSummary.cost, currency)}
               </p>
             </div>
@@ -692,7 +692,7 @@ export function SalesHistory() {
                     "h-3.5 w-3.5",
                     profitSummary.profit >= 0
                       ? "text-emerald-600"
-                      : "text-red-600"
+                      : "text-red-600 dark:text-red-400"
                   )}
                 />
                 <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -704,7 +704,7 @@ export function SalesHistory() {
                   "mt-1 text-lg font-bold tabular-nums sm:text-xl",
                   profitSummary.profit >= 0
                     ? "text-emerald-600"
-                    : "text-red-600"
+                    : "text-red-600 dark:text-red-400"
                 )}
               >
                 {profitSummary.profit >= 0 ? "+" : ""}

@@ -73,7 +73,7 @@ function paymentBadge(method: string, t: T) {
     );
   }
   return (
-    <Badge className="bg-slate-500/15 text-slate-600 border-slate-500/30 hover:bg-slate-500/15">
+    <Badge className="bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30 hover:bg-slate-500/15">
       {t("cash")}
     </Badge>
   );
@@ -82,7 +82,7 @@ function paymentBadge(method: string, t: T) {
 function stockBadgeFor(stock: number, t: T) {
   if (stock === 0) {
     return (
-      <Badge className="bg-red-500/15 text-red-600 border-red-500/30 hover:bg-red-500/15">
+      <Badge className="bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30 hover:bg-red-500/15">
         0 {t("left")}
       </Badge>
     );
@@ -206,7 +206,7 @@ const QUICK_ACTIONS: QuickAction[] = [
     titleKey: "manageProducts",
     subtitleKey: "inventoryPrices",
     icon: Package,
-    tint: "bg-slate-500/15 text-slate-600",
+    tint: "bg-slate-500/15 text-slate-600 dark:text-slate-300",
     view: "products",
   },
   {
@@ -220,7 +220,7 @@ const QUICK_ACTIONS: QuickAction[] = [
     titleKey: "shopSettings",
     subtitleKey: "businessTax",
     icon: Store,
-    tint: "bg-slate-500/15 text-slate-600",
+    tint: "bg-slate-500/15 text-slate-600 dark:text-slate-300",
     view: "shop",
   },
 ];
@@ -627,7 +627,7 @@ export function Dashboard({
       numericValue: stats?.avgTicket ?? 0,
       decimals: 2,
       icon: Receipt,
-      tint: "bg-slate-500/15 text-slate-600",
+      tint: "bg-slate-500/15 text-slate-600 dark:text-slate-300",
       subtitle: t("perTransactionToday"),
       loading: statsQuery.isLoading,
     },
@@ -657,7 +657,7 @@ export function Dashboard({
           <div className="flex shrink-0 items-center gap-2">
             <Button
               onClick={() => onNavigate("pos")}
-              className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+              className="bg-card text-primary shadow-md hover:bg-primary/10"
             >
               <ScanLine className="h-4 w-4" />
               {t("newSale")}
@@ -714,7 +714,7 @@ export function Dashboard({
                             "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
                             todayVsPrev >= 0
                               ? "bg-emerald-500/10 text-emerald-600"
-                              : "bg-red-500/10 text-red-600"
+                              : "bg-red-500/10 text-red-600 dark:text-red-400"
                           )}
                         >
                           {todayVsPrev >= 0 ? (
@@ -1099,7 +1099,7 @@ export function Dashboard({
             </div>
           ) : paymentBreakdown.length === 0 ? (
             <div className="flex flex-col items-center gap-3 px-4 py-12 text-center sm:px-6">
-              <div className="grid size-12 place-items-center rounded-full bg-slate-500/10 text-slate-500">
+              <div className="grid size-12 place-items-center rounded-full bg-slate-500/10 text-slate-500 dark:text-slate-400">
                 <PieChart className="h-6 w-6" />
               </div>
               <div>
@@ -1166,7 +1166,7 @@ export function Dashboard({
           </div>
         ) : totalHourly === 0 ? (
           <div className="flex flex-col items-center gap-3 px-4 py-12 text-center sm:px-6">
-            <div className="grid size-12 place-items-center rounded-full bg-slate-500/10 text-slate-500">
+            <div className="grid size-12 place-items-center rounded-full bg-slate-500/10 text-slate-500 dark:text-slate-400">
               <Clock className="h-6 w-6" />
             </div>
             <div>
@@ -1232,7 +1232,7 @@ export function Dashboard({
                   ? "bg-emerald-500/15 text-emerald-600"
                   : inventoryTurnover.rate === "medium"
                   ? "bg-amber-500/15 text-amber-600"
-                  : "bg-slate-500/15 text-slate-600"
+                  : "bg-slate-500/15 text-slate-600 dark:text-slate-300"
               )}
             >
               <TrendingUp className="h-5 w-5" />
@@ -1263,7 +1263,7 @@ export function Dashboard({
                   ? "bg-amber-500/15 text-amber-600"
                   : inventoryTurnover.rate === "slow"
                   ? "bg-orange-500/15 text-orange-600"
-                  : "bg-slate-500/15 text-slate-600"
+                  : "bg-slate-500/15 text-slate-600 dark:text-slate-300"
               )}
             >
               {inventoryTurnover.rate === "high"

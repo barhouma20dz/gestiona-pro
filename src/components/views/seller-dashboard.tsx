@@ -60,7 +60,7 @@ function paymentBadge(method: string, t: T) {
     );
   }
   return (
-    <Badge className="bg-slate-500/15 text-slate-600 border-slate-500/30 hover:bg-slate-500/15">
+    <Badge className="bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30 hover:bg-slate-500/15">
       {t("cash")}
     </Badge>
   );
@@ -150,7 +150,7 @@ export function SellerDashboard({
           <div className="flex flex-wrap gap-2">
             <Button
               onClick={() => onNavigate("pos")}
-              className="bg-white text-emerald-700 shadow-md hover:bg-emerald-50"
+              className="bg-card text-primary shadow-md hover:bg-primary/10"
             >
               <ScanLine className="h-4 w-4" />
               {t("startSelling")}
