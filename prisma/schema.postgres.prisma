@@ -1,0 +1,382 @@
+// SwiftBill POS — Multi-Tenant SaaS Store Management System
+// Architecture: Row-level data isolation via storeId on all tenant tables
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Authentication & Users ───────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // bcrypt hashed
+  name      String?
+  role      String   @default("OWNER") // OWNER | STAFF | SUPER_ADMIN
+  storeId   String?
+  store     Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  licenseKeys LicenseKey[] // created by super admin
+  sales       Sale[]       // sales made by this seller
+  payments    SupplierPayment[]
+  auditApprovals InventoryAudit[]
+  customerPayments CustomerPayment[] // debt repayments recorded by this user
+}
+
+// ─── Store (Tenant) ──────────────────────────────────────────────────────────
+
+model Store {
+  id            String   @id @default(cuid())
+  name          String
+  businessType  String   @default("General")
+  phone         String   @default("")
+  email         String   @default("")
+  addressLine1  String   @default("")
+  addressLine2  String   @default("")
+  ripNumber     String   @default("") // رقم الحساب البريدي RIP (بريدي موب) لعرض QR عند الدفع
+  footerText    String   @default("شكراً لزيارتكم!")
+  currency      String   @default("دج")
+  taxRate       Float    @default(0.0)
+  logoUrl       String?
+  timezone      String   @default("Africa/Algiers")
+  status        String   @default("ACTIVE") // ACTIVE | SUSPENDED
+  // Loyalty program settings (نقاط الولاء)
+  loyaltyEnabled    Boolean @default(true)
+  loyaltyEarnRate   Float   @default(100)  // كل X دج من قيمة البيع = نقطة واحدة
+  loyaltyPointValue Float   @default(1)    // قيمة النقطة عند الاستبدال (بالعملة)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users         User[]
+  products      Product[]
+  sales         Sale[]
+  suppliers     Supplier[]
+  invoices      SupplierInvoice[]
+  payments      SupplierPayment[]
+  licenseKeys   LicenseKey[]
+  subscription  Subscription?
+  inventoryAudits InventoryAudit[]
+  zakatRecords  ZakatRecord[]
+  zakatSettings  ZakatSettings?
+  customers     Customer[]
+  customerPayments CustomerPayment[]
+}
+
+// ─── Subscription & Licensing ────────────────────────────────────────────────
+
+model Subscription {
+  id          String   @id @default(cuid())
+  storeId     String   @unique
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  status      String   @default("TRIAL") // TRIAL | ACTIVE | EXPIRED | SUSPENDED
+  plan        String   @default("MONTHLY") // MONTHLY | QUARTERLY | YEARLY
+  startDate   DateTime @default(now())
+  endDate     DateTime
+  trialEndsAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model LicenseKey {
+  id           String    @id @default(cuid())
+  key          String    @unique
+  signature    String    // HMAC signature for server-side validation
+  plan         String    // MONTHLY | QUARTERLY | YEARLY
+  durationDays Int
+  status       String    @default("UNUSED") // UNUSED | USED | EXPIRED | CANCELLED
+  storeId      String?
+  store        Store?    @relation(fields: [storeId], references: [id])
+  createdById  String
+  createdBy    User      @relation(fields: [createdById], references: [id])
+  activatedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+  @@index([plan])
+}
+
+// ─── Products ────────────────────────────────────────────────────────────────
+
+model Product {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name        String
+  barcode     String
+  price       Float
+  costPrice   Float     @default(0)
+  stock       Float     @default(0) // Float to support kg products (e.g., 50.5 kg)
+  unitType    String    @default("count") // "count" | "kg"
+  category    String    @default("General")
+  expiryDate  DateTime?
+  expiryDate2 DateTime?
+  imageUrl    String?
+  supplierId  String?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  saleItems      SaleItem[]
+  invoiceItems   SupplierInvoiceItem[]
+  auditItems     InventoryAuditItem[]
+
+  @@unique([storeId, barcode])
+  @@index([storeId])
+  @@index([storeId, name])
+  @@index([storeId, expiryDate])
+}
+
+// ─── Sales ──────────────────────────────────────────────────────────────────
+
+model Sale {
+  id            String    @id @default(cuid())
+  storeId       String
+  store         Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sellerId      String?
+  seller        User?     @relation(fields: [sellerId], references: [id])
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  receiptNo     String
+  subtotal      Float
+  taxAmount     Float     @default(0)
+  discount      Float     @default(0)
+  total         Float
+  paymentMethod String    @default("Cash") // Cash | BARIDIMOB | CARD | CHEQUE | CREDIT (آجل)
+  itemCount     Int
+  loyaltyPointsEarned Int   @default(0) // points awarded for this sale
+  loyaltyPointsRedeemed Int @default(0) // points redeemed as discount
+  createdAt     DateTime  @default(now())
+
+  items        SaleItem[]
+  debtPayments CustomerPayment[]
+
+  @@unique([storeId, receiptNo])
+  @@index([storeId, createdAt])
+  @@index([storeId, sellerId])
+  @@index([customerId])
+}
+
+// ─── Customers & Loyalty (العملاء والولاء) ────────────────────────────────
+
+model Customer {
+  id            String   @id @default(cuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name          String
+  phone         String   @default("")
+  address       String   @default("")
+  notes         String   @default("")
+  loyaltyPoints Int      @default(0) // available balance (accrual − redemption)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sales         Sale[]
+  payments      CustomerPayment[]
+
+  @@unique([storeId, phone])
+  @@index([storeId])
+  @@index([storeId, name])
+}
+
+// Debt repayment (تسديد ديون العملاء) — either tied to one CREDIT sale or
+// applied to the customer's overall outstanding balance.
+model CustomerPayment {
+  id            String   @id @default(cuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  saleId        String?
+  sale          Sale?    @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  amount        Float
+  paymentDate   DateTime @default(now())
+  paymentMethod String   @default("Cash") // Cash | BARIDIMOB | CARD | CHEQUE
+  notes         String   @default("")
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([customerId])
+  @@index([storeId])
+}
+
+model SaleItem {
+  id          String  @id @default(cuid())
+  saleId      String
+  sale        Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
+  productName String
+  unitPrice   Float
+  quantity    Float    // Float to support kg (fractional) quantities (e.g. 1.750 kg)
+  total       Float
+
+  @@index([saleId])
+}
+
+// ─── Suppliers & Purchase Invoices ───────────────────────────────────────────
+
+model Supplier {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String   @default("")
+  email     String   @default("")
+  address   String   @default("")
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices SupplierInvoice[]
+  products Product[]
+}
+
+model SupplierInvoice {
+  id            String   @id @default(cuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplierId    String
+  supplier      Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  invoiceNo     String
+  invoiceDate   DateTime @default(now())
+  totalAmount   Float
+  paidAmount    Float    @default(0)
+  status        String   @default("UNPAID") // PAID | PARTIAL | UNPAID
+  attachmentUrl String?
+  notes         String   @default("")
+  createdAt     DateTime @default(now())
+
+  items    SupplierInvoiceItem[]
+  payments SupplierPayment[]
+
+  @@unique([storeId, invoiceNo])
+  @@index([storeId])
+  @@index([supplierId])
+}
+
+model SupplierInvoiceItem {
+  id          String           @id @default(cuid())
+  invoiceId   String
+  invoice     SupplierInvoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?          @relation(fields: [productId], references: [id])
+  productName String
+  quantity    Float
+  unitPrice   Float
+  total       Float
+
+  @@index([invoiceId])
+}
+
+// ─── Supplier Payments ─────────────────────────────────────────────────────
+
+model SupplierPayment {
+  id            String   @id @default(cuid())
+  invoiceId     String
+  invoice       SupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  amount        Float
+  paymentDate   DateTime @default(now())
+  paymentMethod String   @default("Cash") // Cash | Bank | Cheque | Other
+  notes         String   @default("")
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([storeId])
+}
+
+// ─── Inventory Audit (الجرد السنوي) ─────────────────────────────────────────
+
+model InventoryAudit {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  year        Int
+  auditDate   DateTime  @default(now())
+  status      String    @default("DRAFT") // DRAFT | COMPLETED | APPROVED
+  approvedAt  DateTime?
+  approvedBy  String?
+  approver    User?     @relation(fields: [approvedBy], references: [id])
+  notes       String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items InventoryAuditItem[]
+
+  @@index([storeId])
+  @@index([storeId, year])
+}
+
+model InventoryAuditItem {
+  id             String   @id @default(cuid())
+  auditId        String
+  audit          InventoryAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id])
+  productName    String
+  barcode        String
+  unitType       String   // "count" | "kg"
+  systemStock    Float    // stock from system at time of audit
+  countedStock   Float    // actual counted stock entered by user
+  difference     Float    // countedStock - systemStock
+  costPrice      Float    // cost price at time of audit
+  differenceValue Float   // difference * costPrice
+  createdAt      DateTime @default(now())
+
+  @@index([auditId])
+}
+
+// ─── Zakat System (نظام الزكاة) ─────────────────────────────────────────────
+
+model ZakatSettings {
+  id              String   @id @default(cuid())
+  storeId         String   @unique
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  zakatRate       Float    @default(2.5) // percentage (2.5%)
+  nisabAmount     Float    @default(0) // nisab threshold in store currency
+  haulStartDate   DateTime? // start of the zakat year (haul)
+  cashOnHand      Float    @default(0) // cash available
+  receivables     Float    @default(0) // debts owed to the store
+  liabilities     Float    @default(0) // deductibles / obligations
+  includeInventory Boolean @default(true) // include stock value in zakat base
+  includeCash     Boolean  @default(true)
+  includeReceivables Boolean @default(true)
+  valuationMethod String   @default("cost") // "cost" | "selling"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ZakatRecord {
+  id              String   @id @default(cuid())
+  storeId         String
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  year            Int
+  calculationDate DateTime @default(now())
+  inventoryValue  Float    @default(0) // value of goods for sale
+  cashValue       Float    @default(0) // cash
+  receivablesValue Float   @default(0) // debts owed to store
+  liabilitiesValue Float  @default(0) // deductions
+  zakatBase       Float    @default(0) // total zakat base
+  zakatRate       Float    @default(2.5) // percentage used
+  zakatAmount     Float    @default(0) // final zakat amount
+  status          String   @default("UNPAID") // UNPAID | PAID
+  paidDate        DateTime?
+  notes           String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([storeId])
+  @@index([storeId, year])
+}

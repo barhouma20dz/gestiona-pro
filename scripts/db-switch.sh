@@ -2,13 +2,19 @@
 # Gestiona Pro — Prisma provider switcher
 # Usage:
 #   bash scripts/db-switch.sh sqlite     # local sandbox dev (db/custom.db)
-#   bash scripts/db-switch.sh postgres   # production (Neon / Vercel deploy)
+#   bash scripts/db-switch.sh postgres   # local dev against a remote postgres
 #
-# The canonical committed schema uses PostgreSQL. Switch to SQLite only for
-# local development, and switch back before pushing to GitHub.
+# PERMANENT SETUP (no manual switching needed for deploys):
+#   - prisma/schema.prisma           = SQLite  → local dev (default state)
+#   - prisma/schema.postgres.prisma  = PostgreSQL → production (Vercel build
+#     reads this file via vercel.json, so pushes NEVER break the deployment)
+# This script keeps both files in sync: it regenerates schema.postgres.prisma
+# from schema.prisma (only the provider line differs), then switches
+# schema.prisma to the requested mode for local work.
 
 set -euo pipefail
 SCHEMA="prisma/schema.prisma"
+PG_SCHEMA="prisma/schema.postgres.prisma"
 MODE="${1:-}"
 
 if [ "$MODE" != "sqlite" ] && [ "$MODE" != "postgres" ]; then
@@ -21,16 +27,20 @@ if [ ! -f "$SCHEMA" ]; then
   exit 1
 fi
 
-TARGET="$MODE"
-[ "$MODE" = "postgres" ] && TARGET="postgresql"
+# 1) Always regenerate the production schema from the current dev schema so
+#    they never drift (models added locally are picked up automatically).
+sed 's/provider = "sqlite"/provider = "postgresql"/; s/provider = "postgres"/provider = "postgresql"/' \
+  "$SCHEMA" > "$PG_SCHEMA"
+echo "✓ $PG_SCHEMA synced from $SCHEMA (postgresql)"
 
-# Normalize any previous state to postgresql first, then set the requested target.
+# 2) Switch the local dev schema to the requested provider.
+TARGET="$MODE"
 sed -i 's/provider = "sqlite"/provider = "postgresql"/' "$SCHEMA"
 sed -i 's/provider = "postgres"/provider = "postgresql"/' "$SCHEMA"
 sed -i "s/provider = \"postgresql\"/provider = \"$TARGET\"/" "$SCHEMA"
 
 if grep -q "provider = \"$TARGET\"" "$SCHEMA"; then
-  echo "✓ schema provider is now: $TARGET"
+  echo "✓ $SCHEMA provider is now: $TARGET"
 else
   echo "✗ failed to switch provider" && exit 1
 fi
