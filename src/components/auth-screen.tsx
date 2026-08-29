@@ -131,7 +131,7 @@ export function AuthScreen() {
         return;
       }
       if (password.length < 6) {
-        setError(t("authMissingFields"));
+        setError(t("authWeakPassword"));
         return;
       }
     }
@@ -150,21 +150,33 @@ export function AuthScreen() {
         });
       }
     } catch (err) {
+      // Log the raw error so real causes are visible in the console
+      console.error("[AuthScreen] submit failed:", err);
       const msg = err instanceof Error ? err.message : "";
+      const lower = msg.toLowerCase();
       // Map server messages to localized strings
       if (
-        msg.toLowerCase().includes("invalid") ||
-        msg.toLowerCase().includes("credentials")
+        lower.includes("failed to fetch") ||
+        lower.includes("networkerror") ||
+        lower.includes("network error") ||
+        lower.includes("load failed")
+      ) {
+        setError(t("authNetworkError"));
+      } else if (
+        lower.includes("invalid") ||
+        lower.includes("credentials")
       ) {
         setError(t("authInvalidCredentials"));
-      } else if (msg.toLowerCase().includes("suspended")) {
+      } else if (lower.includes("suspended")) {
         setError(t("authStoreSuspended"));
       } else if (
-        msg.toLowerCase().includes("already") ||
-        msg.toLowerCase().includes("registered")
+        lower.includes("already") ||
+        lower.includes("registered")
       ) {
         setError(t("authEmailExists"));
-      } else if (msg.toLowerCase().includes("missing")) {
+      } else if (lower.includes("password must be")) {
+        setError(t("authWeakPassword"));
+      } else if (lower.includes("missing")) {
         setError(t("authMissingFields"));
       } else {
         setError(t("authGenericError"));
@@ -437,11 +449,6 @@ export function AuthScreen() {
               )}
             </div>
           </div>
-
-          {/* Demo admin hint */}
-          <p className="mt-4 text-center text-xs text-white/70">
-            {t("authDemoHint")}
-          </p>
         </motion.div>
       </div>
     </div>

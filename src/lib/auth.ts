@@ -43,3 +43,42 @@ export function getSessionCookieName(): string {
 export function getSessionDuration(): number {
   return SESSION_DURATION;
 }
+
+/**
+ * Correct cookie options for the current request protocol.
+ *
+ * Per the cookie spec, `SameSite=None` requires the `Secure` attribute —
+ * browsers REJECT `SameSite=None; Secure=false` cookies entirely.
+ * The preview environment is served over HTTPS (behind a proxy), so we detect
+ * `x-forwarded-proto: https` and emit a valid cross-site cookie there, while
+ * local HTTP development gets a classic SameSite=Lax cookie.
+ */
+export function sessionCookieOptions(request?: Request) {
+  const proto =
+    request?.headers.get("x-forwarded-proto") ??
+    (() => {
+      try {
+        return request?.url ? new URL(request.url).protocol.replace(":", "") : null;
+      } catch {
+        return null;
+      }
+    })();
+
+  const isHttps = proto === "https";
+
+  return isHttps
+    ? {
+        httpOnly: false,
+        sameSite: "none" as const,
+        secure: true, // required when sameSite=none — browsers reject otherwise
+        maxAge: getSessionDuration(),
+        path: "/",
+      }
+    : {
+        httpOnly: false,
+        sameSite: "lax" as const,
+        secure: false,
+        maxAge: getSessionDuration(),
+        path: "/",
+      };
+}
