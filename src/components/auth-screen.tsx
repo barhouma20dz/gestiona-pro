@@ -129,10 +129,25 @@ export function AuthScreen() {
     } else {
       if (!storeName.trim() || !email.trim() || !password || !phone.trim()) {
         setError(t("authMissingFields"));
+        // Bring the first missing field into view (card scrolls internally on
+        // short screens so the user always sees what is required)
+        const firstMissing = !storeName.trim()
+          ? "storeName"
+          : !email.trim()
+            ? "email"
+            : !password
+              ? "password"
+              : "phone";
+        document
+          .getElementById(firstMissing)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
       if (password.length < 6) {
         setError(t("authWeakPassword"));
+        document
+          .getElementById("password")
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
     }
@@ -163,6 +178,15 @@ export function AuthScreen() {
         lower.includes("load failed")
       ) {
         setError(t("authNetworkError"));
+      } else if (lower.includes("timeout")) {
+        setError(t("authNetworkError"));
+      } else if (
+        lower.includes("server error") ||
+        lower.includes("http 5") ||
+        lower.includes("busy") ||
+        lower.includes("incomplete")
+      ) {
+        setError(t("authServerError"));
       } else if (
         lower.includes("invalid") ||
         lower.includes("credentials")
@@ -207,23 +231,24 @@ export function AuthScreen() {
         <ThemeToggle />
       </div>
 
-      <div className="relative z-10 flex min-h-screen items-center justify-center p-4 sm:p-6">
+      <div className="relative z-10 flex min-h-screen justify-center p-4 sm:p-6">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: "easeOut" }}
-          className="w-full max-w-md"
+          className="my-auto w-full max-w-md"
         >
           {/* Logo */}
-          <div className="mb-6">
+          <div className="mb-4">
             <BrandLogo />
           </div>
 
-          {/* Card */}
-          <div className="rounded-3xl bg-card/95 shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl">
+          {/* Card — internally scrollable so the submit button stays reachable
+              on short viewports (embedded preview iframes, small laptops) */}
+          <div className="scrollbar-emerald max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl bg-card/95 shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl">
             <div className="p-6 sm:p-8">
               {/* Heading */}
-              <div className="mb-6 text-center">
+              <div className="mb-4 text-center">
                 <h2 className="text-xl font-bold text-card-foreground">
                   {mode === "login" ? t("authWelcomeBack") : t("authCreateAccount")}
                 </h2>
@@ -239,7 +264,7 @@ export function AuthScreen() {
               <ModeToggle mode={mode} setMode={switchMode} />
 
               {/* Form */}
-              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
                 <AnimatePresence mode="popLayout" initial={false}>
                   {mode === "register" && (
                     <motion.div
@@ -449,7 +474,7 @@ export function AuthScreen() {
 
               {/* Trial features hint in register mode */}
               {mode === "register" && (
-                <p className="mt-5 text-center text-xs text-muted-foreground">
+                <p className="mt-4 text-center text-xs text-muted-foreground">
                   {t("authTrialFeatures")}
                 </p>
               )}
