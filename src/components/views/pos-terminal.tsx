@@ -36,6 +36,7 @@ import { useHeldOrdersStore } from "@/lib/held-orders-store";
 import { useLanguage } from "@/lib/language-context";
 import { cn } from "@/lib/utils";
 import { colorFromString, formatMoney, initialsOf } from "@/lib/format";
+import { playScanBeep, vibrateScan } from "@/lib/scan-feedback";
 import type { Product } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -337,35 +338,100 @@ function CameraScannerBody({
 }) {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const controlsRef = useRef<{ stop: () => void } | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
+  // Continuous scanning: keep the dialog open and keep adding scanned products.
+  const [keepOpen, setKeepOpen] = useState(true);
+  const keepOpenRef = useRef(keepOpen);
+  const [lastScan, setLastScan] = useState<{ code: string; at: number } | null>(
+    null
+  );
+  const [flash, setFlash] = useState(false);
+
+  useEffect(() => {
+    keepOpenRef.current = keepOpen;
+  }, [keepOpen]);
 
   useEffect(() => {
     let cancelled = false;
+    let lastCode = "";
+    let lastAt = 0;
 
     async function startCamera() {
       try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          setCameraError("Camera API not supported in this browser.");
-          return;
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false,
+        // Dynamic import to keep the heavy ZXing bundle out of the POS chunk.
+        const { BrowserMultiFormatReader } = await import("@zxing/browser");
+        const { DecodeHintType, BarcodeFormat } = await import("@zxing/library");
+
+        if (!videoRef.current) return;
+
+        // Restrict to retail barcode formats → faster + fewer false reads.
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.CODE_39,
+          BarcodeFormat.CODE_93,
+          BarcodeFormat.ITF,
+          BarcodeFormat.CODABAR,
+        ]);
+        hints.set(DecodeHintType.TRY_HARDER, true);
+
+        // Key speed fix: zxing's default delayBetweenScanAttempts is 500ms
+        // (only 2 decode tries per second!). 30ms → ~30 tries/sec.
+        const reader = new BrowserMultiFormatReader(hints, {
+          delayBetweenScanAttempts: 30,
+          delayBetweenScanSuccess: 250,
         });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {
-            /* autoplay may be blocked — ignore */
-          });
-        }
+
+        const handleDetected = (text: string) => {
+          if (cancelled) return;
+          const now = Date.now();
+          // Ignore the same code re-detected within 1.5s (staying in frame).
+          if (text === lastCode && now - lastAt < 1500) return;
+          lastCode = text;
+          lastAt = now;
+
+          // Instant feedback: beep + vibrate + green flash.
+          playScanBeep(true);
+          vibrateScan(true);
+          setLastScan({ code: text, at: now });
+          setFlash(true);
+          setTimeout(() => {
+            if (!cancelled) setFlash(false);
+          }, 260);
+
+          onScan(text);
+
+          // Single-shot mode: close right after a successful scan.
+          if (!keepOpenRef.current) {
+            onOpenChange(false);
+          }
+        };
+
+        // High-resolution + back camera → reads barcodes from farther away.
+        const controls = await reader.decodeFromConstraints(
+          {
+            video: {
+              facingMode: "environment",
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          },
+          videoRef.current,
+          (result) => {
+            const text = result?.getText();
+            if (text) handleDetected(text);
+          }
+        );
+
+        controlsRef.current = controls;
         if (!cancelled) setCameraReady(true);
       } catch (err) {
         if (cancelled) return;
@@ -379,19 +445,25 @@ function CameraScannerBody({
 
     return () => {
       cancelled = true;
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
+      if (controlsRef.current) {
+        try {
+          controlsRef.current.stop();
+        } catch {
+          // ignore
+        }
+        controlsRef.current = null;
       }
     };
-  }, []);
+  }, [onScan, onOpenChange]);
 
   const submitManual = () => {
     const code = manualCode.trim();
     if (!code) return;
+    playScanBeep(true);
+    vibrateScan(true);
     onScan(code);
     setManualCode("");
-    onOpenChange(false);
+    if (!keepOpenRef.current) onOpenChange(false);
   };
 
   return (
@@ -406,7 +478,7 @@ function CameraScannerBody({
         </DialogDescription>
       </DialogHeader>
 
-      {/* Camera preview */}
+      {/* Camera preview with live decoding */}
       <div className="relative aspect-video w-full overflow-hidden rounded-lg border bg-black">
         {cameraError ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
@@ -427,6 +499,10 @@ function CameraScannerBody({
               muted
               className="h-full w-full object-cover"
             />
+            {/* Success flash */}
+            {flash && (
+              <div className="pointer-events-none absolute inset-0 bg-emerald-400/25 transition-opacity" />
+            )}
             {/* Scan frame overlay */}
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="relative h-24 w-3/4 max-w-[260px] rounded-md border-2 border-primary/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]">
@@ -447,6 +523,15 @@ function CameraScannerBody({
                 />
               </div>
             </div>
+            {/* Last detected code — feedback while continuous scanning */}
+            {lastScan && keepOpen && (
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-emerald-500/90 p-2 text-white">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span className="truncate font-mono text-sm font-bold">
+                  {lastScan.code}
+                </span>
+              </div>
+            )}
             {!cameraReady && !cameraError && (
               <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
                 {t("startingCamera")}
@@ -456,6 +541,20 @@ function CameraScannerBody({
         )}
       </div>
 
+      {/* Continuous scan toggle */}
+      <label className="flex cursor-pointer items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+        <input
+          type="checkbox"
+          checked={keepOpen}
+          onChange={(e) => setKeepOpen(e.target.checked)}
+          className="h-4 w-4 accent-emerald-600"
+        />
+        <span className="text-sm font-medium">{t("keepScannerOpen")}</span>
+        <span className="text-xs text-muted-foreground">
+          — {t("keepScannerOpenHint")}
+        </span>
+      </label>
+
       {/* Manual fallback — primary path */}
       <div className="space-y-2">
         <label className="text-xs font-medium text-muted-foreground">
@@ -463,13 +562,14 @@ function CameraScannerBody({
         </label>
         <div className="flex gap-2">
           <Input
-            autoFocus
+            autoFocus={!!cameraError}
             value={manualCode}
             placeholder="e.g. 8901030867531"
             onChange={(e) => setManualCode(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") submitManual();
             }}
+            className="font-mono"
           />
           <Button type="button" onClick={submitManual} disabled={!manualCode.trim()}>
             <Plus className="h-4 w-4" />
@@ -863,6 +963,13 @@ export function PosTerminal() {
     return () => window.removeEventListener("keydown", handler);
   }, [items.length, setPaymentMethod, items, discount, paymentMethod, t]);
 
+  // Auto-focus the scan input on mount (desktop only — avoids popping the
+  // on-screen keyboard on tablets/phones) so a USB scanner works immediately.
+  // NOTE: the hardware-scanner capture effect lives right after
+  // handleScanSubmit is declared (see below).
+  const scanBufferRef = useRef("");
+  const lastKeyAtRef = useRef(0);
+
   const categories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => p.category && set.add(p.category));
@@ -894,8 +1001,8 @@ export function PosTerminal() {
   const taxAmount = (taxableAmount * taxRate) / 100;
   const grandTotal = taxableAmount + taxAmount;
 
-  const handleScanSubmit = () => {
-    const code = scanInput.trim();
+  const handleScanSubmit = (codeOverride?: string) => {
+    const code = (codeOverride ?? scanInput).trim();
     if (!code) return;
     // Try barcode first
     const added = addByBarcode(code, products);
@@ -903,8 +1010,11 @@ export function PosTerminal() {
       const p = products.find(
         (x) => x.barcode.toLowerCase() === code.toLowerCase()
       );
-      toast.success(`${p?.name ?? t("customItemDefault")} ${t("productAdded")}`);
+      toast.success(`${p?.name ?? t("customItemDefault")} ${t("productAdded")}`, {
+        duration: 1500,
+      });
       setScanInput("");
+      scanInputRef.current?.focus();
       return;
     }
     // Try name match (case-insensitive, exact or contains)
@@ -913,8 +1023,9 @@ export function PosTerminal() {
     );
     if (byName) {
       addProduct(byName);
-      toast.success(`${byName.name} ${t("productAdded")}`);
+      toast.success(`${byName.name} ${t("productAdded")}`, { duration: 1500 });
       setScanInput("");
+      scanInputRef.current?.focus();
       return;
     }
     // Partial name match
@@ -923,14 +1034,78 @@ export function PosTerminal() {
     );
     if (partial) {
       addProduct(partial);
-      toast.success(`${partial.name} ${t("productAdded")}`);
+      toast.success(`${partial.name} ${t("productAdded")}`, { duration: 1500 });
       setScanInput("");
+      scanInputRef.current?.focus();
       return;
     }
+    playScanBeep(false);
+    vibrateScan(false);
     toast.error(t("productNotFound"), {
       description: `${t("noProductMatches")} "${code}"`,
     });
   };
+
+  // Auto-focus the scan input on mount (desktop only — avoids popping the
+  // on-screen keyboard on tablets/phones).
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(pointer: fine)").matches
+    ) {
+      scanInputRef.current?.focus();
+    }
+  }, []);
+
+  // Hardware barcode scanner (USB / Bluetooth) capture.
+  // Scanners "type" the code very fast (< 30ms between keys) and finish with
+  // Enter. We capture that burst even when the scan input is NOT focused, so
+  // the cashier can scan straight away without touching the mouse/keyboard.
+  const scanSubmitRef = useRef(handleScanSubmit);
+  useEffect(() => {
+    scanSubmitRef.current = handleScanSubmit;
+  });
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Never interfere while the user is typing inside a field — those
+      // inputs handle their own Enter key.
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+      if (isTyping) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const now = Date.now();
+
+      if (e.key === "Enter") {
+        const code = scanBufferRef.current.trim();
+        const burstJustEnded = now - lastKeyAtRef.current < 150;
+        scanBufferRef.current = "";
+        lastKeyAtRef.current = 0;
+        // A fast burst of ≥ 4 chars followed immediately by Enter is
+        // virtually always a hardware scanner (human typing is slower).
+        if (code.length >= 4 && burstJustEnded) {
+          e.preventDefault();
+          scanSubmitRef.current(code);
+        }
+        return;
+      }
+
+      if (e.key.length === 1) {
+        // Append to the burst if keystrokes come fast, otherwise start fresh.
+        if (now - lastKeyAtRef.current < 80) {
+          scanBufferRef.current += e.key;
+        } else {
+          scanBufferRef.current = e.key;
+        }
+        lastKeyAtRef.current = now;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const handleCameraScan = (code: string) => {
     const added = addByBarcode(code, products);
@@ -938,7 +1113,9 @@ export function PosTerminal() {
       const p = products.find(
         (x) => x.barcode.toLowerCase() === code.toLowerCase()
       );
-      toast.success(`${p?.name ?? t("customItemDefault")} ${t("productAdded")}`);
+      toast.success(`${p?.name ?? t("customItemDefault")} ${t("productAdded")}`, {
+        duration: 1200,
+      });
     } else {
       // Try name match from camera input too
       const byName = products.find((p) =>
@@ -946,10 +1123,15 @@ export function PosTerminal() {
       );
       if (byName) {
         addProduct(byName);
-        toast.success(`${byName.name} ${t("productAdded")}`);
+        toast.success(`${byName.name} ${t("productAdded")}`, {
+          duration: 1200,
+        });
       } else {
+        playScanBeep(false);
+        vibrateScan(false);
         toast.error(t("productNotFound"), {
           description: `${t("noProductMatches")} "${code}"`,
+          duration: 2000,
         });
       }
     }
@@ -1052,7 +1234,7 @@ export function PosTerminal() {
                 {t("scan")}
               </Button>
               <Button
-                onClick={handleScanSubmit}
+                onClick={() => handleScanSubmit()}
                 disabled={!scanInput.trim()}
                 className="shrink-0"
               >
