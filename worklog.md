@@ -2154,3 +2154,22 @@ Stage Summary:
 - TSC: 0 أخطاء في src/ | ESLint: نظيف
 - بيع تجريبي كامل ناجح بالمتصفح: إيصال INV-20260829-0007 معرّب، 1 250,00 دج
 - التواريخ: "السبت، 29 أوت 2026" بأسماء الأشهر الجزائرية
+
+---
+Task ID: 3
+Agent: Super Z (main)
+Task: المرحلة 2 — وحدة العملاء والولاء الكاملة
+
+Work Log:
+- المخطط: Customer + CustomerPayment، Sale.customerId + loyaltyPointsEarned/Redeemed، Store.loyaltyEnabled/loyaltyEarnRate/loyaltyPointValue
+- API: /api/customers (GET بإحصائيات محسوبة + POST)، /:id (PUT/DELETE)، /:id/payments (GET/POST مع تحقق المتبقي للفاتورة)
+- /api/sales: CREDIT يتطلب عميلاً، redeemPoints محسوب بالسقوف (رصيد/قيمة)، نقاط مكتسبة floor(total/earnRate)، كل ذلك داخل $transaction
+- واجهة العملاء: إحصائيات (مدينون/عدد/أعلى نقاط)، بحث، بطاقات بأشارات دين، حوار تسديد بسجل، إضافة/تعديل/حذف
+- checkout: محدد العميل، شارات النقاط والدين، حقل استخدام النقاط كخصم، حارس الآجل، توقع النقاط المكتسبة
+- POS: زر آجل F5 (HandCoins)، شارات CREDIT وردية في السجل واللوحة
+- seed-demo: 5 عملاء، بيعان آجلان، تسديد جزئي
+- اختبار متصفح كامل: بيع آجل ناجح (دين خالد 915→1025)، تسديد 500 (1840→1340 لمطعم الأصدقاء)
+
+Stage Summary:
+- TSC 0 | ESLint نظيف | الالتزامان a32d31d + a0b2edc مرفوعان إلى GitHub main
+- المراحل المتبقية: 3 (مشتريات/مخزون ذكي)، 4 (تقارير متقدمة)، 5 (هوية بصرية Cairo)
