@@ -196,7 +196,7 @@ export function ProductManager() {
     queryKey: ["shop"],
     queryFn: shopApi.get,
   });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   // Filter state
   const [search, setSearch] = useState("");
@@ -332,9 +332,13 @@ export function ProductManager() {
       name: `${p.name} (Copy)`,
       barcode: `${p.barcode}-COPY`,
       price: String(p.price),
+      costPrice: String(p.costPrice ?? 0),
       stock: String(p.stock),
       unitType: p.unitType === "kg" ? "kg" : "count",
       category: p.category,
+      expiryDate: p.expiryDate ? new Date(p.expiryDate).toISOString().split("T")[0] : "",
+      expiryDate2: p.expiryDate2 ? new Date(p.expiryDate2).toISOString().split("T")[0] : "",
+      imageUrl: p.imageUrl ?? "",
     });
     setFormErrors({});
     setFormOpen(true);

@@ -122,7 +122,7 @@ export function CommandPalette({
   });
 
   const addProduct = useCartStore((s) => s.addProduct);
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   const handleNavigate = (v: ViewKey) => {
     onNavigate(v);

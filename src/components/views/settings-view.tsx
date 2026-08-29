@@ -119,14 +119,14 @@ export function SettingsView() {
   );
 
   const [taxValue, setTaxValue] = useState(0);
-  const [currencyValue, setCurrencyValue] = useState("₹");
+  const [currencyValue, setCurrencyValue] = useState("دج");
   const [syncedShopId, setSyncedShopId] = useState<string | null>(null);
 
   // Sync tax slider + currency from server when the loaded shop changes.
   if (shop && shop.id !== syncedShopId) {
     setSyncedShopId(shop.id);
     setTaxValue(Math.min(20, Math.max(0, shop.taxRate ?? 0)));
-    setCurrencyValue(shop.currency ?? "₹");
+    setCurrencyValue(shop.currency ?? "دج");
   }
 
   const taxMutation = useMutation({
@@ -238,7 +238,7 @@ export function SettingsView() {
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
                 <Badge variant="secondary" className="gap-1">
                   <Store className="h-3 w-3" />
-                  {shop.currency || "₹"} · {t("tax")} {shop.taxRate ?? 0}%
+                  {shop.currency || "دج"} · {t("tax")} {shop.taxRate ?? 0}%
                 </Badge>
                 <Badge variant="outline" className="gap-1">
                   <Info className="h-3 w-3" />
@@ -353,7 +353,7 @@ export function SettingsView() {
                   {t("currentCurrency")}
                 </p>
                 <p className="text-2xl font-bold text-primary">
-                  {shop.currency ?? "₹"}
+                  {shop.currency ?? "دج"}
                 </p>
               </div>
               <div className="text-right">
@@ -366,7 +366,7 @@ export function SettingsView() {
 
             {/* Currency quick-pick chips */}
             <div className="flex flex-wrap gap-2">
-              {["₹", "$", "€", "£", "¥", "د.ج", "ر.س", "د.إ", "ج.م", "د.ك", "د.ل", "د.ت"].map(
+              {["دج", "$", "€", "£", "¥", "د.ج", "ر.س", "د.إ", "ج.م", "د.ك", "د.ل", "د.ت"].map(
                 (cur) => (
                   <button
                     key={cur}
@@ -394,7 +394,7 @@ export function SettingsView() {
                 value={currencyValue}
                 onChange={(e) => setCurrencyValue(e.target.value)}
                 className="flex h-9 w-24 rounded-md border border-input bg-transparent px-3 py-1 text-sm font-bold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="₹"
+                placeholder="دج"
               />
             </div>
 
@@ -403,7 +403,7 @@ export function SettingsView() {
                 onClick={handleSaveCurrency}
                 disabled={
                   !shop ||
-                  (shop.currency ?? "₹") === currencyValue ||
+                  (shop.currency ?? "دج") === currencyValue ||
                   currencyMutation.isPending
                 }
                 className="bg-primary text-primary-foreground hover:bg-primary/90"

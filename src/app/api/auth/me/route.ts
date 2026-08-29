@@ -49,7 +49,7 @@ export async function GET() {
             email: user.store.email,
             addressLine1: user.store.addressLine1,
             addressLine2: user.store.addressLine2,
-            upiId: user.store.upiId,
+            ripNumber: user.store.ripNumber,
             footerText: user.store.footerText,
             currency: user.store.currency,
             taxRate: user.store.taxRate,

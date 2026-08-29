@@ -19,7 +19,9 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json(store);
+    // Normalize to the client `Shop` contract (phoneNumber, camelCase fields)
+    const { phone, ...rest } = store;
+    return NextResponse.json({ ...rest, phoneNumber: phone });
   } catch (error) {
     return handleRouteError(error, "GET /api/shop");
   }
@@ -45,8 +47,8 @@ export async function PUT(request: Request) {
     if (typeof body?.phone === "string") {
       data.phone = body.phone;
     }
-    if (typeof body?.upiId === "string") {
-      data.upiId = body.upiId;
+    if (typeof body?.ripNumber === "string") {
+      data.ripNumber = body.ripNumber;
     }
     if (typeof body?.footerText === "string") {
       data.footerText = body.footerText;

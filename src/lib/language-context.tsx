@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { translations, type Locale, type TranslationKey } from "./i18n";
+import { setDateFormatLocale } from "./format";
 
 interface LanguageContextValue {
   locale: Locale;
@@ -37,6 +38,8 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     const dir = locale === "ar" ? "rtl" : "ltr";
     document.documentElement.dir = dir;
     document.documentElement.lang = locale;
+    // Keep date formatting (format.ts) in sync with the UI language
+    setDateFormatLocale(locale);
   }, [locale]);
 
   const setLocale = useCallback((newLocale: Locale) => {

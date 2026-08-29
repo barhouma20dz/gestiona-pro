@@ -4,8 +4,16 @@ import { requireAuth, requireStoreOwner } from "@/lib/session";
 import { handleRouteError } from "@/lib/api-error";
 import type { Prisma } from "@prisma/client";
 
-type PaymentMethod = "Cash" | "UPI" | "Card";
-const VALID_PAYMENT_METHODS: PaymentMethod[] = ["Cash", "UPI", "Card"];
+type PaymentMethod = "Cash" | "BARIDIMOB" | "CARD" | "CHEQUE" | "UPI" | "Card";
+const VALID_PAYMENT_METHODS: PaymentMethod[] = [
+  "Cash",
+  "BARIDIMOB",
+  "CARD",
+  "CHEQUE",
+  // Legacy values kept so old records/clients still validate:
+  "UPI",
+  "Card",
+];
 
 interface SaleItemInput {
   productId: string;

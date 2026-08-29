@@ -27,14 +27,14 @@ import { Textarea } from "@/components/ui/textarea";
 
 const FOOTER_MAX = 80;
 
-const CURRENCY_OPTIONS = ["₹", "$", "€", "£", "¥"];
+const CURRENCY_OPTIONS = ["دج", "$", "€", "£", "¥"];
 
 interface FormState {
   name: string;
   addressLine1: string;
   addressLine2: string;
   phoneNumber: string;
-  upiId: string;
+  ripNumber: string;
   footerText: string;
   currency: string;
   taxRate: number;
@@ -45,9 +45,9 @@ const EMPTY_FORM: FormState = {
   addressLine1: "",
   addressLine2: "",
   phoneNumber: "",
-  upiId: "",
+  ripNumber: "",
   footerText: "",
-  currency: "₹",
+  currency: "دج",
   taxRate: 0,
 };
 
@@ -57,9 +57,9 @@ function toForm(shop: Shop): FormState {
     addressLine1: shop.addressLine1 ?? "",
     addressLine2: shop.addressLine2 ?? "",
     phoneNumber: shop.phoneNumber ?? "",
-    upiId: shop.upiId ?? "",
+    ripNumber: shop.ripNumber ?? "",
     footerText: shop.footerText ?? "",
-    currency: shop.currency || "₹",
+    currency: shop.currency || "دج",
     taxRate: shop.taxRate ?? 0,
   };
 }
@@ -112,9 +112,9 @@ export function ShopDetails() {
       addressLine1: form.addressLine1.trim(),
       addressLine2: form.addressLine2.trim(),
       phoneNumber: form.phoneNumber.trim(),
-      upiId: form.upiId.trim(),
+      ripNumber: form.ripNumber.trim(),
       footerText: form.footerText.slice(0, FOOTER_MAX),
-      currency: form.currency || "₹",
+      currency: form.currency || "دج",
       taxRate: tax,
     });
   };
@@ -223,9 +223,9 @@ export function ShopDetails() {
                   hint={t("upiHint")}
                 >
                   <Input
-                    value={form.upiId}
-                    onChange={(e) => update("upiId", e.target.value)}
-                    placeholder="shop@upi"
+                    value={form.ripNumber}
+                    onChange={(e) => update("ripNumber", e.target.value)}
+                    placeholder="00799999 0000000000 00"
                   />
                 </Field>
 
@@ -356,7 +356,7 @@ function Field({
 }
 
 function ReceiptPreview({ form, t }: { form: FormState; t: (k: "shopName" | "ph" | "upi" | "subtotal" | "tax" | "totalLabel" | "thankYouFooter") => string }) {
-  const cur = form.currency || "₹";
+  const cur = form.currency || "دج";
   const dummySubtotal = 120;
   const tax = useMemo(() => {
     const rate = Number.isFinite(form.taxRate) ? form.taxRate : 0;
@@ -381,7 +381,7 @@ function ReceiptPreview({ form, t }: { form: FormState; t: (k: "shopName" | "ph"
           {form.addressLine1 && <p>{form.addressLine1}</p>}
           {form.addressLine2 && <p>{form.addressLine2}</p>}
           {form.phoneNumber && <p>{t("ph")}: {form.phoneNumber}</p>}
-          {form.upiId && <p className="text-[11px] text-neutral-500">{t("upi")}: {form.upiId}</p>}
+          {form.ripNumber && <p className="text-[11px] text-neutral-500">{t("upi")}: {form.ripNumber}</p>}
         </div>
 
         <DashedDivider />

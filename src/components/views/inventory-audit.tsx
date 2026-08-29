@@ -29,6 +29,7 @@ import type {
 import { formatMoney, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
+import type { TranslationKey } from "@/lib/i18n";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type StatusBadgeProps = { status: InventoryAudit["status"]; t: (k: never) => string };
+type StatusBadgeProps = {
+  status: InventoryAudit["status"];
+  t: (k: TranslationKey) => string;
+};
 
 function StatusBadge({ status, t }: StatusBadgeProps) {
   if (status === "APPROVED") {
@@ -94,7 +98,7 @@ export function InventoryAudit() {
   const qc = useQueryClient();
 
   const { data: shop } = useQuery({ queryKey: ["shop"], queryFn: shopApi.get });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   const { data: audits = [], isLoading } = useQuery({
     queryKey: ["inventory-audits"],
@@ -450,7 +454,7 @@ function AuditDetail({ auditId, onBack, onApprove }: AuditDetailProps) {
   const qc = useQueryClient();
 
   const { data: shop } = useQuery({ queryKey: ["shop"], queryFn: shopApi.get });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   const { data: audit, isLoading } = useQuery({
     queryKey: ["inventory-audit", auditId],
@@ -554,7 +558,7 @@ function AuditDetail({ auditId, onBack, onApprove }: AuditDetailProps) {
     updateItemsMutation.mutate(items);
   };
 
-  const displayStats: InventoryAuditStats | null = stats;
+  const displayStats: InventoryAuditStats | null = stats ?? null;
   const s = displayStats ?? {
     totalProducts: audit.items.length,
     matchedCount: liveStats.matched,
@@ -788,7 +792,7 @@ interface AuditItemRowProps {
   draft: string | undefined;
   readOnly: boolean;
   onChange: (value: string) => void;
-  t: (k: never) => string;
+  t: (k: TranslationKey) => string;
 }
 
 function AuditItemRow({ item, currency, draft, readOnly, onChange, t }: AuditItemRowProps) {

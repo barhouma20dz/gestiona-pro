@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+} from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   HandHeart,
@@ -23,6 +28,7 @@ import type { ZakatSettings, ZakatRecord } from "@/lib/types";
 import { formatMoney, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
+import type { TranslationKey } from "@/lib/i18n";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -122,7 +128,7 @@ function ZakatCalculatorTab() {
   const qc = useQueryClient();
 
   const { data: shop } = useQuery({ queryKey: ["shop"], queryFn: shopApi.get });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   const { data: settings, isLoading: settingsLoading } = useQuery({
     queryKey: ["zakat-settings"],
@@ -160,7 +166,7 @@ function ZakatCalculatorForm({
 }: {
   settings: ZakatSettings;
   currency: string;
-  t: (k: never) => string;
+  t: (k: TranslationKey) => string;
   qc: ReturnType<typeof useQueryClient>;
 }) {
   const [year, setYear] = useState<number>(new Date().getFullYear());
@@ -414,7 +420,7 @@ function ZakatRecordsTab() {
   const qc = useQueryClient();
 
   const { data: shop } = useQuery({ queryKey: ["shop"], queryFn: shopApi.get });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   const { data: records = [], isLoading } = useQuery({
     queryKey: ["zakat-records"],
@@ -660,9 +666,13 @@ function ZakatSettingsForm({
   updateMutation,
 }: {
   initial: ZakatSettings;
-  t: (k: never) => string;
+  t: (k: TranslationKey) => string;
   qc: ReturnType<typeof useQueryClient>;
-  updateMutation: ReturnType<typeof useMutation>;
+  updateMutation: UseMutationResult<
+    ZakatSettings,
+    Error,
+    Partial<ZakatSettings>
+  >;
 }) {
   const [form, setForm] = useState<Partial<ZakatSettings>>(initial);
 

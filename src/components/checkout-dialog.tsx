@@ -16,6 +16,7 @@ import { salesApi, shopApi, type CreateSalePayload } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
 import { useLanguage } from "@/lib/language-context";
 import { formatMoney } from "@/lib/format";
+import { paymentLabelKey } from "@/lib/payment";
 import type { Sale } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
     queryFn: shopApi.get,
   });
 
-  const currency = shop?.currency || "₹";
+  const currency = shop?.currency || "دج";
   const taxRate = shop?.taxRate ?? 0;
 
   const subtotal = items.reduce(
@@ -66,12 +67,12 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
   const taxAmount = (taxableAmount * taxRate) / 100;
   const grandTotal = taxableAmount + taxAmount;
 
-  const upiId = shop?.upiId?.trim() ?? "";
-  const showUpiQR = paymentMethod === "UPI" && upiId.length > 0;
-  const upiQrData = showUpiQR
-    ? `upi://pay?pa=${upiId}&pn=${encodeURIComponent(
-        shop?.name || "Store"
-      )}&am=${grandTotal.toFixed(2)}&cu=INR`
+  const ripNumber = shop?.ripNumber?.trim() ?? "";
+  const showRipQR = paymentMethod === "BARIDIMOB" && ripNumber.length > 0;
+  // BaridiMob has no universal deep-link scheme; a plain-text QR with the RIP
+  // and beneficiary is readable by any camera app / BaridiMob scanner.
+  const ripQrData = showRipQR
+    ? `RIP: ${ripNumber}\nBeneficiary: ${shop?.name || "Store"}\nAmount: ${grandTotal.toFixed(2)} DZD`
     : "";
 
   const createSale = useMutation({
@@ -145,7 +146,8 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
               </DialogTitle>
               <DialogDescription>
                 {t("receipt")} {completedSale.receiptNo} ·{" "}
-                {formatMoney(completedSale.total, currency)} · {completedSale.paymentMethod}
+                {formatMoney(completedSale.total, currency)} · {" "}
+                {t(paymentLabelKey(completedSale.paymentMethod))}
               </DialogDescription>
             </DialogHeader>
 
@@ -216,12 +218,12 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                 </table>
               </div>
 
-              {/* UPI QR */}
-              {showUpiQR && (
+              {/* BaridiMob RIP QR */}
+              {showRipQR && (
                 <div className="flex flex-col items-center gap-2 rounded-lg border bg-accent/30 p-4">
                   <div className="rounded-lg bg-white p-3 shadow-sm">
                     <QRCodeSVG
-                      value={upiQrData}
+                      value={ripQrData}
                       size={144}
                       level="M"
                       marginSize={1}
@@ -236,7 +238,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                     </span>
                   </p>
                   <p className="text-center text-[11px] text-muted-foreground">
-                    {t("upi")}: {upiId}
+                    {t("baridimob")} — RIP: {ripNumber}
                   </p>
                 </div>
               )}
@@ -277,7 +279,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
               {/* Payment summary */}
               <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 text-xs">
                 <span className="text-muted-foreground">{t("paymentMethod")}</span>
-                <Badge variant="secondary">{paymentMethod}</Badge>
+                <Badge variant="secondary">{t(paymentLabelKey(paymentMethod))}</Badge>
               </div>
             </div>
 

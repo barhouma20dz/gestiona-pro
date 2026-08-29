@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { salesApi, shopApi, productsApi } from "@/lib/api";
+import { paymentLabelKey } from "@/lib/payment";
 import type { Sale } from "@/lib/types";
 import { formatMoney, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -52,12 +53,15 @@ import { BarcodeScannerDialog } from "@/components/barcode-scanner";
 
 /* ---------- helpers ---------- */
 
-function paymentBadge(method: string, t: (k: "upi" | "card" | "cash") => string) {
+function paymentBadge(
+  method: string,
+  t: (k: "upi" | "card" | "cash" | "baridimob" | "cheque") => string
+) {
   const m = method.toLowerCase();
-  if (m === "upi") {
+  if (m === "upi" || m === "baridimob") {
     return (
       <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
-        {t("upi")}
+        {t("baridimob")}
       </Badge>
     );
   }
@@ -65,6 +69,13 @@ function paymentBadge(method: string, t: (k: "upi" | "card" | "cash") => string)
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
         {t("card")}
+      </Badge>
+    );
+  }
+  if (m === "cheque") {
+    return (
+      <Badge className="bg-violet-500/15 text-violet-600 border-violet-500/30 hover:bg-violet-500/15">
+        {t("cheque")}
       </Badge>
     );
   }
@@ -89,7 +100,7 @@ function build7DaySeries(sales: Sale[]) {
     d.setDate(today.getDate() - i);
     days.push({
       date: d,
-      label: d.toLocaleDateString("en-US", { weekday: "short" }),
+      label: d.toLocaleDateString("ar-DZ-u-nu-latn", { weekday: "short" }),
       total: 0,
     });
   }
@@ -144,7 +155,7 @@ export function SalesHistory() {
   const allSales = salesQuery.data ?? [];
   const stats = statsQuery.data;
   const shop = shopQuery.data;
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
   const products = productsQuery.data ?? [];
 
   // Apply date + payment filters

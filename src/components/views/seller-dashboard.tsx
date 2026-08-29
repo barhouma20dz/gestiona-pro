@@ -84,7 +84,7 @@ export function SellerDashboard({
     queryKey: ["shop"],
     queryFn: shopApi.get,
   });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   const { data: sales = [], isLoading: salesLoading } = useQuery({
     queryKey: ["sales", "mine"],
@@ -495,7 +495,7 @@ function DailyChart({
             d.revenue > 0
               ? Math.max(2, (d.profit / d.revenue) * revPct)
               : 0;
-          const dayLabel = new Date(d.date).toLocaleDateString("en-IN", {
+          const dayLabel = new Date(d.date).toLocaleDateString("ar-DZ-u-nu-latn", {
             weekday: "short",
           });
           return (

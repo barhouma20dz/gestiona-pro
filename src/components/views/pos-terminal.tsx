@@ -26,6 +26,7 @@ import {
   Calculator,
   Users,
   Scale,
+  ScrollText,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
@@ -65,8 +66,9 @@ import { CheckoutDialog } from "@/components/checkout-dialog";
 
 const PAYMENT_METHODS = [
   { key: "Cash", labelKey: "cash" as const, icon: Banknote },
-  { key: "UPI", labelKey: "upi" as const, icon: QrCode },
-  { key: "Card", labelKey: "card" as const, icon: CreditCard },
+  { key: "BARIDIMOB", labelKey: "baridimob" as const, icon: QrCode },
+  { key: "CARD", labelKey: "card" as const, icon: CreditCard },
+  { key: "CHEQUE", labelKey: "cheque" as const, icon: ScrollText },
 ] as const;
 
 function stockBadge(
@@ -685,7 +687,7 @@ export function PosTerminal() {
     queryFn: shopApi.get,
   });
 
-  const currency = shop?.currency || "₹";
+  const currency = shop?.currency || "دج";
   const taxRate = shop?.taxRate ?? 0;
 
   // Cart store — select primitive slices to avoid re-render storms
@@ -823,13 +825,13 @@ export function PosTerminal() {
       }
       if (e.key === "F3" && items.length > 0) {
         e.preventDefault();
-        setPaymentMethod("UPI");
-        toast.success(`${t("paymentMethod")}: ${t("upi")}`, { duration: 1000 });
+        setPaymentMethod("BARIDIMOB");
+        toast.success(`${t("paymentMethod")}: ${t("baridimob")}`, { duration: 1000 });
         return;
       }
       if (e.key === "F4" && items.length > 0) {
         e.preventDefault();
-        setPaymentMethod("Card");
+        setPaymentMethod("CARD");
         toast.success(`${t("paymentMethod")}: ${t("card")}`, { duration: 1000 });
         return;
       }
@@ -1328,7 +1330,7 @@ export function PosTerminal() {
                 {PAYMENT_METHODS.map((m, idx) => {
                   const Icon = m.icon;
                   const active = paymentMethod === m.key;
-                  const fkey = idx + 2; // F2=Cash, F3=UPI, F4=Card
+                  const fkey = idx + 2; // F2=Cash, F3=BaridiMob, F4=Card
                   return (
                     <Button
                       key={m.key}

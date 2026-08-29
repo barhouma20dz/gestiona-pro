@@ -1,16 +1,43 @@
-// Formatting helpers for SwiftBill POS
+// Formatting helpers for Gestiona Pro
+// Locale strategy (Algeria):
+//  - Numbers: Latin digits, space thousand grouping, comma decimals (fr-DZ style)
+//  - Dates: Arabic month/day names with Latin digits (ar-DZ with -u-nu-latn)
 
-export function formatMoney(amount: number, currency = "₹"): string {
+const NUMBER_LOCALE = "fr-DZ";
+const DATE_LOCALE_AR = "ar-DZ-u-nu-latn";
+const DATE_LOCALE_EN = "en-GB";
+
+// Date locale follows the UI language; defaults to Arabic (primary audience).
+let currentDateLocale = DATE_LOCALE_AR;
+
+export function setDateFormatLocale(locale: "ar" | "en"): void {
+  currentDateLocale = locale === "en" ? DATE_LOCALE_EN : DATE_LOCALE_AR;
+}
+
+export function getDateFormatLocale(): string {
+  return currentDateLocale;
+}
+
+export function formatMoney(amount: number, currency = "دج"): string {
   const value = Number.isFinite(amount) ? amount : 0;
-  return `${currency}${value.toLocaleString("en-IN", {
+  const formatted = value.toLocaleString(NUMBER_LOCALE, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`;
+  });
+  return `${formatted} ${currency}`;
+}
+
+export function formatMoneyNumber(amount: number): string {
+  const value = Number.isFinite(amount) ? amount : 0;
+  return value.toLocaleString(NUMBER_LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 export function formatDate(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleDateString("en-IN", {
+  return d.toLocaleDateString(currentDateLocale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -19,7 +46,7 @@ export function formatDate(iso: string): string {
 
 export function formatDateTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString("en-IN", {
+  return d.toLocaleString(currentDateLocale, {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
@@ -29,7 +56,7 @@ export function formatDateTime(iso: string): string {
 
 export function formatTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleTimeString("en-IN", {
+  return d.toLocaleTimeString(currentDateLocale, {
     hour: "2-digit",
     minute: "2-digit",
   });

@@ -36,7 +36,7 @@ export interface Shop {
   addressLine1: string;
   addressLine2: string;
   phoneNumber: string;
-  upiId: string;
+  ripNumber: string;
   footerText: string;
   currency: string;
   taxRate: number;

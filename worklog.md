@@ -2116,3 +2116,41 @@ Task: Verify inventory audit + zakat + supplier payments modules
 - Filter buttons (All/PAID/PARTIAL/UNPAID) visible ✅
 
 ### All 3 modules verified working via API + browser.
+
+---
+Task ID: 1
+Agent: Super Z (main)
+Task: تجهيز مشروع Gestiona Pro (استنساخ، تشغيل محلي، بيانات تجريبية)
+
+Work Log:
+- استنساخ https://github.com/barhouma20dz/gestiona-pro ونقله إلى جذر /home/z/my-project مع الحفاظ على .git
+- تبديل مزود Prisma من postgresql إلى sqlite محلياً (DATABASE_URL=file:/home/z/my-project/db/custom.db) — للنشر على Neon يُعاد إلى postgresql
+- bun install + db:push + seed (admin@swiftbill.pos / admin123)
+- إنشاء prisma/seed-demo.ts: بيانات جزائرية واقعية (متجر سوق الأمانة، 18 منتجاً، مورّدان، فاتورتان، ~30 بيعاً على 7 أيام، اشتراك YEARLY)
+- حسابات: owner@gestiona.dz/owner123 (مالك)، caissier@gestiona.dz/caissier123 (بائعة)
+- إعادة تشغيل خادم التطوير عبر .zscripts/dev.sh (setsid) بعد تعارض مقبض ملف SQLite القديم
+- تحقق متصفح كامل: تسجيل دخول، لوحة التحكم، نقطة البيع، وكل مسارات API ترجع 200 بلا أخطاء 5xx
+
+Stage Summary:
+- المشروع يعمل محلياً على المنفذ 3000 مع بيانات تجريبية DZD
+- ملاحظات مسجلة للمراحل القادمة: تنسيق الأرقام يستخدم en-IN (تجميع هندي 2,19,850) يحتاج إصلاحاً؛ التاريخ إنجليزي؛ طرق الدفع فيها UPI هندي
+- تصميم قاعدة: الحفاظ على الهوية الزمردية مع رفع الاحترافية (خط Cairo، أرقام tabular)
+
+---
+Task ID: 2
+Agent: Super Z (main)
+Task: المرحلة 1 — التوطين الجزائري (DZD) + إصلاح جودة الكود
+
+Work Log:
+- format.ts: en-IN → fr-DZ للأرقام (فاصلة عشرية، فاصل آلاف مسافة) + ar-DZ-u-nu-latn للتواريخ مع setDateFormatLocale مرتبط بسياق اللغة
+- المخطط: upiId → ripNumber، العملة الافتراضية "دج"، timezone Africa/Algiers، footerText عربي
+- طرق الدفع الجزائرية: Cash/BARIDIMOB/CARD/CHEQUE (+توافق قديم UPI/Card) في POS+checkout+sales API+dashboard+sales-history مع src/lib/payment.ts كمصدر موحد
+- QR بريدي موب: نص RIP في checkout بدل upi:// الهندي
+- تعريب الإيصال كاملاً + إصلاح /api/shop (phone → phoneNumber كان يخفي هاتف المتجر)
+- إصلاح 81 خطأ TypeScript قديم: requireStoreOwner يعيد StoreSessionPayload، t:(k:never) → TranslationKey، مفاتيح i18n مكررة (26)، FormState/Supplier ناقصة، handleRouteError Promise
+- إزالة كل fallback "₹" → "دج" (27 موضعاً)
+
+Stage Summary:
+- TSC: 0 أخطاء في src/ | ESLint: نظيف
+- بيع تجريبي كامل ناجح بالمتصفح: إيصال INV-20260829-0007 معرّب، 1 250,00 دج
+- التواريخ: "السبت، 29 أوت 2026" بأسماء الأشهر الجزائرية

@@ -24,7 +24,8 @@ import {
 } from "lucide-react";
 
 import { productsApi, salesApi, shopApi } from "@/lib/api";
-import type { ViewKey } from "@lib/types";
+import { paymentLabelKey } from "@/lib/payment";
+import type { ViewKey } from "@/lib/types";
 import { formatMoney, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
@@ -43,10 +44,10 @@ import { AnimatedNumber } from "@/components/animated-number";
 
 function paymentBadge(method: string, t: T) {
   const m = method.toLowerCase();
-  if (m === "upi") {
+  if (m === "upi" || m === "baridimob") {
     return (
       <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
-        {t("upi")}
+        {t("baridimob")}
       </Badge>
     );
   }
@@ -54,6 +55,13 @@ function paymentBadge(method: string, t: T) {
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
         {t("card")}
+      </Badge>
+    );
+  }
+  if (m === "cheque") {
+    return (
+      <Badge className="bg-violet-500/15 text-violet-600 border-violet-500/30 hover:bg-violet-500/15">
+        {t("cheque")}
       </Badge>
     );
   }
@@ -233,8 +241,10 @@ function LegendRow({
 }
 
 const PAYMENT_COLORS: Record<string, string> = {
-  upi: "#10b981", // emerald-500
+  baridimob: "#10b981", // emerald-500
+  upi: "#10b981", // legacy key → BaridiMob
   card: "#f59e0b", // amber-500
+  cheque: "#8b5cf6", // violet-500
   cash: "#64748b", // slate-500
 };
 
@@ -334,11 +344,14 @@ function PaymentLegendRow({
   t: T;
 }) {
   const color = paymentColor(method);
+  const m = method.toLowerCase();
   const label =
-    method.toLowerCase() === "upi"
-      ? t("upi")
-      : method.toLowerCase() === "card"
+    m === "upi" || m === "baridimob"
+      ? t("baridimob")
+      : m === "card"
       ? t("card")
+      : m === "cheque"
+      ? t("cheque")
       : t("cash");
   return (
     <div className="flex items-center justify-between gap-2">
@@ -384,7 +397,7 @@ export function Dashboard({
   const salesQuery = useQuery({ queryKey: ["sales"], queryFn: salesApi.list });
 
   const shop = shopQuery.data;
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
   const stats = statsQuery.data;
   const products = productsQuery.data ?? [];
   const sales = salesQuery.data ?? [];
@@ -549,7 +562,7 @@ export function Dashboard({
 
   /* greeting */
   const now = new Date();
-  const fullDate = now.toLocaleDateString("en-US", {
+  const fullDate = now.toLocaleDateString("ar-DZ-u-nu-latn", {
     weekday: "long",
     day: "numeric",
     month: "long",

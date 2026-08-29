@@ -102,7 +102,7 @@ export function SellerManagement() {
     queryKey: ["shop"],
     queryFn: shopApi.get,
   });
-  const currency = shop?.currency ?? "₹";
+  const currency = shop?.currency ?? "دج";
 
   // Form dialog state
   const [formOpen, setFormOpen] = useState(false);
@@ -897,7 +897,7 @@ function DailyBarChart({
     <div className="flex items-end gap-1.5 h-32" role="img" aria-label="Last 7 days revenue">
       {data.map((d) => {
         const pct = Math.max(2, (d.revenue / max) * 100);
-        const dateLabel = new Date(d.date).toLocaleDateString("en-IN", {
+        const dateLabel = new Date(d.date).toLocaleDateString("ar-DZ-u-nu-latn", {
           weekday: "short",
         });
         return (
