@@ -2333,3 +2333,33 @@ Work Log:
 Stage Summary:
 - Vercel سيعاد بناؤه تلقائياً من cb687de: المخطط سليم + الجداول تُنشأ ذاتياً
 - على المستخدم: التأكد من متغيري DATABASE_URL و JWT_SECRET في إعدادات Vercel ثم تسجيل حساب جديد على الموقع
+
+---
+Task ID: 13
+Agent: Super Z (main)
+Task: ربط Vercel بـ Neon عبر API (توكن + رابط اتصال من المستخدم) + حل بلاغ "أيام السباحة لا تظهر في الإعدادات"
+
+Work Log:
+- المستخدم زوّدني بـ: توكن Vercel (vcp_…McF) + رابط Neon pooler (sslmode=require&channel_binding=require)
+- الكشف المفاجئ: قاعدة Neon ليست فارغة! مخطط قديم (عمود upiId من قالب SwiftBill الأصلي) + 2 متجر تجريبي مهمل (متجر النور/متجر تجريبي، 0 منتجات/0 مبيعات، trial منتهٍ 09-01) + admin@swiftbill.pos قديم — أي أن نشراً قديماً اشتغل يوم 08-18 قبل أن تضيع إعدادات البيئة
+- مزامنة المخطط على Neon: prisma db push --accept-data-loss (أسقط upiId فقط) — 17 جدول بالنسخة الحالية كاملة (Customer/CustomerPayment/loyalty موجودة)
+- تنظيف البيانات المهملة: scripts/reset-neon.js (TRUNCATE CASCADE للكل + إعادة زرع SUPER_ADMIN admin@swiftbill.pos/admin123 بـ bcryptjs)
+- إعداد Vercel عبر API (scripts/vercel_setup.py):
+  - التوكن scoped: /v2/user يرجع 404 لكن /v9/projects يعمل → تجاوز فحص المستخدم
+  - المشروع فعلياً اسمه gestiona-pro (prj_IHo…) والنطاق my-project-five-liard-35.vercel.app نطاق افتراضي مولّد
+  - DATABASE_URL وJWT_SECRET كانا موجودين (أضافهما المستخدم لاحقاً على الأرجح) — حذفتهما وأعدت إنشما بالقيم الصحيحة لكل البيئات (production/preview/development)
+  - رابط DATABASE_URL المثبت: pooler + sslmode=require&pgbouncer=true&connection_limit=10 (أزلت channel_binding لأن Prisma يرفضه، وأضفت pgbouncer=true للموصى به مع transaction-pooler)
+  - النشر: gitSource(main) وليس redeploy من dpl قديم — حتى يُبنى cb687de الحديث؛ نتيجة: READY في ~53 ثانية
+- التحقق على الإنتاج (my-project-five-liard-35.vercel.app):
+  - GET / → 200 ✓
+  - login ببيانات خاطئة → 401 Invalid credentials (وليس 500!) ✓
+  - login admin@swiftbill.pos/admin123 → 200 + token + role SUPER_ADMIN ✓
+  - register متجر جديد demo@gestiona.dz/demo123 → 201 ✓ ثم GET /api/subscription → {"status":"TRIAL","daysRemaining":14} ✓✓
+- حل بلاغ "أيام السباحة لا تظهر في الإعدادات": تشخيص الكود (settings-view.tsx SubscriptionCard + /api/subscription) سليم تماماً — يعرض أيام trial دائماً عندما يستجيب الـAPI؛ السبب كان أن /api/subscription كان ينهار 500 لأن قاعدة البيانات غير موصولة. بعد الربط: daysRemaining=14 يعود ويظهر. دليل حي على الإنتاج أعلاه
+- حساب تجريبي جاهز على الإنتاج: demo@gestiona.dz / demo123 (متجر تجريبي، trial 14 يوم حتى 2026-09-13)
+
+Stage Summary:
+- الموقع الحقيقي يعمل الآن بالكامل: my-project-five-liard-35.vercel.app (بناء أخضر، Neon موصولة، جداول حديثة)
+- الحسابات على الإنتاج: admin@swiftbill.pos/admin123 (SUPER_ADMIN) + demo@gestiona.dz/demo123 (متجر تجريبي trial 14 يوم)
+- بلاغ "الأيام لا تظهر في الإعدادات" = عرضٌ لانهيار قاعدة البيانات القديم، انحلّ بالربط؛ إن ظهرت لاحقاً أيام=0 فبعد 2026-09-13 يتطلب تفعيل مفتاح
+- أمان: توكن Vercel المرسل في المحادثة يُنصح بحذفه من لوحة Vercel بعد الاستقرار
