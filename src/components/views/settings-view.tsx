@@ -831,7 +831,7 @@ function ExportProductsButton({ t }: { t: (k: "exportedProducts" | "failedExport
       const a = document.createElement("a");
       a.href = url;
       const stamp = new Date().toISOString().slice(0, 10);
-      a.download = `swiftbill-products-${stamp}.csv`;
+      a.download = `gestiona-products-${stamp}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

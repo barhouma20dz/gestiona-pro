@@ -1,4 +1,4 @@
-// API client helpers for SwiftBill POS
+// API client helpers for Gestiona Pro
 
 import type {
   Product,

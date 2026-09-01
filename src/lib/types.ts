@@ -1,4 +1,4 @@
-// Shared domain types for SwiftBill POS
+// Shared domain types for Gestiona Pro
 
 export interface Product {
   id: string;

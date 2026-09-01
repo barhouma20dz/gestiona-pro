@@ -1,5 +1,5 @@
 // License key utilities — server-side only
-// Generates HMAC-signed license keys for SwiftBill POS subscriptions.
+// Generates HMAC-signed license keys for Gestiona Pro subscriptions.
 import crypto from "node:crypto";
 
 const JWT_SECRET =
