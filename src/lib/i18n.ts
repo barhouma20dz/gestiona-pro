@@ -1,4 +1,4 @@
-// SwiftBill POS — Internationalization (i18n) translations
+// Gestiona Pro — Internationalization (i18n) translations
 // Supports Arabic (ar) and English (en)
 
 export type Locale = "ar" | "en";
