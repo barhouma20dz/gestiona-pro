@@ -1,2 +1,16 @@
 skills/
 node_modules/
+
+# environment / secrets
+.env
+.env.local
+
+# build & dev artifacts
+.next/
+dev.log
+server.log
+
+# local ops scripts containing infrastructure credentials
+scripts/*neon*
+scripts/vercel_*.py
+scripts/seed-demo-prod.js
