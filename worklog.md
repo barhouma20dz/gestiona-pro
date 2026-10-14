@@ -2363,3 +2363,40 @@ Stage Summary:
 - الحسابات على الإنتاج: admin@swiftbill.pos/admin123 (SUPER_ADMIN) + demo@gestiona.dz/demo123 (متجر تجريبي trial 14 يوم)
 - بلاغ "الأيام لا تظهر في الإعدادات" = عرضٌ لانهيار قاعدة البيانات القديم، انحلّ بالربط؛ إن ظهرت لاحقاً أيام=0 فبعد 2026-09-13 يتطلب تفعيل مفتاح
 - أمان: توكن Vercel المرسل في المحادثة يُنصح بحذفه من لوحة Vercel بعد الاستقرار
+
+---
+Task ID: 14 (استعادة — ضاعت النسخة المحلية بسبب تراجع الـworkspace)
+Agent: Super Z (main)
+Task: "أريد تغيير اسم المشروع إلى gestiona-pro" (لقطة Vercel تُظهر النطاق my-project-five-liard-35)
+
+Work Log:
+- اسم المشروع على Vercel هو فعلاً gestiona-pro لكن النطاق المولّد تلقائياً my-project-five-liard-35 هو الظاهر
+- gestiona-pro.vercel.app وgestionapro.vercel.app محجوزان عالمياً من مستخدمين آخرين (409) — الاسم الدقيق على vercel.app مستحيل
+- الحل: إضافة gestiona-pro-barhouma20dzs-projects.vercel.app كنطاق رسمي (verified) + تحويل القديم 308 إليه — القديم محجوز لنا فلا يمكن خطفه والروابط القديمة تعمل
+- إعادة تسمية ظاهرة: package.json → gestiona-pro، تعليقات 4 ملفات lib، أسماء ملفات CSV → gestiona-products/sales (commit 85866af)
+- بقيت مقصودة كما هي: مفاتيح localStorage/session وبروتوكول QR swiftbill:// (تغييرها يخرج المستخدمين ويسحم QR المطبوع) وبريد admin@swiftbill.pos (بيانات دخول)
+- التحقق الحي: القديم 308 → الجديد 200 عبر 6 فحوص متتالية
+- النشر التلقائي بنى 85866af ثم انقطعت المراقبة (توكن Vercel سُحب — invalidToken، ربما المستخدم نفّذ نصيحة الأمان)
+
+Stage Summary:
+- العنوان الرسمي: https://gestiona-pro-barhouma20dzs-projects.vercel.app (القديم يحوّل 308)
+- خيارات لاحقة: نطاق مخصص (gestiona.dz) أو تغيير بريد المدير — بموافقة المستخدم
+
+---
+Task ID: 15
+Agent: Super Z (main)
+Task: "أعطني حساب متجر تجريبي" — تجهيز حساب تجريبي كامل على الإنتاج + إصلاح أمني
+
+Work Log:
+- اكتشاف تراجع الـworkspace المحلي إلى ما قبل Task 14 (ضاع قسم worklog 14 وvercel_watch.py محلياً) بينما origin/main سليم → git reset --hard origin/main استعاد كل شيء (85866af)
+- فحص demo@gestiona.dz على الإنتاج: دخول 200 لكن الاشتراك EXPIRED (انتهى trial 2026-09-13) والمتجر فارغ
+- تفعيل الاشتراك مباشرة في Neon عبر pg: ACTIVE / YEARLY حتى 2027-06-30 → daysRemaining=260
+- زرع بيانات عبر API الإنتاج (scripts/seed-demo-prod.js — idempotent): 2 مورد، 18 منتج بقالة جزائرية (2 مخزون منخفض لتجربة التنبيهات + 3 صلاحية قريبة + 2 بالكيلو)، 4 عملاء، 7 مبيعات (Cash×4/BARIDIMOB/CARD/CREDIT + خصم 50 + استبدال نقاط) → INV-20261014-0001..0007 بمجاميع 830–1630 دج
+- تحقق: نقاط الولاء تراكمت (10–12)، الآجل لا يمنح نقاط، الاشتراك ACTIVE 260 يوم
+- 🚨 إصلاح أمني: لقطات الـsandbox التلقائية كانت رفعت للريبو العام scripts تحوي أسراراً (reset-neon.js/inspect-neon.js: كلمة سر Neon + vercel_setup.py: توكن Vercel الميت) → git rm --cached للأربعة + .gitignore شامل (.env، .next، logs، سكربتات الأسرار) (commit 256f41f)
+- ملاحظة: الأسرار تبقى في تاريخ git — الحل الجذري تدوير كلمة سر Neon من لوحة Neon ثم تحديث DATABASE_URL على Vercel
+
+Stage Summary:
+- الحساب التجريبي الجاهز: demo@gestiona.dz / demo123 — متجر بقالة كامل البيانات (اشتراك سنوي نشط)
+- الملفات الحساسة أزيلت من رأس الريبو؛ المطلوب من المستخدم: تدوير كلمة سر Neon + تحديث DATABASE_URL على Vercel
+- scripts الحساسة ما زالت محلية على disk للعمل المستقبلي (غير متتبعة)
