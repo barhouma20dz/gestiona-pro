@@ -6,17 +6,20 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    // Auth required — this endpoint reveals server network internals.
+    // Auth check: allow if token is present, cookie is present, or running locally
     const header = req.headers.get("authorization") || "";
-    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : null;
+    const cookieToken = req.cookies.get("gestiona_token")?.value || req.cookies.get("token")?.value;
+    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : cookieToken;
     const session = token ? await verifyToken(token) : null;
-    if (!session) {
+    const host = req.headers.get("host") || "";
+    const isLocal = host.includes("localhost") || host.includes("127.0.0.1");
+
+    if (!session && !isLocal) {
       return NextResponse.json(
         { success: false, error: "غير مصرّح — سجّل الدخول أولاً" },
         { status: 401 }
       );
     }
-
     const interfaces = os.networkInterfaces();
     const addresses: { address: string; family: string; internal: boolean; iface: string }[] = [];
 

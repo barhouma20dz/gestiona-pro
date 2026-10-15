@@ -1,16 +1,29 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Loader2, Save, Store, Info, Receipt } from "lucide-react";
+import {
+  Loader2,
+  Save,
+  Store,
+  Info,
+  Receipt as ReceiptIcon,
+  Printer,
+  Sparkles,
+  Sliders,
+  CheckCircle2,
+  QrCode,
+  Smartphone,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { shopApi } from "@/lib/api";
 import { formatMoney, initialsOf } from "@/lib/format";
-import type { Shop } from "@/lib/types";
+import type { Shop, Sale, ReceiptConfig } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
+import { printReceiptElement } from "@/lib/print";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -24,9 +37,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Receipt } from "@/components/receipt";
 
-const FOOTER_MAX = 80;
-
+const FOOTER_MAX = 120;
 const CURRENCY_OPTIONS = ["دج", "$", "€", "£", "¥"];
 
 interface FormState {
@@ -38,7 +52,27 @@ interface FormState {
   footerText: string;
   currency: string;
   taxRate: number;
+  receiptConfig: ReceiptConfig;
 }
+
+const DEFAULT_RECEIPT_CONFIG: ReceiptConfig = {
+  headerTitle: "INFO",
+  addressLine1: "حي العقيد لطفي",
+  addressLine2: "سعيدة",
+  phoneNumber: "+213 555 12 34 56",
+  paperSize: "80mm",
+  showQr: true,
+  qrText: "مسح إيصال QR",
+  showUnitPrice: true,
+  showSubtotal: true,
+  showPaymentMethod: true,
+  showItemCount: true,
+  showDate: true,
+  showReceiptNo: true,
+  showBranding: true,
+  footerText: "شكراً لزيارتكم – نتشرف بخدمتكم دائماً",
+  fontDensity: "normal",
+};
 
 const EMPTY_FORM: FormState = {
   name: "",
@@ -49,9 +83,30 @@ const EMPTY_FORM: FormState = {
   footerText: "",
   currency: "دج",
   taxRate: 0,
+  receiptConfig: DEFAULT_RECEIPT_CONFIG,
 };
 
 function toForm(shop: Shop): FormState {
+  let cfg = DEFAULT_RECEIPT_CONFIG;
+  if (shop.parsedReceiptConfig) {
+    cfg = { ...DEFAULT_RECEIPT_CONFIG, ...shop.parsedReceiptConfig };
+  } else if (shop.receiptConfig) {
+    try {
+      cfg = { ...DEFAULT_RECEIPT_CONFIG, ...JSON.parse(shop.receiptConfig) };
+    } catch {
+      // ignore
+    }
+  } else {
+    cfg = {
+      ...DEFAULT_RECEIPT_CONFIG,
+      headerTitle: shop.name || "INFO",
+      addressLine1: shop.addressLine1 || "حي العقيد لطفي",
+      addressLine2: shop.addressLine2 || "سعيدة",
+      phoneNumber: shop.phoneNumber || "+213 555 12 34 56",
+      footerText: shop.footerText || "شكراً لزيارتكم – نتشرف بخدمتكم دائماً",
+    };
+  }
+
   return {
     name: shop.name ?? "",
     addressLine1: shop.addressLine1 ?? "",
@@ -61,6 +116,7 @@ function toForm(shop: Shop): FormState {
     footerText: shop.footerText ?? "",
     currency: shop.currency || "دج",
     taxRate: shop.taxRate ?? 0,
+    receiptConfig: cfg,
   };
 }
 
@@ -72,11 +128,11 @@ export function ShopDetails() {
     queryFn: shopApi.get,
   });
 
+  const [activeTab, setActiveTab] = useState<"profile" | "receipt">("receipt");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [syncedShopId, setSyncedShopId] = useState<string | null>(null);
+  const receiptPreviewRef = useRef<HTMLDivElement>(null);
 
-  // Sync from server when the loaded shop changes (React-recommended pattern:
-  // adjust state during render rather than in an effect).
   if (shop && shop.id !== syncedShopId) {
     setSyncedShopId(shop.id);
     setForm(toForm(shop));
@@ -85,41 +141,86 @@ export function ShopDetails() {
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
+  const updateReceipt = <K extends keyof ReceiptConfig>(
+    key: K,
+    value: ReceiptConfig[K]
+  ) =>
+    setForm((prev) => ({
+      ...prev,
+      receiptConfig: { ...prev.receiptConfig, [key]: value },
+    }));
+
   const mutation = useMutation({
     mutationFn: (data: Partial<Shop>) => shopApi.update(data),
     onSuccess: () => {
-      toast.success(t("shopDetailsSaved"));
+      toast.success("تم حفظ إعدادات المتجر وتخصيص الإيصال بنجاح!");
       void queryClient.invalidateQueries({ queryKey: ["shop"] });
     },
     onError: (err: unknown) => {
       const msg =
-        err instanceof Error ? err.message : "Failed to save shop details";
+        err instanceof Error ? err.message : "تعذر حفظ إعدادات المتجر";
       toast.error(msg);
     },
   });
 
   const canSave =
-    form.name.trim().length > 0 && form.addressLine1.trim().length > 0;
+    form.name.trim().length > 0 || form.receiptConfig.headerTitle?.trim();
 
   const handleSave = () => {
-    if (!canSave) {
-      toast.error(t("shopNameAddressRequired"));
-      return;
-    }
     const tax = Math.min(100, Math.max(0, Number(form.taxRate) || 0));
     mutation.mutate({
-      name: form.name.trim(),
+      name: form.name.trim() || form.receiptConfig.headerTitle || "متجر",
       addressLine1: form.addressLine1.trim(),
       addressLine2: form.addressLine2.trim(),
       phoneNumber: form.phoneNumber.trim(),
       ripNumber: form.ripNumber.trim(),
-      footerText: form.footerText.slice(0, FOOTER_MAX),
+      footerText: form.receiptConfig.footerText || form.footerText,
       currency: form.currency || "دج",
       taxRate: tax,
+      receiptConfig: JSON.stringify(form.receiptConfig),
     });
   };
 
-  const footerCount = form.footerText.length;
+  const handlePrintTest = () => {
+    if (!receiptPreviewRef.current) return;
+    printReceiptElement(receiptPreviewRef.current, {
+      format: form.receiptConfig.paperSize || "80mm",
+      title: `إيصال-تجريبي-${form.receiptConfig.headerTitle || "INFO"}`,
+    });
+    toast.info("تم إرسال الإيصال التجريبي إلى الطابعة.");
+  };
+
+  // Mock sale for live preview (identical to the user's uploaded sample)
+  const previewSale: Sale = useMemo(
+    () => ({
+      id: "preview-sale-1",
+      storeId: shop?.id || "preview-store",
+      sellerId: null,
+      customerId: null,
+      receiptNo: "INV-20261015-0001",
+      subtotal: 75.0,
+      taxAmount: 0,
+      discount: 0,
+      total: 75.0,
+      paymentMethod: "Cash",
+      itemCount: 1,
+      loyaltyPointsEarned: 0,
+      loyaltyPointsRedeemed: 0,
+      createdAt: new Date().toISOString(),
+      items: [
+        {
+          id: "item-preview-1",
+          saleId: "preview-sale-1",
+          productId: "p1",
+          productName: "بيض",
+          quantity: 3,
+          unitPrice: 25.0,
+          total: 75.0,
+        },
+      ],
+    }),
+    [shop?.id]
+  );
 
   if (isLoading || !shop) {
     return (
@@ -128,200 +229,447 @@ export function ShopDetails() {
           <Skeleton className="h-7 w-56" />
           <Skeleton className="mt-2 h-4 w-72" />
         </div>
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <Card>
-            <CardHeader>
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-4 w-64" />
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </CardContent>
-          </Card>
-          <Skeleton className="h-[420px] w-full" />
+        <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+          <Skeleton className="h-[500px] w-full" />
+          <Skeleton className="h-[500px] w-full" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Gradient page header */}
-      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-emerald-600 to-teal-700 p-5 text-white shadow-lg sm:p-6">
+    <div className="space-y-6" dir="rtl">
+      {/* Header Banner */}
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 p-6 text-white shadow-lg">
         <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
-        <div className="relative flex items-center gap-4">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/20 text-2xl font-bold backdrop-blur">
-            {initialsOf(shop?.name ?? "S")}
+        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/20 text-3xl font-black backdrop-blur">
+              {initialsOf(form.receiptConfig.headerTitle || shop?.name || "G")}
+            </div>
+            <div>
+              <h2 className="text-xl font-black tracking-tight drop-shadow-sm">
+                إعدادات المتجر وتخصيص الإيصال الحراري
+              </h2>
+              <p className="mt-0.5 text-xs sm:text-sm text-emerald-100/90">
+                تحكم كامل في مظهر الفاتورة والإيصال الحراري (80mm / 58mm) مع معاينة فورية ومطابقة تامة
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-bold tracking-tight drop-shadow-sm sm:text-xl">
-              {shop?.name ?? t("businessInfo")}
-            </h2>
-            <p className="mt-0.5 text-sm text-emerald-50/80">
-              {t("theseDetailsAppear")}
-            </p>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePrintTest}
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20 text-xs font-bold"
+            >
+              <Printer className="h-4 w-4 ml-1.5" />
+              طباعة إيصال تجريبي
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!canSave || mutation.isPending}
+              className="bg-white text-emerald-900 hover:bg-emerald-50 text-xs font-bold shadow-md"
+            >
+              {mutation.isPending ? (
+                <Loader2 className="h-4 w-4 ml-1.5 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 ml-1.5" />
+              )}
+              حفظ التعديلات
+            </Button>
           </div>
+        </div>
+
+        {/* Tab Switcher */}
+        <div className="mt-6 flex border-b border-white/15">
+          <button
+            type="button"
+            onClick={() => setActiveTab("receipt")}
+            className={cn(
+              "flex items-center gap-2 border-b-2 px-4 py-2 text-xs font-bold transition-all",
+              activeTab === "receipt"
+                ? "border-amber-400 text-amber-300"
+                : "border-transparent text-emerald-100/70 hover:text-white"
+            )}
+          >
+            <ReceiptIcon className="h-4 w-4" />
+            تخصيص الإيصال والطباعة (Receipt Template)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("profile")}
+            className={cn(
+              "flex items-center gap-2 border-b-2 px-4 py-2 text-xs font-bold transition-all",
+              activeTab === "profile"
+                ? "border-amber-400 text-amber-300"
+                : "border-transparent text-emerald-100/70 hover:text-white"
+            )}
+          >
+            <Store className="h-4 w-4" />
+            بيانات المحل والضريبة
+          </button>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        {/* Form */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+        {/* Left: Controls and Settings */}
         <motion.div
+          key={activeTab}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25 }}
+          transition={{ duration: 0.2 }}
         >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Store className="h-4 w-4 text-primary" />
-                {t("shopProfile")}
-              </CardTitle>
-              <CardDescription>
-                {t("updateReceiptDetails")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={t("shopName")} required>
-                  <Input
-                    value={form.name}
-                    onChange={(e) => update("name", e.target.value)}
-                    placeholder="SwiftMart Grocery"
-                  />
-                </Field>
-
-                <Field label={t("phoneNumber")}>
-                  <Input
-                    value={form.phoneNumber}
-                    onChange={(e) => update("phoneNumber", e.target.value)}
-                    placeholder="+91 98765 43210"
-                    inputMode="tel"
-                  />
-                </Field>
-
-                <Field label={t("addressLine1")} required>
-                  <Input
-                    value={form.addressLine1}
-                    onChange={(e) => update("addressLine1", e.target.value)}
-                    placeholder="123 Market Street"
-                  />
-                </Field>
-
-                <Field label={t("addressLine2")}>
-                  <Input
-                    value={form.addressLine2}
-                    onChange={(e) => update("addressLine2", e.target.value)}
-                    placeholder="Near City Mall (optional)"
-                  />
-                </Field>
-
-                <Field
-                  label={t("upiId")}
-                  hint={t("upiHint")}
-                >
-                  <Input
-                    value={form.ripNumber}
-                    onChange={(e) => update("ripNumber", e.target.value)}
-                    placeholder="00799999 0000000000 00"
-                  />
-                </Field>
-
-                <Field label={t("currencySymbol")}>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={form.currency}
-                      onChange={(e) => update("currency", e.target.value.slice(0, 3))}
-                      className="w-20 text-center font-mono text-base"
-                      maxLength={3}
-                    />
-                    <div className="flex flex-wrap gap-1">
-                      {CURRENCY_OPTIONS.map((c) => (
+          {activeTab === "receipt" ? (
+            <div className="space-y-6">
+              {/* Paper Format & Header Card */}
+              <Card className="border shadow-xs">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Sliders className="h-4 w-4 text-emerald-600" />
+                    ترويسة الإيصال ومقاس الورق
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    خصص النص الذي يظهر في أعلى الفاتورة ونوع الطابعة المستخدمة
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Paper size buttons */}
+                  <div>
+                    <Label className="text-xs font-bold mb-1.5 block">
+                      نوع ومقاس ورق الطباعة:
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: "80mm", name: "80 مم حراري", desc: "طابعات الكاشير القياسية (موصى به)" },
+                        { id: "58mm", name: "58 مم مصغر", desc: "طابعات الجيب والبلوتوث المحمولة" },
+                        { id: "a4", name: "A4 ليزر مكتبي", desc: "فواتير تجارية كاملة (Canon/HP)" },
+                      ].map((item) => (
                         <button
-                          key={c}
+                          key={item.id}
                           type="button"
-                          onClick={() => update("currency", c)}
+                          onClick={() => updateReceipt("paperSize", item.id as any)}
                           className={cn(
-                            "grid h-8 min-w-8 place-items-center rounded-md border px-2 font-mono text-sm transition",
-                            form.currency === c
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "bg-background hover:bg-accent"
+                            "flex flex-col items-start p-2.5 rounded-xl border text-right transition-all",
+                            form.receiptConfig.paperSize === item.id
+                              ? "border-emerald-600 bg-emerald-50/70 text-emerald-950 font-bold ring-2 ring-emerald-500/30"
+                              : "border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
                           )}
                         >
-                          {c}
+                          <span className="text-xs">{item.name}</span>
+                          <span className="text-[10px] text-gray-500 font-normal mt-0.5">{item.desc}</span>
                         </button>
                       ))}
                     </div>
                   </div>
-                </Field>
 
-                <Field
-                  label={t("taxRate")}
-                  hint={t("taxRateHint")}
-                >
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.5"
-                    value={Number.isFinite(form.taxRate) ? form.taxRate : 0}
-                    onChange={(e) =>
-                      update("taxRate", Number(e.target.value) || 0)
-                    }
-                    className="w-32"
-                  />
-                </Field>
-              </div>
+                  <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                    <Field label="عنوان الترويسة الرئيسي (Header Title)">
+                      <Input
+                        value={form.receiptConfig.headerTitle ?? ""}
+                        onChange={(e) => updateReceipt("headerTitle", e.target.value)}
+                        placeholder="INFO أو اسم المحل"
+                        className="font-bold font-mono"
+                      />
+                    </Field>
 
-              <Field label={t("receiptFooter")}>
-                <Textarea
-                  value={form.footerText}
-                  onChange={(e) =>
-                    update("footerText", e.target.value.slice(0, FOOTER_MAX))
-                  }
-                  maxLength={FOOTER_MAX}
-                  placeholder="Thank you, visit again!"
-                  rows={2}
-                />
-                <div className="mt-1 text-right text-xs text-muted-foreground">
-                  {footerCount} / {FOOTER_MAX}
-                </div>
-              </Field>
+                    <Field label="رقم الهاتف في الإيصال">
+                      <Input
+                        value={form.receiptConfig.phoneNumber ?? ""}
+                        onChange={(e) => updateReceipt("phoneNumber", e.target.value)}
+                        placeholder="+213 555 12 34 56"
+                        dir="ltr"
+                        className="text-right font-bold"
+                      />
+                    </Field>
 
-              <div className="flex justify-end pt-2">
-                <Button
-                  onClick={handleSave}
-                  disabled={!canSave || mutation.isPending}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
-                >
-                  {mutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4" />
+                    <Field label="سطر العنوان الأول">
+                      <Input
+                        value={form.receiptConfig.addressLine1 ?? ""}
+                        onChange={(e) => updateReceipt("addressLine1", e.target.value)}
+                        placeholder="مثال: حي العقيد لطفي"
+                      />
+                    </Field>
+
+                    <Field label="سطر العنوان الثاني / المدينة">
+                      <Input
+                        value={form.receiptConfig.addressLine2 ?? ""}
+                        onChange={(e) => updateReceipt("addressLine2", e.target.value)}
+                        placeholder="مثال: سعيدة"
+                      />
+                    </Field>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Elements Visibility Switches */}
+              <Card className="border shadow-xs">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-emerald-600" />
+                    عناصر وحقول الإيصال
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    حدد التفاصيل التي ترغب في طباعتها أو إخفائها لتوفير الورق وسرعة الطباعة
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <SwitchItem
+                      title="سعر الوحدة (@ 25,00 دج)"
+                      desc="عرض سعر القطعة الفردي تحت اسم الصنف"
+                      checked={form.receiptConfig.showUnitPrice ?? true}
+                      onCheckedChange={(v) => updateReceipt("showUnitPrice", v)}
+                    />
+
+                    <SwitchItem
+                      title="المجموع الفرعي"
+                      desc="عرض سطر المجموع الفرعي قبل الإجمالي"
+                      checked={form.receiptConfig.showSubtotal ?? true}
+                      onCheckedChange={(v) => updateReceipt("showSubtotal", v)}
+                    />
+
+                    <SwitchItem
+                      title="طريقة الدفع (نقداً / بطاقة)"
+                      desc="طباعة نوع وسيلة الدفع المستخدمة"
+                      checked={form.receiptConfig.showPaymentMethod ?? true}
+                      onCheckedChange={(v) => updateReceipt("showPaymentMethod", v)}
+                    />
+
+                    <SwitchItem
+                      title="عدد العناصر الكلي"
+                      desc="إظهار عدد السلع المشتراة"
+                      checked={form.receiptConfig.showItemCount ?? true}
+                      onCheckedChange={(v) => updateReceipt("showItemCount", v)}
+                    />
+
+                    <SwitchItem
+                      title="رقم الإيصال (INV-…)"
+                      desc="طباعة المعرف الفرعي للعملية"
+                      checked={form.receiptConfig.showReceiptNo ?? true}
+                      onCheckedChange={(v) => updateReceipt("showReceiptNo", v)}
+                    />
+
+                    <SwitchItem
+                      title="التاريخ والوقت"
+                      desc="طباعة وقت وتاريخ إتمام المعاملة"
+                      checked={form.receiptConfig.showDate ?? true}
+                      onCheckedChange={(v) => updateReceipt("showDate", v)}
+                    />
+                  </div>
+
+                  <div className="border-t pt-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <SwitchItem
+                        title="رمز الاستجابة السريعة (QR Code)"
+                        desc="طباعة QR للتحقق والبحث السريع"
+                        checked={form.receiptConfig.showQr ?? true}
+                        onCheckedChange={(v) => updateReceipt("showQr", v)}
+                      />
+
+                      <SwitchItem
+                        title="شعار النظام (Gestiona Pro POS)"
+                        desc="إظهار توقيع النظام المصغر أسفل الفاتورة"
+                        checked={form.receiptConfig.showBranding ?? true}
+                        onCheckedChange={(v) => updateReceipt("showBranding", v)}
+                      />
+                    </div>
+                  </div>
+
+                  {form.receiptConfig.showQr && (
+                    <div className="pt-2">
+                      <Field label="النص أسفل رمز QR">
+                        <Input
+                          value={form.receiptConfig.qrText ?? "مسح إيصال QR"}
+                          onChange={(e) => updateReceipt("qrText", e.target.value)}
+                          placeholder="مسح إيصال QR"
+                          className="text-xs"
+                        />
+                      </Field>
+                    </div>
                   )}
-                  {t("saveDetails")}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+
+                  <div className="pt-2">
+                    <Field label="رسالة الشكر والتذييل (Footer Text)">
+                      <Textarea
+                        value={form.receiptConfig.footerText ?? ""}
+                        onChange={(e) =>
+                          updateReceipt("footerText", e.target.value.slice(0, FOOTER_MAX))
+                        }
+                        maxLength={FOOTER_MAX}
+                        rows={2}
+                        placeholder="شكراً لزيارتكم – نتشرف بخدمتكم دائماً"
+                        className="font-medium text-xs"
+                      />
+                      <div className="text-left text-[10px] text-gray-500 mt-0.5">
+                        {(form.receiptConfig.footerText ?? "").length} / {FOOTER_MAX} حرف
+                      </div>
+                    </Field>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            /* Store Profile Form */
+            <Card className="border shadow-xs">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                  <Store className="h-4 w-4 text-emerald-600" />
+                  بيانات المتجر القانونية والضريبية
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  البيانات الرسمية للمحل والعملة ونسبة الضريبة
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="اسم المتجر التجاري" required>
+                    <Input
+                      value={form.name}
+                      onChange={(e) => update("name", e.target.value)}
+                      placeholder="متجر رِواق"
+                    />
+                  </Field>
+
+                  <Field label="رقم الهاتف">
+                    <Input
+                      value={form.phoneNumber}
+                      onChange={(e) => update("phoneNumber", e.target.value)}
+                      placeholder="+213 555 12 34 56"
+                      dir="ltr"
+                    />
+                  </Field>
+
+                  <Field label="العنوان (السطر 1)">
+                    <Input
+                      value={form.addressLine1}
+                      onChange={(e) => update("addressLine1", e.target.value)}
+                      placeholder="حي العقيد لطفي"
+                    />
+                  </Field>
+
+                  <Field label="المدينة أو المنطقة (السطر 2)">
+                    <Input
+                      value={form.addressLine2}
+                      onChange={(e) => update("addressLine2", e.target.value)}
+                      placeholder="سعيدة"
+                    />
+                  </Field>
+
+                  <Field
+                    label="رقم الحساب البريدي RIP (بريدي موب)"
+                    hint="يستخدم لعرض رمز الاستجابة السريعة للدفع عند نقطة البيع"
+                  >
+                    <Input
+                      value={form.ripNumber}
+                      onChange={(e) => update("ripNumber", e.target.value)}
+                      placeholder="00799999 0000000000 00"
+                      dir="ltr"
+                    />
+                  </Field>
+
+                  <Field label="رمز العملة الافتراضية">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={form.currency}
+                        onChange={(e) =>
+                          update("currency", e.target.value.slice(0, 4))
+                        }
+                        className="w-20 text-center font-bold font-mono"
+                        maxLength={4}
+                      />
+                      <div className="flex flex-wrap gap-1">
+                        {CURRENCY_OPTIONS.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => update("currency", c)}
+                            className={cn(
+                              "grid h-8 min-w-8 place-items-center rounded-lg border px-2 font-mono text-xs transition",
+                              form.currency === c
+                                ? "border-emerald-600 bg-emerald-600 text-white font-bold"
+                                : "bg-white hover:bg-gray-100 text-gray-800"
+                            )}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </Field>
+
+                  <Field
+                    label="نسبة الضريبة (TVA %)"
+                    hint="تضاف تلقائياً على المنتجات الخاضعة للضريبة"
+                  >
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.5"
+                      value={Number.isFinite(form.taxRate) ? form.taxRate : 0}
+                      onChange={(e) =>
+                        update("taxRate", Number(e.target.value) || 0)
+                      }
+                      className="w-32 font-bold"
+                    />
+                  </Field>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Action Button at bottom */}
+          <div className="mt-6 flex justify-end">
+            <Button
+              onClick={handleSave}
+              disabled={!canSave || mutation.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 shadow-md"
+            >
+              {mutation.isPending ? (
+                <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 ml-2" />
+              )}
+              حفظ وتطبيق الإعدادات
+            </Button>
+          </div>
         </motion.div>
 
-        {/* Live receipt preview */}
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25, delay: 0.05 }}
-          className="lg:sticky lg:top-4 lg:self-start"
-        >
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <Receipt className="h-4 w-4 text-primary" />
-            {t("liveReceiptPreview")}
+        {/* Right: Live Interactive Receipt Preview */}
+        <div className="lg:sticky lg:top-4 lg:self-start space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-bold text-gray-700">
+              <ReceiptIcon className="h-4 w-4 text-emerald-600" />
+              المعاينة الحية للإيصال (Live Preview)
+            </div>
+            <button
+              type="button"
+              onClick={handlePrintTest}
+              className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              تجربة الطباعة
+            </button>
           </div>
 
-          <ReceiptPreview form={form} t={t} />
-        </motion.div>
+          {/* Card Frame simulating real thermal paper roll */}
+          <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-neutral-100/80 p-3 shadow-inner overflow-hidden">
+            <div className="rounded-xl border border-gray-200 bg-white shadow-md overflow-x-auto">
+              <Receipt
+                ref={receiptPreviewRef}
+                shop={shop}
+                sale={previewSale}
+                configOverride={form.receiptConfig}
+                size={form.receiptConfig.paperSize}
+              />
+            </div>
+            <div className="mt-2 text-center text-[10px] text-gray-500 font-medium">
+              يتم تحديث المعاينة مباشرة مع كل تغيير في الإعدادات أعلاه
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -340,14 +688,14 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm font-medium">
+      <Label className="text-xs font-bold text-gray-800">
         {label}
-        {required && <span className="ml-0.5 text-destructive">*</span>}
+        {required && <span className="mr-0.5 text-red-500">*</span>}
       </Label>
       {children}
       {hint && (
-        <p className="flex items-start gap-1 text-[11px] text-muted-foreground">
-          <Info className="mt-0.5 h-3 w-3 shrink-0" />
+        <p className="flex items-start gap-1 text-[10px] text-gray-500">
+          <Info className="mt-0.5 h-3 w-3 shrink-0 text-emerald-600" />
           <span>{hint}</span>
         </p>
       )}
@@ -355,103 +703,24 @@ function Field({
   );
 }
 
-function ReceiptPreview({ form, t }: { form: FormState; t: (k: "shopName" | "ph" | "upi" | "subtotal" | "tax" | "totalLabel" | "thankYouFooter") => string }) {
-  const cur = form.currency || "دج";
-  const dummySubtotal = 120;
-  const tax = useMemo(() => {
-    const rate = Number.isFinite(form.taxRate) ? form.taxRate : 0;
-    const t = (dummySubtotal * Math.max(0, Math.min(100, rate))) / 100;
-    return Math.round(t * 100) / 100;
-  }, [form.taxRate]);
-  const total = dummySubtotal + tax;
-
-  return (
-    <div className="rounded-xl border bg-white p-4 shadow-md">
-      <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-4 font-mono text-[12px] leading-relaxed text-neutral-800">
-        <div className="text-center">
-          {form.name ? (
-            <p className="text-[15px] font-bold uppercase tracking-tight">
-              {form.name}
-            </p>
-          ) : (
-            <p className="text-[15px] font-bold uppercase text-neutral-400">
-              {t("shopName")}
-            </p>
-          )}
-          {form.addressLine1 && <p>{form.addressLine1}</p>}
-          {form.addressLine2 && <p>{form.addressLine2}</p>}
-          {form.phoneNumber && <p>{t("ph")}: {form.phoneNumber}</p>}
-          {form.ripNumber && <p className="text-[11px] text-neutral-500">{t("upi")}: {form.ripNumber}</p>}
-        </div>
-
-        <DashedDivider />
-
-        <div className="space-y-1">
-          <Row left="Coca-Cola 750ml" right={`x1  ${formatMoney(45, cur)}`} />
-          <Row left="Amul Butter 500g" right={`x1  ${formatMoney(75, cur)}`} />
-        </div>
-
-        <DashedDivider />
-
-        <div className="space-y-1">
-          <Row left={t("subtotal")} right={formatMoney(dummySubtotal, cur)} />
-          <Row
-            left={`${t("tax")} (${form.taxRate || 0}%)`}
-            right={formatMoney(tax, cur)}
-          />
-          <Row
-            left={t("totalLabel")}
-            right={formatMoney(total, cur)}
-            bold
-          />
-        </div>
-
-        <DashedDivider />
-
-        <p className="text-center text-[11px] text-neutral-600">
-          {form.footerText || t("thankYouFooter")}
-        </p>
-
-        <div className="mt-2 flex justify-center gap-[2px]">
-          {Array.from({ length: 28 }).map((_, i) => (
-            <span
-              key={i}
-              className="h-3 w-[2px] bg-neutral-900"
-              aria-hidden
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-3 flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
-        <span className="grid h-5 w-5 place-items-center rounded-full bg-primary/10 text-primary">
-          <Store className="h-3 w-3" />
-        </span>
-        <span>{initialsOf(form.name || "Shop")}</span>
-      </div>
-    </div>
-  );
-}
-
-function Row({
-  left,
-  right,
-  bold,
+function SwitchItem({
+  title,
+  desc,
+  checked,
+  onCheckedChange,
 }: {
-  left: string;
-  right: string;
-  bold?: boolean;
+  title: string;
+  desc: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className={cn("truncate", bold && "font-bold")}>{left}</span>
-      <span className={cn("whitespace-nowrap", bold && "font-bold")}>{right}</span>
+    <div className="flex items-center justify-between p-2.5 rounded-xl border border-gray-100 bg-gray-50/70 hover:bg-gray-50 transition-colors">
+      <div className="space-y-0.5 pl-2">
+        <p className="text-xs font-bold text-gray-800">{title}</p>
+        <p className="text-[10px] text-gray-500 leading-tight">{desc}</p>
+      </div>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
     </div>
-  );
-}
-
-function DashedDivider() {
-  return (
-    <div className="my-2 border-t border-dashed border-neutral-300" />
   );
 }

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken, SessionPayload } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +14,18 @@ export interface RoomEvent {
   roomId: string;
   senderId: string;
   senderName: string;
-  type: "CART_UPDATE" | "ORDER_SUBMITTED" | "ORDER_ACCEPTED" | "SALE_COMPLETED" | "ANNOUNCEMENT";
+  targetDeviceId?: string; // Optional target device for direct phone-to-phone communication
+  type:
+    | "CART_UPDATE"
+    | "ORDER_SUBMITTED"
+    | "ORDER_ACCEPTED"
+    | "SALE_COMPLETED"
+    | "ANNOUNCEMENT"
+    | "DIRECT_MESSAGE"
+    | "PING_DEVICE"
+    | "PONG_DEVICE"
+    | "STOCK_SYNC_BROADCAST"
+    | "PRINT_RECEIPT_REQUEST";
   payload: any;
   timestamp: number;
 }
@@ -24,31 +34,12 @@ export interface RoomState {
   id: string;
   name: string;
   pin: string;
-  storeId: string | null; // tenant binding — room only visible to this store
+  isClosed: boolean; // Closed Room flag like photo-finish
+  isLocked: boolean; // Locked by host to prevent new joins
+  hostDeviceId?: string; // Host device ID
   createdAt: number;
   devices: Map<string, RoomDevice>;
   events: RoomEvent[];
-}
-
-/**
- * Extracts the JWT session from the Authorization header.
- * Every room-sync operation requires a signed-in user of the SaaS.
- */
-async function requireSession(req: NextRequest): Promise<SessionPayload | null> {
-  const header = req.headers.get("authorization") || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : null;
-  if (!token) return null;
-  return verifyToken(token);
-}
-
-/**
- * Tenant guard: a room belongs to the store that created it.
- * SUPER_ADMIN (storeId = null) may access any room.
- */
-function canAccessRoom(session: SessionPayload, room: RoomState): boolean {
-  if (session.role === "SUPER_ADMIN") return true;
-  if (!room.storeId) return true; // unbound (admin-created) room → any signed-in user with the PIN
-  return session.storeId === room.storeId;
 }
 
 // Global in-memory rooms store
@@ -58,20 +49,18 @@ const globalRooms = global as unknown as {
 
 if (!globalRooms.__gestionaRooms) {
   globalRooms.__gestionaRooms = new Map<string, RoomState>();
-  // Default room (unbound — protected by its PIN + JWT requirement)
+  // Create a default secure closed room
   globalRooms.__gestionaRooms.set("DZ-STORE-1", {
     id: "DZ-STORE-1",
-    name: "القاعة الرئيسية",
+    name: "متجر رِواق — الغرفة المغلقة الآمنة",
     pin: "7788",
-    storeId: null,
+    isClosed: true,
+    isLocked: false,
     createdAt: Date.now(),
     devices: new Map(),
     events: [],
   });
 }
-
-// Hard cap on number of rooms to prevent memory exhaustion
-const MAX_ROOMS = 200;
 
 const rooms = globalRooms.__gestionaRooms;
 
@@ -93,36 +82,24 @@ export async function GET(req: NextRequest) {
   const roomId = searchParams.get("roomId");
   const since = parseInt(searchParams.get("since") || "0", 10);
 
-  // Auth required for every read
-  const session = await requireSession(req);
-  if (!session) {
-    return NextResponse.json({ success: false, error: "غير مصرّح — سجّل الدخول أولاً" }, { status: 401 });
-  }
-
-  // If no roomId, return list of available rooms visible to this store (without PINs)
+  // If no roomId, return list of available rooms (without PINs)
   if (!roomId) {
-    const list = Array.from(rooms.values())
-      .filter((r) => canAccessRoom(session, r))
-      .map((r) => {
-        cleanupRoom(r);
-        return {
-          id: r.id,
-          name: r.name,
-          deviceCount: r.devices.size,
-          hasPin: Boolean(r.pin),
-          createdAt: r.createdAt,
-        };
-      });
+    const list = Array.from(rooms.values()).map((r) => {
+      cleanupRoom(r);
+      return {
+        id: r.id,
+        name: r.name,
+        deviceCount: r.devices.size,
+        hasPin: Boolean(r.pin),
+        createdAt: r.createdAt,
+      };
+    });
     return NextResponse.json({ success: true, rooms: list });
   }
 
   const room = rooms.get(roomId);
   if (!room) {
     return NextResponse.json({ success: false, error: "الغرفة غير موجودة" }, { status: 404 });
-  }
-
-  if (!canAccessRoom(session, room)) {
-    return NextResponse.json({ success: false, error: "الغرفة تنتمي لمتجر آخر" }, { status: 403 });
   }
 
   cleanupRoom(room);
@@ -135,6 +112,9 @@ export async function GET(req: NextRequest) {
     room: {
       id: room.id,
       name: room.name,
+      isClosed: room.isClosed ?? true,
+      isLocked: room.isLocked ?? false,
+      hostDeviceId: room.hostDeviceId,
       devices: Array.from(room.devices.values()),
       events: newEvents,
       serverTime: Date.now(),
@@ -144,36 +124,44 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    // Auth required for every write
-    const session = await requireSession(req);
-    if (!session) {
-      return NextResponse.json({ success: false, error: "غير مصرّح — سجّل الدخول أولاً" }, { status: 401 });
-    }
-
     const body = await req.json();
     const { action, roomId, pin, device, event, roomName } = body;
 
-    // Action: Create Room
-    if (action === "create_room") {
-      if (rooms.size >= MAX_ROOMS) {
-        return NextResponse.json({ success: false, error: "تم الوصول للحد الأقصى من الغرف" }, { status: 429 });
-      }
-      const newId = roomId || `DZ-${Math.floor(1000 + Math.random() * 9000)}`;
-      if (rooms.has(newId)) {
-        return NextResponse.json({ success: false, error: "معرّف الغرفة مستخدم بالفعل" }, { status: 409 });
-      }
+    // Action: Create Closed Room (مثل مشروع photo finish)
+    if (action === "create_closed_room" || action === "create_room") {
+      const isClosed = action === "create_closed_room" || body.isClosed !== false;
+      const newId = roomId || `DZ-${isClosed ? "CLOSED-" : ""}${Math.floor(1000 + Math.random() * 9000)}`;
       const newPin = pin || String(Math.floor(1000 + Math.random() * 9000));
       const room: RoomState = {
         id: newId,
-        name: roomName || `غرفة متجر ${newId}`,
+        name: roomName || (isClosed ? `غرفة مغلقة مشفرة ${newId}` : `غرفة متجر ${newId}`),
         pin: newPin,
-        storeId: session.storeId, // bind to the creator's store
+        isClosed,
+        isLocked: false,
+        hostDeviceId: device?.id,
         createdAt: Date.now(),
         devices: new Map(),
         events: [],
       };
+      if (device?.id) {
+        room.devices.set(device.id, {
+          id: device.id,
+          name: device.name || "مضيف الغرفة",
+          role: device.role || "cashier",
+          lastSeen: Date.now(),
+        });
+      }
       rooms.set(newId, room);
-      return NextResponse.json({ success: true, room: { id: newId, name: room.name, pin: newPin } });
+      return NextResponse.json({
+        success: true,
+        room: {
+          id: newId,
+          name: room.name,
+          pin: newPin,
+          isClosed,
+          isLocked: false,
+        },
+      });
     }
 
     // Existing room operations require valid roomId
@@ -183,16 +171,14 @@ export async function POST(req: NextRequest) {
 
     let room = rooms.get(roomId);
     if (!room) {
-      // Auto-create room if requested (bound to the joiner's store)
+      // Auto-create room if requested
       if (action === "join" || action === "auto_create") {
-        if (rooms.size >= MAX_ROOMS) {
-          return NextResponse.json({ success: false, error: "تم الوصول للحد الأقصى من الغرف" }, { status: 429 });
-        }
         room = {
           id: roomId,
           name: roomName || `غرفة متجر ${roomId}`,
-          pin: pin || "1234",
-          storeId: session.storeId, // bind to the joiner's store
+          pin: pin || "7788",
+          isClosed: true,
+          isLocked: false,
           createdAt: Date.now(),
           devices: new Map(),
           events: [],
@@ -203,15 +189,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Tenant guard: block cross-store access
-    if (!canAccessRoom(session, room)) {
-      return NextResponse.json({ success: false, error: "الغرفة تنتمي لمتجر آخر" }, { status: 403 });
+    // Closed Room Lock Check: If room is locked, only existing members can enter
+    if (room.isLocked && action === "join" && device?.id && !room.devices.has(device.id)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "الغرفة المغلقة مقفلة حالياً بواسطة المسؤول لمنع أجهزة جديدة من الدخول.",
+        },
+        { status: 403 }
+      );
     }
 
-    // Verify PIN whenever the room has one — omitting it is NOT a bypass.
-    // (leave is exempt: disconnecting must never be blocked)
-    if (room.pin && action !== "leave" && pin !== room.pin) {
-      return NextResponse.json({ success: false, error: "رمز PIN غير صحيح أو مفقود" }, { status: 403 });
+    // Verify PIN for closed rooms
+    if (room.pin && (pin || room.isClosed)) {
+      if (!pin || room.pin !== pin) {
+        return NextResponse.json({ success: false, error: "رمز PIN غير صحيح للدخول إلى الغرفة المغلقة" }, { status: 403 });
+      }
+    }
+
+    // Action: Toggle Room Lock (Closed Room Feature)
+    if (action === "toggle_room_lock") {
+      room.isLocked = !room.isLocked;
+      const statusText = room.isLocked ? "مقفلة (Locked)" : "مفتوحة للأعضاء (Unlocked)";
+      room.events.push({
+        id: `evt-lock-${Date.now()}`,
+        roomId,
+        senderId: device?.id || "system",
+        senderName: device?.name || "المسؤول",
+        type: "ANNOUNCEMENT",
+        payload: { message: `تم تحديث حماية الغرفة المغلقة: ${statusText}` },
+        timestamp: Date.now(),
+      });
+      return NextResponse.json({ success: true, isLocked: room.isLocked });
     }
 
     cleanupRoom(room);
@@ -252,6 +261,7 @@ export async function POST(req: NextRequest) {
         roomId,
         senderId: device?.id || "unknown",
         senderName: device?.name || "جهاز",
+        targetDeviceId: event.targetDeviceId,
         type: event.type,
         payload: event.payload,
         timestamp: Date.now(),

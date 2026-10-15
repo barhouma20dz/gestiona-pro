@@ -1,7 +1,8 @@
 /**
  * Gestiona Pro - Print Utility
  * Provides isolated, clean printing for Thermal Receipts (80mm/58mm) and Standard A4 Invoices.
- * Uses an isolated iframe to prevent dialog clipping, scroll limits, and backdrop artifacts.
+ * Uses an isolated iframe with complete parent stylesheet propagation to guarantee
+ * 100% visual fidelity matching the on-screen preview and thermal receipt specifications.
  */
 
 export interface PrintOptions {
@@ -19,11 +20,21 @@ export function printReceiptElement(
   const isA4 = format === "a4";
   const is58 = format === "58mm";
   const pageSize = isA4 ? "A4 portrait" : is58 ? "58mm auto" : "80mm auto";
-  const pageMargin = isA4 ? "10mm" : "3mm";
+  const pageMargin = isA4 ? "8mm" : "0mm";
+
+  // Gather all active stylesheets and style tags from the current document
+  const headStyles = Array.from(
+    document.querySelectorAll('style, link[rel="stylesheet"]')
+  )
+    .map((el) => el.outerHTML)
+    .join("\n");
 
   // Create isolated iframe
   const iframe = document.createElement("iframe");
-  iframe.setAttribute("style", "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;z-index:-1;");
+  iframe.setAttribute(
+    "style",
+    "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;z-index:-1;"
+  );
   iframe.setAttribute("aria-hidden", "true");
   document.body.appendChild(iframe);
 
@@ -45,6 +56,7 @@ export function printReceiptElement(
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${options.title || "Gestiona Pro - إيصال"}</title>
+  ${headStyles}
   <style>
     @page {
       size: ${pageSize};
@@ -56,24 +68,30 @@ export function printReceiptElement(
       print-color-adjust: exact !important;
     }
     html, body {
-      margin: 0;
-      padding: 0;
+      margin: 0 !important;
+      padding: ${isA4 ? "12px" : "2px"} !important;
       background: #ffffff !important;
       color: #000000 !important;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Noto Naskh Arabic";
-      font-size: ${isA4 ? "12px" : "11px"};
-      line-height: 1.4;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Cairo", "Noto Naskh Arabic", sans-serif !important;
+      font-size: ${isA4 ? "12px" : is58 ? "11px" : "12px"};
+      line-height: 1.35;
       direction: rtl;
       text-align: right;
     }
     .print-receipt {
       width: 100% !important;
-      max-width: ${isA4 ? "100%" : is58 ? "54mm" : "76mm"} !important;
+      max-width: ${isA4 ? "100%" : is58 ? "54mm" : "74mm"} !important;
       margin: 0 auto !important;
-      padding: ${isA4 ? "0" : "4px"} !important;
-      background: transparent !important;
+      padding: ${isA4 ? "0" : "4px 2px"} !important;
+      background: #ffffff !important;
       box-shadow: none !important;
       border: none !important;
+      color: #000000 !important;
+    }
+    /* Guarantee crisp thermal dashed divider printing */
+    .border-dashed {
+      border-style: dashed !important;
+      border-color: #666666 !important;
     }
     table {
       width: 100%;
@@ -97,7 +115,7 @@ export function printReceiptElement(
 </html>`);
   doc.close();
 
-  // Allow styles, fonts and SVG to render before invoking print
+  // Allow styles, fonts, and SVG images to fully calculate before printing
   setTimeout(() => {
     try {
       iframe.contentWindow?.focus();
@@ -113,7 +131,7 @@ export function printReceiptElement(
         } catch {
           // ignore
         }
-      }, 2000);
+      }, 3000);
     }
-  }, 350);
+  }, 450);
 }
