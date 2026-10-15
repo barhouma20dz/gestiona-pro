@@ -179,7 +179,8 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
     }
   };
 
-  const [printFormat, setPrintFormat] = useState<"80mm" | "58mm" | "a4">("80mm");
+  const initialFormat = shop?.parsedReceiptConfig?.paperSize || "80mm";
+  const [printFormat, setPrintFormat] = useState<"80mm" | "58mm" | "a4">(initialFormat);
   const receiptRef = useRef<HTMLDivElement>(null);
 
   const handleNewOrder = () => {
@@ -189,7 +190,7 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
       setCompletedSale(null);
       setCustomerId("none");
       setRedeemPoints(0);
-      setPrintFormat("80mm");
+      setPrintFormat(shop?.parsedReceiptConfig?.paperSize || "80mm");
     }, 200);
   };
 

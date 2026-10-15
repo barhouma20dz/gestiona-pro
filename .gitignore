@@ -1,14 +1,24 @@
-skills/
+# dependencies
 node_modules/
+package-lock.json
+/.pnp
+.pnp.js
 
 # environment / secrets
 .env
+.env*.local
 .env.local
 
 # build & dev artifacts
 .next/
+/out/
+/build
 dev.log
 server.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
 
 # local ops scripts containing infrastructure credentials
 scripts/*neon*
@@ -16,3 +26,27 @@ scripts/vercel_*.py
 scripts/seed-demo-prod.js
 upload/
 examples/
+
+# Flutter mobile app build artifacts
+gestiona_mobile_app/build/
+gestiona_mobile_app/.dart_tool/
+gestiona_mobile_app/.flutter-plugins-dependencies
+gestiona_mobile_app/*.rar
+*.rar
+*.zip
+
+# Binaries / APK (Generated on demand, placed on Desktop)
+GestionaPro_POS.apk
+*.apk
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+next-env.d.ts
+
+# SQLite local DB
+db/*.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm

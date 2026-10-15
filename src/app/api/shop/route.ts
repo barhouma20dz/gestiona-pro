@@ -20,8 +20,21 @@ export async function GET() {
     }
 
     // Normalize to the client `Shop` contract (phoneNumber, camelCase fields)
-    const { phone, ...rest } = store;
-    return NextResponse.json({ ...rest, phoneNumber: phone });
+    const { phone, receiptConfig, ...rest } = store;
+    let parsedReceiptConfig = undefined;
+    if (receiptConfig) {
+      try {
+        parsedReceiptConfig = JSON.parse(receiptConfig);
+      } catch {
+        // ignore
+      }
+    }
+    return NextResponse.json({
+      ...rest,
+      phoneNumber: phone,
+      receiptConfig,
+      parsedReceiptConfig,
+    });
   } catch (error) {
     return handleRouteError(error, "GET /api/shop");
   }
@@ -64,6 +77,12 @@ export async function PUT(request: Request) {
     }
     if (typeof body?.timezone === "string") {
       data.timezone = body.timezone;
+    }
+    if (body?.receiptConfig !== undefined) {
+      data.receiptConfig =
+        typeof body.receiptConfig === "string"
+          ? body.receiptConfig
+          : JSON.stringify(body.receiptConfig);
     }
 
     if (body?.taxRate !== undefined) {

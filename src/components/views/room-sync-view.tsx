@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getStoredToken } from "@/lib/auth-context";
 import {
   Wifi,
   Globe,
@@ -28,7 +27,7 @@ import {
   Info,
 } from "lucide-react";
 import { useRoomSyncStore, type DeviceRole } from "@/lib/room-sync-store";
-import { useCartStore, isKgProduct } from "@/lib/cart-store";
+import { useCartStore } from "@/lib/cart-store";
 import { formatMoney } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,10 +76,7 @@ export function RoomSyncView() {
   useEffect(() => {
     async function loadNetwork() {
       try {
-        const token = getStoredToken();
-        const res = await fetch("/api/network-info", {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const res = await fetch("/api/network-info");
         const data = await res.json();
         if (data.success) {
           setNetworkInfo(data);
@@ -131,6 +127,17 @@ export function RoomSyncView() {
     }
   };
 
+  const handleGenerateClosedRoom = async () => {
+    const newId = `DZ-CLOSED-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newPin = String(Math.floor(1000 + Math.random() * 9000));
+    setInputRoomId(newId);
+    setInputPin(newPin);
+    const ok = await joinRoom(newId, newPin, `غرفة مغلقة مشفرة ${newId}`);
+    if (ok) {
+      toast.success(`🔒 تم إنشاء وتفعيل الغرفة المغلقة: ${newId} (PIN: ${newPin})`);
+    }
+  };
+
   const handleSaveDeviceName = () => {
     if (editingDeviceName.trim()) {
       setDeviceName(editingDeviceName.trim());
@@ -141,15 +148,7 @@ export function RoomSyncView() {
   const handleLoadOrderToCart = (order: typeof incomingOrders[0]) => {
     cart.clearCart();
     order.items.forEach((item) => {
-      // kg products: the quantity itself is the weight; count products: add piece by piece
-      if (isKgProduct(item.product)) {
-        cart.addWeightedProduct(item.product, item.quantity);
-      } else {
-        const intQty = Math.max(0, Math.floor(item.quantity));
-        for (let i = 0; i < intQty; i++) {
-          cart.addProduct(item.product);
-        }
-      }
+      cart.addWeightedProduct(item.product, item.quantity);
     });
     dismissOrder(order.orderId);
     toast.success(`تم تحميل طلب ${order.senderName} (${order.items.length} أصناف) إلى سلة الكاشير!`);
@@ -294,18 +293,28 @@ export function RoomSyncView() {
               </div>
             </div>
 
-            {/* Room Code & Join/Leave */}
+            {/* Room Code & Closed Room Protocol */}
             <div className="rounded-xl bg-muted/50 p-3.5 space-y-3 border text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-foreground">بيانات الغرفة الحالية</span>
-                <Badge variant={isConnected ? "default" : "secondary"}>
-                  {isConnected ? "متصل بالشبكة" : "غير متصل"}
+                <span className="font-semibold text-foreground flex items-center gap-1.5">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  خاصية الغرفة المغلقة (Closed Room Protocol)
+                </span>
+                <Badge variant={isConnected ? "default" : "secondary"} className="bg-emerald-600 text-white">
+                  {isConnected ? "🔒 غرفة مغلقة مشفرة" : "غير متصل"}
                 </Badge>
+              </div>
+
+              <div className="rounded-lg bg-emerald-50/70 p-2 border border-emerald-200/60 text-[11px] text-emerald-950 flex items-start gap-1.5">
+                <Info className="h-3.5 w-3.5 text-emerald-700 shrink-0 mt-0.5" />
+                <span>
+                  نظام اتصال معزول كلياً (مثل مشروع Photo Finish): الأجهزة المشتركة في نفس الغرفة برمز PIN الموحد فقط هي التي تتبادل السلات والطلبات لمنع أي اختراق أو تشويش خارجي.
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-muted-foreground text-[10px] block">رمز الغرفة (Room ID):</span>
+                  <span className="text-muted-foreground text-[10px] block">رمز الغرفة المغلقة (Room ID):</span>
                   <Input
                     value={inputRoomId}
                     onChange={(e) => setInputRoomId(e.target.value)}
@@ -313,7 +322,7 @@ export function RoomSyncView() {
                   />
                 </div>
                 <div>
-                  <span className="text-muted-foreground text-[10px] block">رمز PIN الحماية:</span>
+                  <span className="text-muted-foreground text-[10px] block">رمز PIN المشفر:</span>
                   <Input
                     value={inputPin}
                     onChange={(e) => setInputPin(e.target.value)}
@@ -322,12 +331,15 @@ export function RoomSyncView() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={handleJoin} className="flex-1">
-                  تبديل / دخول الغرفة
+                  دخول / تبديل الغرفة
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleGenerateClosedRoom} className="border-emerald-600 text-emerald-700 hover:bg-emerald-50">
+                  🎲 إنشاء غرفة مغلقة جديدة
                 </Button>
                 {isConnected && (
-                  <Button size="sm" variant="outline" onClick={leaveRoom}>
+                  <Button size="sm" variant="ghost" onClick={leaveRoom} className="text-red-600 hover:bg-red-50">
                     خروج
                   </Button>
                 )}

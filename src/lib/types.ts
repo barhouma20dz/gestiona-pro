@@ -30,6 +30,25 @@ export interface NewProduct {
   imageUrl?: string | null;
 }
 
+export interface ReceiptConfig {
+  headerTitle?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  phoneNumber?: string;
+  paperSize?: "80mm" | "58mm" | "a4";
+  showQr?: boolean;
+  qrText?: string;
+  showUnitPrice?: boolean;
+  showSubtotal?: boolean;
+  showPaymentMethod?: boolean;
+  showItemCount?: boolean;
+  showDate?: boolean;
+  showReceiptNo?: boolean;
+  showBranding?: boolean;
+  footerText?: string;
+  fontDensity?: "normal" | "compact" | "spacious";
+}
+
 export interface Shop {
   id: string;
   name: string;
@@ -43,6 +62,8 @@ export interface Shop {
   loyaltyEnabled?: boolean;
   loyaltyEarnRate?: number;
   loyaltyPointValue?: number;
+  receiptConfig?: string | null;
+  parsedReceiptConfig?: ReceiptConfig;
   updatedAt: string;
 }
 

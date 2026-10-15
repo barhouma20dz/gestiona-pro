@@ -814,14 +814,10 @@ function CartItemRow({
   const [inputValue, setInputValue] = useState(
     isKg ? item.quantity.toFixed(3) : String(item.quantity)
   );
-  // Mirror external cart quantity into the input field during render
-  // (React-endorsed "adjust state when a prop changes" pattern — no effect needed).
-  const [prevQty, setPrevQty] = useState(item.quantity);
-  const formattedQty = isKg ? item.quantity.toFixed(3) : String(item.quantity);
-  if (prevQty !== item.quantity) {
-    setPrevQty(item.quantity);
-    setInputValue(formattedQty);
-  }
+
+  useEffect(() => {
+    setInputValue(isKg ? item.quantity.toFixed(3) : String(item.quantity));
+  }, [item.quantity, isKg]);
 
   const commitQty = (valStr: string) => {
     const clean = valStr.trim().replace(",", ".");
