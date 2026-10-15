@@ -94,7 +94,8 @@ export type ViewKey =
   | "sellerMgmt"
   | "sellerSettings"
   | "inventoryAudit"
-  | "zakat";
+  | "zakat"
+  | "roomSync";
 
 export interface DailyStats {
   totalSales: number;

@@ -67,3 +67,78 @@ export function vibrateScan(success = true) {
     // ignore
   }
 }
+
+/**
+ * Realistic cash register chime sound effect (WebAudio).
+ * Plays a mechanical latch snap followed by a resonant metallic bell chime.
+ */
+export function playCashDrawerSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const now = ctx.currentTime;
+
+    // 1. Mechanical latch click
+    const clickGain = ctx.createGain();
+    clickGain.connect(ctx.destination);
+    clickGain.gain.setValueAtTime(0.28, now);
+    clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+
+    const clickOsc = ctx.createOscillator();
+    clickOsc.type = "triangle";
+    clickOsc.frequency.setValueAtTime(160, now);
+    clickOsc.frequency.exponentialRampToValueAtTime(40, now + 0.04);
+    clickOsc.connect(clickGain);
+    clickOsc.start(now);
+    clickOsc.stop(now + 0.04);
+
+    // 2. Resonant high bell chime (harmonics at 1760Hz, 2640Hz, 3520Hz)
+    const bellGain = ctx.createGain();
+    bellGain.connect(ctx.destination);
+    bellGain.gain.setValueAtTime(0.001, now + 0.02);
+    bellGain.gain.linearRampToValueAtTime(0.3, now + 0.035);
+    bellGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
+
+    [1760, 2640, 3520].forEach((freq) => {
+      const bellOsc = ctx.createOscillator();
+      bellOsc.type = "sine";
+      bellOsc.frequency.setValueAtTime(freq, now + 0.02);
+      bellOsc.connect(bellGain);
+      bellOsc.start(now + 0.02);
+      bellOsc.stop(now + 0.65);
+    });
+  } catch {
+    // Ignore audio failures
+  }
+}
+
+/**
+ * Hardware Cash Drawer Kick via standard ESC/POS command:
+ * ESC p 0 25 250 -> [0x1B, 0x70, 0x00, 0x19, 0xFA]
+ * Automatically plays register audio chime and triggers haptics.
+ */
+export async function triggerCashDrawerKick() {
+  playCashDrawerSound();
+  vibrateScan(true);
+
+  if (typeof navigator !== "undefined" && "serial" in navigator) {
+    try {
+      const serial = (navigator as unknown as { serial?: { getPorts: () => Promise<any[]> } }).serial;
+      if (serial) {
+        const ports = await serial.getPorts();
+        if (ports && ports.length > 0) {
+          const port = ports[0];
+          await port.open({ baudRate: 9600 });
+          const writer = port.writable.getWriter();
+          const escPosKick = new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+          await writer.write(escPosKick);
+          writer.releaseLock();
+          await port.close();
+        }
+      }
+    } catch {
+      // Serial not connected or permission not granted
+    }
+  }
+}

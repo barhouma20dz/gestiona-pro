@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -19,12 +19,14 @@ import {
   Percent,
   Share2,
   ScanLine,
+  FileText,
 } from "lucide-react";
 
 import { salesApi, shopApi, productsApi } from "@/lib/api";
 import { paymentLabelKey } from "@/lib/payment";
 import type { Sale } from "@/lib/types";
 import { formatMoney, formatDateTime } from "@/lib/format";
+import { printReceiptElement } from "@/lib/print";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
 import { toast } from "sonner";
@@ -129,7 +131,8 @@ export function SalesHistory() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
-  const [receiptSize, setReceiptSize] = useState<"80mm" | "58mm">("80mm");
+  const [receiptSize, setReceiptSize] = useState<"80mm" | "58mm" | "a4">("80mm");
+  const receiptRef = useRef<HTMLDivElement>(null);
   const [receiptScannerOpen, setReceiptScannerOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "7d" | "30d">(
     "all"
@@ -360,7 +363,14 @@ export function SalesHistory() {
   };
 
   const handlePrint = () => {
-    window.print();
+    if (!receiptRef.current) {
+      window.print();
+      return;
+    }
+    printReceiptElement(receiptRef.current, {
+      title: `Sale-${saleDetailQuery.data?.receiptNo ?? "Receipt"}`,
+      format: receiptSize,
+    });
   };
 
   const handleShareReceipt = async () => {
@@ -1052,13 +1062,16 @@ export function SalesHistory() {
       >
         <DialogContent
           showCloseButton={false}
-          className="no-print sm:max-w-[360px] p-4"
+          className={cn(
+            "no-print p-4 transition-all duration-200",
+            receiptSize === "a4" ? "sm:max-w-3xl" : "sm:max-w-[420px]"
+          )}
         >
           <DialogHeader className="text-center">
             <DialogTitle className="text-base">{t("receipt")}</DialogTitle>
           </DialogHeader>
 
-          <div className="max-h-[60vh] overflow-y-auto rounded-lg bg-white scrollbar-emerald">
+          <div className="max-h-[65vh] overflow-y-auto rounded-lg bg-white scrollbar-emerald border p-1">
             {saleDetailQuery.isLoading || !shop ? (
               <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1066,6 +1079,7 @@ export function SalesHistory() {
               </div>
             ) : saleDetailQuery.data && shop ? (
               <ReceiptComponent
+                ref={receiptRef}
                 shop={shop}
                 sale={saleDetailQuery.data}
                 size={receiptSize}
@@ -1079,22 +1093,28 @@ export function SalesHistory() {
           </div>
 
           {/* Size toggle */}
-          <div className="no-print flex items-center justify-center gap-2">
+          <div className="no-print flex items-center justify-center gap-2 flex-wrap">
             <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               {t("paper")}:
             </span>
-            {(["80mm", "58mm"] as const).map((s) => (
+            {(
+              [
+                { id: "80mm", label: "حراري 80mm" },
+                { id: "58mm", label: "حراري 58mm" },
+                { id: "a4", label: "فاتورة A4 (طابعة عادية)" },
+              ] as const
+            ).map((s) => (
               <button
-                key={s}
-                onClick={() => setReceiptSize(s)}
+                key={s.id}
+                onClick={() => setReceiptSize(s.id)}
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
-                  receiptSize === s
-                    ? "border-primary bg-primary text-primary-foreground"
+                  receiptSize === s.id
+                    ? "border-primary bg-primary text-primary-foreground font-semibold shadow-sm"
                     : "border-border bg-card text-muted-foreground hover:bg-accent"
                 )}
               >
-                {s}
+                {s.label}
               </button>
             ))}
           </div>

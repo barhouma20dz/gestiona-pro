@@ -14,3 +14,5 @@ server.log
 scripts/*neon*
 scripts/vercel_*.py
 scripts/seed-demo-prod.js
+upload/
+examples/
