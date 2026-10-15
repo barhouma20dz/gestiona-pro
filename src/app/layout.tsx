@@ -19,13 +19,28 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: "#059669",
+};
+
 export const metadata: Metadata = {
   title: "Gestiona Pro — نظام احترافي لإدارة المتاجر",
   description: "Gestiona Pro — نظام احترافي متكامل لتسيير وإدارة المتاجر. إدارة المبيعات، المخزون، الفواتير، الموردين والجرد بسهولة.",
   keywords: ["POS", "نقاط البيع", "فوترة", "تجزئة", "فاتورة", "باركود", "Gestiona Pro"],
   authors: [{ name: "FlashNet20DZ" }],
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Gestiona Pro",
+  },
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    apple: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
 };
 

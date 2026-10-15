@@ -171,6 +171,25 @@
 
 /* Receipt print styles */
 @media print {
+  @page {
+    margin: 4mm;
+    size: auto;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  header, footer, aside, nav, .no-print, button {
+    display: none !important;
+  }
   body * {
     visibility: hidden;
   }
@@ -179,12 +198,10 @@
     visibility: visible;
   }
   .print-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 80mm;
-  }
-  .no-print {
-    display: none !important;
+    position: static !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
   }
 }

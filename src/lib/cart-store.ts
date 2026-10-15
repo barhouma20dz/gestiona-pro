@@ -12,6 +12,29 @@ export function isKgProduct(
   return (itemOrProduct as Product).unitType === "kg";
 }
 
+/**
+ * Detects and parses retail electronic scale barcodes (EAN-13 starting with 20, 21, 28).
+ * Format: PPCCCCCWWWWWC
+ * - PP: 20 or 21 (weight in grams), 28 (price/weight)
+ * - CCCCC: 5-digit product item code
+ * - WWWWW: 5-digit weight in grams (e.g. 01500 = 1.500 kg)
+ */
+export function parseScaleBarcode(code: string): { isScale: boolean; itemCode: string; weightKg: number } | null {
+  const clean = code.trim();
+  if (clean.length === 13 && /^\d{13}$/.test(clean)) {
+    const prefix = clean.substring(0, 2);
+    if (prefix === "20" || prefix === "21" || prefix === "28") {
+      const itemCode = clean.substring(2, 7);
+      const grams = parseInt(clean.substring(7, 12), 10);
+      const weightKg = grams / 1000;
+      if (weightKg > 0) {
+        return { isScale: true, itemCode, weightKg };
+      }
+    }
+  }
+  return null;
+}
+
 interface CartState {
   items: CartItem[];
   discount: number;
@@ -24,7 +47,10 @@ interface CartState {
    * Merges with existing line if the same product id is already in the cart.
    */
   addWeightedProduct: (product: Product, weight: number) => void;
-  addByBarcode: (barcode: string, products: Product[]) => boolean;
+  addByBarcode: (
+    barcode: string,
+    products: Product[]
+  ) => { product: Product; weightKg?: number } | null;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
@@ -72,18 +98,41 @@ export const useCartStore = create<CartState>((set, get) => ({
     }),
 
   addByBarcode: (barcode, products) => {
-    const product = products.find(
-      (p) => p.barcode.toLowerCase() === barcode.trim().toLowerCase()
+    const clean = barcode.trim();
+    // 1. Direct barcode match
+    let product = products.find(
+      (p) => p.barcode.toLowerCase() === clean.toLowerCase()
     );
-    if (!product) return false;
-    // Count products add 1 piece; kg products need a weight dialog in the UI,
-    // but for barcode-driven flow we add 1 kg by default.
-    if (isKgProduct(product)) {
-      get().addWeightedProduct(product, 1);
-    } else {
-      get().addProduct(product);
+    if (product) {
+      if (isKgProduct(product)) {
+        get().addWeightedProduct(product, 1);
+        return { product, weightKg: 1 };
+      } else {
+        get().addProduct(product);
+        return { product };
+      }
     }
-    return true;
+
+    // 2. Electronic Scale Barcode Match (EAN-13 starting with 20, 21, 28)
+    const scale = parseScaleBarcode(clean);
+    if (scale) {
+      const rawCode = scale.itemCode;
+      const strippedCode = String(parseInt(rawCode, 10));
+      product = products.find(
+        (p) =>
+          p.barcode === rawCode ||
+          p.barcode === strippedCode ||
+          p.barcode === `20${rawCode}` ||
+          p.barcode === `21${rawCode}` ||
+          p.barcode === `28${rawCode}`
+      );
+      if (product) {
+        get().addWeightedProduct(product, scale.weightKg);
+        return { product, weightKg: scale.weightKg };
+      }
+    }
+
+    return null;
   },
 
   removeItem: (productId) =>

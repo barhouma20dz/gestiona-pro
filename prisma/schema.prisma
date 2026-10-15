@@ -51,6 +51,8 @@ model Store {
   loyaltyEnabled    Boolean @default(true)
   loyaltyEarnRate   Float   @default(100)  // كل X دج من قيمة البيع = نقطة واحدة
   loyaltyPointValue Float   @default(1)    // قيمة النقطة عند الاستبدال (بالعملة)
+  // Custom Receipt & Print Settings (إعدادات الإيصال المخصص)
+  receiptConfig     String? // JSON encoded ReceiptConfig
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

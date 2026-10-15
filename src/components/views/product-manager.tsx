@@ -695,351 +695,363 @@ export function ProductManager() {
 
       {/* Add/Edit dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editing ? t("editProduct") : t("addProductTitle")}</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="sm:max-w-2xl max-h-[calc(100dvh-2.5rem)] flex flex-col p-0 gap-0 overflow-hidden shadow-2xl">
+          <DialogHeader className="p-5 pb-3 border-b shrink-0 text-start">
+            <DialogTitle className="text-lg font-bold">{editing ? t("editProduct") : t("addProductTitle")}</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
               {editing
                 ? t("updateDetails")
                 : t("fillDetails")}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="p-name">{t("name")}</Label>
-              <Input
-                id="p-name"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="e.g. Coca-Cola 750ml"
-                autoFocus
-              />
-              {formErrors.name && (
-                <p className="text-xs text-red-600 dark:text-red-400">{formErrors.name}</p>
-              )}
-            </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="p-barcode">{t("barcode")}</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="p-barcode"
-                  value={form.barcode}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, barcode: e.target.value }))
-                  }
-                  placeholder="e.g. 8901030867531"
-                  className="font-mono"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="shrink-0 text-primary hover:text-primary"
-                  onClick={() => setScannerOpen(true)}
-                  aria-label={t("scanBarcode")}
-                  title={t("scanBarcode")}
-                >
-                  <ScanLine className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                <ScanLine className="h-3 w-3" />
-                {t("tipUseScanner")}
-              </p>
-              {formErrors.barcode && (
-                <p className="text-xs text-red-600 dark:text-red-400">{formErrors.barcode}</p>
-              )}
-            </div>
-
-            {/* Unit type selector — decides whether stock is by count (int) or weight (kg, float) */}
-            <div className="space-y-1.5">
-              <Label>{t("unitType")}</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((f) => ({ ...f, unitType: "count" }))
-                  }
-                  className={cn(
-                    "flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
-                    form.unitType !== "kg"
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  )}
-                  aria-pressed={form.unitType !== "kg"}
-                >
-                  <Package className="h-4 w-4" />
-                  {t("byCount")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((f) => ({ ...f, unitType: "kg" }))
-                  }
-                  className={cn(
-                    "flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
-                    form.unitType === "kg"
-                      ? "border-amber-500 bg-amber-500/15 text-amber-700"
-                      : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  )}
-                  aria-pressed={form.unitType === "kg"}
-                >
-                  <Scale className="h-4 w-4" />
-                  {t("byWeight")}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="p-price">
-                  {form.unitType === "kg" ? t("pricePerKg") : t("sellingPrice")}
-                </Label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    {currency}
-                  </span>
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="overflow-y-auto px-5 py-4 space-y-4 flex-1">
+              {/* Row 1: Name & Barcode */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="p-name">{t("name")}</Label>
                   <Input
-                    id="p-price"
+                    id="p-name"
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="e.g. Coca-Cola 750ml"
+                    autoFocus
+                  />
+                  {formErrors.name && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{formErrors.name}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="p-barcode">{t("barcode")}</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="p-barcode"
+                      value={form.barcode}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, barcode: e.target.value }))
+                      }
+                      placeholder="e.g. 8901030867531"
+                      className="font-mono"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0 text-primary hover:text-primary"
+                      onClick={() => setScannerOpen(true)}
+                      aria-label={t("scanBarcode")}
+                      title={t("scanBarcode")}
+                    >
+                      <ScanLine className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <ScanLine className="h-3 w-3" />
+                    {t("tipUseScanner")}
+                  </p>
+                  {formErrors.barcode && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{formErrors.barcode}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 2: Category & Unit type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="p-category">{t("category")}</Label>
+                  <Input
+                    id="p-category"
+                    list="category-list"
+                    value={form.category}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, category: e.target.value }))
+                    }
+                    placeholder="General"
+                  />
+                  <datalist id="category-list">
+                    {categories.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("pickExistingOrNew")}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>{t("unitType")}</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((f) => ({ ...f, unitType: "count" }))
+                      }
+                      className={cn(
+                        "flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                        form.unitType !== "kg"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      )}
+                      aria-pressed={form.unitType !== "kg"}
+                    >
+                      <Package className="h-4 w-4" />
+                      {t("byCount")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((f) => ({ ...f, unitType: "kg" }))
+                      }
+                      className={cn(
+                        "flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                        form.unitType === "kg"
+                          ? "border-amber-500 bg-amber-500/15 text-amber-700"
+                          : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      )}
+                      aria-pressed={form.unitType === "kg"}
+                    >
+                      <Scale className="h-4 w-4" />
+                      {t("byWeight")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 3: Prices & Stock */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="p-price">
+                    {form.unitType === "kg" ? t("pricePerKg") : t("sellingPrice")}
+                  </Label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      {currency}
+                    </span>
+                    <Input
+                      id="p-price"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={form.price}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, price: e.target.value }))
+                      }
+                      placeholder="0.00"
+                      className="pl-7 tabular-nums"
+                    />
+                  </div>
+                  {formErrors.price && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{formErrors.price}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="p-cost">{t("costPrice")}</Label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      {currency}
+                    </span>
+                    <Input
+                      id="p-cost"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={form.costPrice}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, costPrice: e.target.value }))
+                      }
+                      placeholder="0.00"
+                      className="pl-7 tabular-nums"
+                    />
+                  </div>
+                  {formErrors.costPrice && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{formErrors.costPrice}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="p-stock">
+                    {form.unitType === "kg" ? t("stockKg") : t("stock")}
+                  </Label>
+                  <Input
+                    id="p-stock"
                     type="number"
                     min={0}
-                    step="0.01"
-                    inputMode="decimal"
-                    value={form.price}
+                    step={form.unitType === "kg" ? "0.001" : "1"}
+                    inputMode={form.unitType === "kg" ? "decimal" : "numeric"}
+                    value={form.stock}
                     onChange={(e) =>
-                      setForm((f) => ({ ...f, price: e.target.value }))
+                      setForm((f) => ({ ...f, stock: e.target.value }))
                     }
-                    placeholder="0.00"
-                    className="pl-7 tabular-nums"
+                    className="tabular-nums"
                   />
+                  {formErrors.stock && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{formErrors.stock}</p>
+                  )}
                 </div>
-                {formErrors.price && (
-                  <p className="text-xs text-red-600 dark:text-red-400">{formErrors.price}</p>
-                )}
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="p-cost">{t("costPrice")}</Label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    {currency}
-                  </span>
-                  <Input
-                    id="p-cost"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    inputMode="decimal"
-                    value={form.costPrice}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, costPrice: e.target.value }))
-                    }
-                    placeholder="0.00"
-                    className="pl-7 tabular-nums"
-                  />
-                </div>
-                {formErrors.costPrice && (
-                  <p className="text-xs text-red-600 dark:text-red-400">{formErrors.costPrice}</p>
-                )}
-              </div>
-              <div className="col-span-2 space-y-1.5 sm:col-span-1">
-                <Label htmlFor="p-stock">
-                  {form.unitType === "kg" ? t("stockKg") : t("stock")}
-                </Label>
-                <Input
-                  id="p-stock"
-                  type="number"
-                  min={0}
-                  step={form.unitType === "kg" ? "0.001" : "1"}
-                  inputMode={form.unitType === "kg" ? "decimal" : "numeric"}
-                  value={form.stock}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, stock: e.target.value }))
-                  }
-                  className="tabular-nums"
-                />
-                {formErrors.stock && (
-                  <p className="text-xs text-red-600 dark:text-red-400">{formErrors.stock}</p>
-                )}
-              </div>
-            </div>
 
-            {/* Live profit margin indicator */}
-            {Number(form.price) > 0 && Number(form.costPrice) >= 0 && (
-              <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">{t("profitMargin")}:</span>
-                {(() => {
-                  const price = Number(form.price);
-                  const cost = Number(form.costPrice);
-                  const profit = price - cost;
-                  const margin = price > 0 ? (profit / price) * 100 : 0;
-                  const positive = profit >= 0;
-                  return (
-                    <>
-                      <span
-                        className={cn(
-                          "font-semibold tabular-nums",
-                          positive ? "text-emerald-600" : "text-red-600 dark:text-red-400"
-                        )}
-                      >
-                        {positive ? "+" : ""}
-                        {formatMoney(profit, currency)} ({margin.toFixed(1)}%)
-                      </span>
-                      <div className="ml-auto h-1.5 w-20 overflow-hidden rounded-full bg-muted">
-                        <div
+              {/* Live profit margin indicator */}
+              {Number(form.price) > 0 && Number(form.costPrice) >= 0 && (
+                <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">{t("profitMargin")}:</span>
+                  {(() => {
+                    const price = Number(form.price);
+                    const cost = Number(form.costPrice);
+                    const profit = price - cost;
+                    const margin = price > 0 ? (profit / price) * 100 : 0;
+                    const positive = profit >= 0;
+                    return (
+                      <>
+                        <span
                           className={cn(
-                            "h-full rounded-full",
-                            positive ? "bg-emerald-500" : "bg-red-500"
+                            "font-semibold tabular-nums",
+                            positive ? "text-emerald-600" : "text-red-600 dark:text-red-400"
                           )}
-                          style={{
-                            width: `${Math.min(100, Math.max(0, Math.abs(margin)))}%`,
-                          }}
-                        />
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            )}
+                        >
+                          {positive ? "+" : ""}
+                          {formatMoney(profit, currency)} ({margin.toFixed(1)}%)
+                        </span>
+                        <div className="ml-auto h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={cn(
+                              "h-full rounded-full",
+                              positive ? "bg-emerald-500" : "bg-red-500"
+                            )}
+                            style={{
+                              width: `${Math.min(100, Math.max(0, Math.abs(margin)))}%`,
+                            }}
+                          />
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="p-category">{t("category")}</Label>
-              <Input
-                id="p-category"
-                list="category-list"
-                value={form.category}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, category: e.target.value }))
-                }
-                placeholder="General"
-              />
-              <datalist id="category-list">
-                {categories.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
-              <p className="text-xs text-muted-foreground">
-                {t("pickExistingOrNew")}
-              </p>
-            </div>
-
-            {/* Product Image */}
-            <div className="space-y-2">
-              <Label>{t("productImage")}</Label>
-              <div className="flex items-start gap-3">
-                {/* Preview */}
-                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-muted">
-                  {form.imageUrl ? (
-                    <>
-                      <img
-                        src={form.imageUrl}
-                        alt={t("imagePreview")}
-                        className="h-full w-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}
-                        className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
-                        aria-label={t("removeImage")}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </>
-                  ) : (
-                    <div className="grid h-full w-full place-items-center text-muted-foreground">
-                      <ImagePlus className="h-7 w-7" />
+              {/* Row 4: Image & Expiry */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                {/* Product Image */}
+                <div className="space-y-2">
+                  <Label>{t("productImage")}</Label>
+                  <div className="flex items-start gap-3">
+                    {/* Preview */}
+                    <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                      {form.imageUrl ? (
+                        <>
+                          <img
+                            src={form.imageUrl}
+                            alt={t("imagePreview")}
+                            className="h-full w-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}
+                            className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                            aria-label={t("removeImage")}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <div className="grid h-full w-full place-items-center text-muted-foreground">
+                          <ImagePlus className="h-7 w-7" />
+                        </div>
+                      )}
                     </div>
-                  )}
+                    {/* Upload + Camera buttons */}
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <ImagePlus className="h-4 w-4" />
+                        {t("chooseFile")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => cameraInputRef.current?.click()}
+                      >
+                        <Camera className="h-4 w-4" />
+                        {t("captureFromCamera")}
+                      </Button>
+                    </div>
+                    {/* Hidden file inputs */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileUpload(file);
+                        e.target.value = "";
+                      }}
+                    />
+                    <input
+                      ref={cameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileUpload(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
                 </div>
-                {/* Upload + Camera buttons */}
-                <div className="flex flex-col gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <ImagePlus className="h-4 w-4" />
-                    {t("chooseFile")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => cameraInputRef.current?.click()}
-                  >
-                    <Camera className="h-4 w-4" />
-                    {t("captureFromCamera")}
-                  </Button>
+
+                {/* Expiry Dates */}
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="p-expiry1" className="flex items-center gap-1.5 text-xs">
+                      <Calendar className="h-3.5 w-3.5 text-amber-600" />
+                      {t("expiryDate1")}
+                    </Label>
+                    <Input
+                      id="p-expiry1"
+                      type="date"
+                      value={form.expiryDate}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, expiryDate: e.target.value }))
+                      }
+                      className="tabular-nums h-9 text-xs"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      {t("expiryDateHint")}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="p-expiry2" className="flex items-center gap-1.5 text-xs">
+                      <Calendar className="h-3.5 w-3.5 text-amber-600" />
+                      {t("expiryDate2")}
+                    </Label>
+                    <Input
+                      id="p-expiry2"
+                      type="date"
+                      value={form.expiryDate2}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, expiryDate2: e.target.value }))
+                      }
+                      className="tabular-nums h-9 text-xs"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      {t("expiryDate2Hint")}
+                    </p>
+                  </div>
                 </div>
-                {/* Hidden file inputs */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleFileUpload(file);
-                    e.target.value = "";
-                  }}
-                />
-                <input
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleFileUpload(file);
-                    e.target.value = "";
-                  }}
-                />
               </div>
             </div>
 
-            {/* Expiry Dates */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="p-expiry1" className="flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-amber-600" />
-                  {t("expiryDate1")}
-                </Label>
-                <Input
-                  id="p-expiry1"
-                  type="date"
-                  value={form.expiryDate}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, expiryDate: e.target.value }))
-                  }
-                  className="tabular-nums"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  {t("expiryDateHint")}
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="p-expiry2" className="flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-amber-600" />
-                  {t("expiryDate2")}
-                </Label>
-                <Input
-                  id="p-expiry2"
-                  type="date"
-                  value={form.expiryDate2}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, expiryDate2: e.target.value }))
-                  }
-                  className="tabular-nums"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  {t("expiryDate2Hint")}
-                </p>
-              </div>
-            </div>
-
-            <DialogFooter className="gap-2 pt-2">
+            <DialogFooter className="p-4 border-t bg-muted/30 shrink-0 gap-2 flex flex-row justify-end items-center">
               <Button
                 type="button"
                 variant="outline"

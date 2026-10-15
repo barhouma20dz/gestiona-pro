@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import {
   CheckCircle2,
+  FileText,
   Loader2,
   Printer,
   RotateCcw,
@@ -24,6 +25,9 @@ import { useCartStore } from "@/lib/cart-store";
 import { useLanguage } from "@/lib/language-context";
 import { formatMoney } from "@/lib/format";
 import { paymentLabelKey } from "@/lib/payment";
+import { triggerCashDrawerKick } from "@/lib/scan-feedback";
+import { printReceiptElement } from "@/lib/print";
+import { cn } from "@/lib/utils";
 import type { Sale } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -126,6 +130,9 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
       });
       // Keep a local copy of sale for the receipt, then clear cart store
       clearCart();
+      if (paymentMethod === "Cash") {
+        void triggerCashDrawerKick();
+      }
       // Invalidate stats + sales lists + customers (loyalty balance changed)
       queryClient.invalidateQueries({ queryKey: ["sales"] });
       queryClient.invalidateQueries({ queryKey: ["salesStats"] });
@@ -172,6 +179,9 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
     }
   };
 
+  const [printFormat, setPrintFormat] = useState<"80mm" | "58mm" | "a4">("80mm");
+  const receiptRef = useRef<HTMLDivElement>(null);
+
   const handleNewOrder = () => {
     onOpenChange(false);
     setTimeout(() => {
@@ -179,16 +189,21 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
       setCompletedSale(null);
       setCustomerId("none");
       setRedeemPoints(0);
+      setPrintFormat("80mm");
     }, 200);
   };
 
   const handlePrint = () => {
-    if (typeof window !== "undefined") window.print();
+    if (!completedSale) return;
+    printReceiptElement(receiptRef.current, {
+      format: printFormat,
+      title: `فاتورة-${completedSale.receiptNo}`,
+    });
   };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className={cn("transition-all duration-200", stage === "receipt" && printFormat === "a4" ? "sm:max-w-3xl" : "sm:max-w-lg")}>
         {stage === "receipt" && completedSale && shop ? (
           <>
             <DialogHeader>
@@ -203,9 +218,44 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
               </DialogDescription>
             </DialogHeader>
 
+            {/* Print format selector */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border bg-muted/40 p-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                تنسيق الطباعة والمعاينة:
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPrintFormat("80mm")}
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5",
+                    printFormat === "80mm"
+                      ? "bg-background text-foreground shadow-sm font-bold border border-border"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  إيصال حراري (80mm)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintFormat("a4")}
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5",
+                    printFormat === "a4"
+                      ? "bg-background text-foreground shadow-sm font-bold border border-border"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  فاتورة A4 (طابعة عادية)
+                </button>
+              </div>
+            </div>
+
             {/* Receipt preview */}
-            <div className="max-h-[60vh] overflow-y-auto scrollbar-emerald rounded-md border bg-muted/30 p-2">
-              <Receipt shop={shop} sale={completedSale} />
+            <div className="max-h-[60vh] overflow-y-auto scrollbar-emerald rounded-md border bg-muted/20 p-2 sm:p-4">
+              <Receipt ref={receiptRef} shop={shop} sale={completedSale} size={printFormat} />
             </div>
 
             <DialogFooter className="no-print gap-2 sm:justify-between">
@@ -213,9 +263,11 @@ export function CheckoutDialog({ open, onOpenChange }: CheckoutDialogProps) {
                 <RotateCcw className="h-4 w-4" />
                 {t("newOrder")}
               </Button>
-              <Button onClick={handlePrint}>
+              <Button onClick={handlePrint} className="gap-2">
                 <Printer className="h-4 w-4" />
-                {t("printReceipt")}
+                <span>
+                  {printFormat === "a4" ? "طباعة فاتورة A4" : t("printReceipt")}
+                </span>
               </Button>
             </DialogFooter>
           </>

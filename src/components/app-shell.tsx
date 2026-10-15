@@ -25,6 +25,7 @@ import {
   LayoutGrid,
   ClipboardCheck,
   HandHeart,
+  Radio,
 } from "lucide-react";
 import type { ViewKey } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,8 @@ import { SellerSettings } from "@/components/views/seller-settings";
 import { InventoryAudit } from "@/components/views/inventory-audit";
 import { Zakat } from "@/components/views/zakat";
 import { Customers } from "@/components/views/customers";
+import { RoomSyncView } from "@/components/views/room-sync-view";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { CommandPalette } from "@/components/command-palette";
@@ -72,7 +75,8 @@ interface NavItem {
     | "sellerDashboard"
     | "sellerSettings"
     | "inventoryAudit"
-    | "zakat";
+    | "zakat"
+    | "roomSync";
   descKey:
     | "storeOverview"
     | "scanBillCheckout"
@@ -88,7 +92,8 @@ interface NavItem {
     | "sellerDashboardSubtitle"
     | "sellerSettingsSubtitle"
     | "annualAuditDesc"
-    | "zakatDesc";
+    | "zakatDesc"
+    | "roomSyncDesc";
   icon: typeof ScanLine;
   superAdminOnly?: boolean;
   ownerOnly?: boolean;
@@ -104,6 +109,7 @@ const NAV: NavItem[] = [
   { key: "pos", labelKey: "posTerminal", descKey: "scanBillCheckout", icon: ScanLine },
   { key: "products", labelKey: "products", descKey: "manageInventory", icon: Package },
   { key: "sales", labelKey: "salesHistory", descKey: "pastBills", icon: ReceiptText },
+  { key: "roomSync", labelKey: "roomSync", descKey: "roomSyncDesc", icon: Radio },
   { key: "suppliers", labelKey: "suppliers", descKey: "suppliersSubtitle", icon: Truck },
   { key: "customers", labelKey: "customers", descKey: "customersSubtitle", icon: UserRound, ownerOnly: true },
   { key: "expiry", labelKey: "expiryTracking", descKey: "expiryTrackingSubtitle", icon: CalendarClock },
@@ -489,6 +495,8 @@ export function AppShell() {
         return <InventoryAudit />;
       case "zakat":
         return <Zakat />;
+      case "roomSync":
+        return <RoomSyncView />;
       default:
         return isStaff ? (
           <SellerDashboard onNavigate={select} />
@@ -604,12 +612,12 @@ export function AppShell() {
         </header>
 
         {/* View content */}
-        <main className="flex-1 overflow-y-auto scrollbar-emerald">
+        <main className="flex-1 overflow-y-auto scrollbar-emerald pb-24 md:pb-6">
           <div className="mx-auto w-full max-w-7xl p-4 md:p-6">{renderView()}</div>
         </main>
 
-        {/* Status footer (always pinned) */}
-        <footer className="flex h-9 shrink-0 items-center justify-between border-t bg-card px-4 text-[11px] text-muted-foreground md:px-6">
+        {/* Status footer (visible on tablet & desktop) */}
+        <footer className="hidden md:flex h-9 shrink-0 items-center justify-between border-t bg-card px-4 text-[11px] text-muted-foreground md:px-6">
           <div className="flex items-center gap-3">
             <span className="font-medium text-foreground/70">{t("appName")} POS</span>
             <span className="hidden sm:inline">·</span>
@@ -635,6 +643,13 @@ export function AppShell() {
             </span>
           </div>
         </footer>
+
+        {/* Mobile bottom navigation bar */}
+        <MobileBottomNav
+          currentView={view}
+          onSelectView={select}
+          onOpenMenu={() => setMobileOpen(true)}
+        />
       </div>
     </div>
   );
