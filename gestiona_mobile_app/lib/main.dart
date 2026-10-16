@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -412,7 +413,78 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 ),
               ),
 
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
+
+              // Offline Standalone Cashier Mode Button (بدون شبكة)
+              InkWell(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => OfflinePosScreen(
+                        deviceName: _nameController.text.trim(),
+                      ),
+                    ),
+                  );
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFD97706), Color(0xFFB45309)],
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFD97706).withValues(alpha: 0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.flash_on, color: Colors.white, size: 24),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '⚡ وضع الكاشير المستقل (العمل بدون شبكة)',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'إمكانية البيع وتسجيل الحساب فورياً حتى في حالة انقطاع الواي فاي أو غياب الخادم',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 10.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 14),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 14),
 
               // Method 1: Instant QR / Link Quick Join
               _buildCardSection(
@@ -977,21 +1049,29 @@ class _PosWebViewScreenState extends State<PosWebViewScreen> {
   late final WebViewController _controller;
   int _loadingProgress = 0;
   bool _hasError = false;
+  Timer? _watchdogTimer;
 
   @override
   void initState() {
     super.initState();
+    _startWatchdog();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (progress) {
+            if (!mounted) return;
             setState(() {
               _loadingProgress = progress;
             });
+            if (progress > 55) {
+              _watchdogTimer?.cancel();
+            }
           },
           onPageFinished: (url) {
+            _watchdogTimer?.cancel();
+            if (!mounted) return;
             setState(() {
               _loadingProgress = 100;
               _hasError = false;
@@ -999,14 +1079,46 @@ class _PosWebViewScreenState extends State<PosWebViewScreen> {
           },
           onWebResourceError: (error) {
             if (error.isForMainFrame ?? true) {
-              setState(() {
-                _hasError = true;
-              });
+              _watchdogTimer?.cancel();
+              _controller.loadHtmlString('<!DOCTYPE html><html><body></body></html>');
+              if (mounted) {
+                setState(() {
+                  _hasError = true;
+                });
+              }
             }
           },
         ),
       )
       ..loadRequest(Uri.parse(widget.initialUrl));
+  }
+
+  void _startWatchdog() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer(const Duration(seconds: 6), () {
+      if (!mounted) return;
+      if (_loadingProgress < 60) {
+        _controller.loadHtmlString('<!DOCTYPE html><html><body></body></html>');
+        setState(() {
+          _hasError = true;
+        });
+      }
+    });
+  }
+
+  void _retryConnection() {
+    setState(() {
+      _hasError = false;
+      _loadingProgress = 10;
+    });
+    _startWatchdog();
+    _controller.loadRequest(Uri.parse(widget.initialUrl));
+  }
+
+  @override
+  void dispose() {
+    _watchdogTimer?.cancel();
+    super.dispose();
   }
 
   String _getRoleTitle() {
@@ -1053,6 +1165,19 @@ class _PosWebViewScreenState extends State<PosWebViewScreen> {
             ),
             actions: [
               IconButton(
+                icon: const Icon(Icons.flash_on, size: 19, color: Colors.amberAccent),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => OfflinePosScreen(
+                        deviceName: widget.deviceName,
+                      ),
+                    ),
+                  );
+                },
+                tooltip: 'فتح كاشير وضع الأوفلاين (بدون شبكة)',
+              ),
+              IconButton(
                 icon: const Icon(Icons.sync_alt, size: 19),
                 onPressed: () {
                   _controller.loadRequest(
@@ -1070,7 +1195,7 @@ class _PosWebViewScreenState extends State<PosWebViewScreen> {
               ),
               IconButton(
                 icon: const Icon(Icons.refresh, size: 19),
-                onPressed: () => _controller.reload(),
+                onPressed: _retryConnection,
                 tooltip: 'تحديث الصفحة',
               ),
               IconButton(
@@ -1079,7 +1204,7 @@ class _PosWebViewScreenState extends State<PosWebViewScreen> {
                 tooltip: 'خيارات الاتصال والشبكة',
               ),
             ],
-            bottom: _loadingProgress < 100
+            bottom: _loadingProgress < 100 && !_hasError
                 ? PreferredSize(
                     preferredSize: const Size.fromHeight(2.5),
                     child: LinearProgressIndicator(
@@ -1093,49 +1218,122 @@ class _PosWebViewScreenState extends State<PosWebViewScreen> {
           ),
         ),
         body: _hasError
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.wifi_off,
-                          size: 64, color: Colors.redAccent),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'تعذر الاتصال بخادم نقطة البيع في الشبكة',
-                        style: TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'تأكد من أن هذا الهاتف وجهاز الكاشير متصلان بنفس شبكة الواي فاي، وأن العنوان صحيح:\n${widget.initialUrl}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          ElevatedButton.icon(
-                            onPressed: () => _controller.reload(),
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('إعادة المحاولة'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF059669),
-                              foregroundColor: Colors.white,
+            ? Directionality(
+                textDirection: TextDirection.rtl,
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFFFECACA), width: 2),
+                          ),
+                          child: const Icon(
+                            Icons.wifi_off_rounded,
+                            size: 60,
+                            color: Color(0xFFDC2626),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'تعذر الاتصال بالشبكة أو خادم المتجر',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E293B),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'لا تقلق! التطبيق يدعم العمل التام بدون شبكة وبدون هواتف متصلة، يمكنك متابعة البيع وتدوين الحسابات فوراً.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Primary Offline Action
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pushReplacement(
+                              MaterialPageRoute(
+                                builder: (_) => OfflinePosScreen(
+                                  deviceName: widget.deviceName,
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.flash_on, size: 22),
+                          label: const Text(
+                            '⚡ فتح كاشير وضع الأوفلاين (بدون شبكة)',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFD97706),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
+                            elevation: 3,
                           ),
-                          const SizedBox(width: 12),
-                          OutlinedButton.icon(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.edit),
-                            label: const Text('تغيير العنوان'),
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // Secondary actions
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: _retryConnection,
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text('إعادة المحاولة'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF059669),
+                                side: const BorderSide(color: Color(0xFF059669)),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            TextButton.icon(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.settings, size: 18),
+                              label: const Text('تغيير الإعدادات'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF475569),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 28),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        ],
-                      ),
-                    ],
+                          child: Text(
+                            'الرابط المستهدف: ${widget.initialUrl}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontFamily: 'monospace',
+                              color: Color(0xFF64748B),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               )
@@ -1144,3 +1342,693 @@ class _PosWebViewScreenState extends State<PosWebViewScreen> {
     );
   }
 }
+
+/// Standalone Offline Cashier Screen (العمل التام بدون شبكة)
+class OfflinePosScreen extends StatefulWidget {
+  final String deviceName;
+
+  const OfflinePosScreen({super.key, required this.deviceName});
+
+  @override
+  State<OfflinePosScreen> createState() => _OfflinePosScreenState();
+}
+
+class _OfflinePosScreenState extends State<OfflinePosScreen> {
+  final List<Map<String, dynamic>> _quickProducts = [
+    {'id': 'q1', 'name': 'خبز عادي / تقليدي', 'price': 15.0, 'emoji': '🥖', 'category': 'مخبوزات'},
+    {'id': 'q2', 'name': 'حليب مبستر كونديا', 'price': 120.0, 'emoji': '🥛', 'category': 'مشتقات الحليب'},
+    {'id': 'q3', 'name': 'بيض طازج (1 حبة)', 'price': 25.0, 'emoji': '🥚', 'category': 'بيض ودواجن'},
+    {'id': 'q4', 'name': 'قهوة ساخنة سريعة', 'price': 50.0, 'emoji': '☕', 'category': 'مشروبات'},
+    {'id': 'q5', 'name': 'ماء معدني 1.5 لتر', 'price': 35.0, 'emoji': '💧', 'category': 'مشروبات'},
+    {'id': 'q6', 'name': 'زيت مائدة صافي 5 لتر', 'price': 650.0, 'emoji': '🫒', 'category': 'مواد عامة'},
+    {'id': 'q7', 'name': 'بطاطا استهلاك 1 كلغ', 'price': 90.0, 'emoji': '🥔', 'category': 'خضر وفواكه'},
+    {'id': 'q8', 'name': 'طماطم طازجة 1 كلغ', 'price': 140.0, 'emoji': '🍅', 'category': 'خضر وفواكه'},
+    {'id': 'q9', 'name': 'تفاح محلي 1 كلغ', 'price': 320.0, 'emoji': '🍎', 'category': 'خضر وفواكه'},
+    {'id': 'q10', 'name': 'علكة أو حلوى صغيرة', 'price': 10.0, 'emoji': '🍬', 'category': 'حلويات'},
+    {'id': 'q11', 'name': 'سكر أبيض 1 كلغ', 'price': 95.0, 'emoji': '🧂', 'category': 'مواد عامة'},
+    {'id': 'q12', 'name': 'عصير فواكه معلب', 'price': 150.0, 'emoji': '🧃', 'category': 'مشروبات'},
+  ];
+
+  final Map<String, int> _cart = {}; // productId -> quantity
+  final List<Map<String, dynamic>> _offlineSales = [];
+  String _selectedCategory = 'الكل';
+  final TextEditingController _customNameController = TextEditingController();
+  final TextEditingController _customPriceController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOfflineSales();
+  }
+
+  Future<void> _loadOfflineSales() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('offline_sales_history');
+    if (raw != null) {
+      try {
+        final List<dynamic> decoded = jsonDecode(raw);
+        setState(() {
+          _offlineSales.clear();
+          _offlineSales.addAll(decoded.map((e) => Map<String, dynamic>.from(e)));
+        });
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _saveOfflineSales() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('offline_sales_history', jsonEncode(_offlineSales));
+  }
+
+  void _addToCart(String id) {
+    setState(() {
+      _cart[id] = (_cart[id] ?? 0) + 1;
+    });
+  }
+
+  void _removeFromCart(String id) {
+    setState(() {
+      if ((_cart[id] ?? 0) > 1) {
+        _cart[id] = _cart[id]! - 1;
+      } else {
+        _cart.remove(id);
+      }
+    });
+  }
+
+  void _clearCart() {
+    setState(() {
+      _cart.clear();
+    });
+  }
+
+  double _calculateTotal() {
+    double total = 0.0;
+    _cart.forEach((id, qty) {
+      final product = _quickProducts.firstWhere(
+        (p) => p['id'] == id,
+        orElse: () => {'price': 0.0},
+      );
+      total += ((product['price'] as num?)?.toDouble() ?? 0.0) * qty;
+    });
+    return total;
+  }
+
+  int _calculateItemCount() {
+    int count = 0;
+    _cart.forEach((_, qty) => count += qty);
+    return count;
+  }
+
+  void _addNewQuickProductDialog() {
+    _customNameController.clear();
+    _customPriceController.clear();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.add_shopping_cart, color: Color(0xFF059669)),
+              SizedBox(width: 8),
+              Text('إضافة مادة سريعة (بدون باركود)'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _customNameController,
+                decoration: const InputDecoration(
+                  labelText: 'اسم المادة (مثال: بريوش، نعناع)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _customPriceController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'السعر (د.ج)',
+                  suffixText: 'د.ج',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final name = _customNameController.text.trim();
+                final price = double.tryParse(_customPriceController.text.trim()) ?? 0.0;
+                if (name.isNotEmpty && price > 0) {
+                  final newId = 'custom_${DateTime.now().millisecondsSinceEpoch}';
+                  setState(() {
+                    _quickProducts.add({
+                      'id': newId,
+                      'name': name,
+                      'price': price,
+                      'emoji': '⚡',
+                      'category': 'مخصصة',
+                    });
+                    _addToCart(newId);
+                  });
+                  Navigator.pop(ctx);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF059669),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('إضافة ووضع في السلة'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _completeSale() {
+    if (_cart.isEmpty) return;
+
+    final total = _calculateTotal();
+    final itemCount = _calculateItemCount();
+    final saleId = 'OFF-${DateTime.now().millisecondsSinceEpoch % 100000}';
+    final now = DateTime.now();
+    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    final itemsSummary = <Map<String, dynamic>>[];
+    _cart.forEach((id, qty) {
+      final p = _quickProducts.firstWhere((item) => item['id'] == id);
+      itemsSummary.add({
+        'name': p['name'],
+        'price': p['price'],
+        'quantity': qty,
+        'subtotal': (p['price'] as double) * qty,
+      });
+    });
+
+    final saleRecord = {
+      'id': saleId,
+      'date': dateStr,
+      'total': total,
+      'itemCount': itemCount,
+      'seller': widget.deviceName,
+      'items': itemsSummary,
+    };
+
+    setState(() {
+      _offlineSales.insert(0, saleRecord);
+      _cart.clear();
+    });
+
+    _saveOfflineSales();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFECFDF5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_circle, color: Color(0xFF059669), size: 54),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'تم تسجيل البيع بنجاح!',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'رقم الوصل: #$saleId',
+                style: const TextStyle(color: Colors.grey, fontSize: 13, fontFamily: 'monospace'),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('المبلغ الإجمالي:', style: TextStyle(fontWeight: FontWeight.w600)),
+                        Text(
+                          '${total.toStringAsFixed(2)} د.ج',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF059669), fontSize: 16),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('عدد القطع المباعة:', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                        Text('$itemCount قطعة', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('حالة الحفظ:', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                        Text('💾 محفوظ محلياً على الهاتف', style: TextStyle(fontSize: 11, color: Color(0xFFD97706), fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF059669),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('حساب زبون جديد ➔', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSalesHistoryDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.75,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.history, color: Color(0xFF059669)),
+                      const SizedBox(width: 8),
+                      Text(
+                        'سجل المبيعات المسجلة محلياً (${_offlineSales.length})',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'هذه المبيعات مسجلة في ذاكرة الهاتف وتعمل 100% بدون انترنت. يمكنك مزامنتها عند الاتصال بالخادم.',
+                style: TextStyle(fontSize: 11, color: Colors.black54),
+              ),
+              const Divider(height: 20),
+              Expanded(
+                child: _offlineSales.isEmpty
+                    ? const Center(
+                        child: Text('لا توجد مبيعات سابقة مسجلة على هذا الهاتف'),
+                      )
+                    : ListView.separated(
+                        itemCount: _offlineSales.length,
+                        separatorBuilder: (context, index) => const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final s = _offlineSales[idx];
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF059669).withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.receipt, color: Color(0xFF059669), size: 20),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'وصل #${s['id']}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                      ),
+                                      Text(
+                                        '${s['date']} • ${s['itemCount']} قطع',
+                                        style: const TextStyle(fontSize: 10.5, color: Colors.grey),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  '${(s['total'] as num).toStringAsFixed(2)} د.ج',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF059669), fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = ['الكل', 'مخبوزات', 'مشروبات', 'خضر وفواكه', 'مشتقات الحليب', 'حلويات', 'مواد عامة'];
+    final filtered = _selectedCategory == 'الكل'
+        ? _quickProducts
+        : _quickProducts.where((p) => p['category'] == _selectedCategory).toList();
+
+    final total = _calculateTotal();
+    final itemCount = _calculateItemCount();
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFFD97706),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          title: Row(
+            children: [
+              const Icon(Icons.flash_on, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'كاشير أوفلاين (بدون شبكة)',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'المستخدم: ${widget.deviceName} • يعمل محلياً 100%',
+                      style: const TextStyle(fontSize: 10, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: Badge(
+                label: Text('${_offlineSales.length}'),
+                isLabelVisible: _offlineSales.isNotEmpty,
+                child: const Icon(Icons.inventory_2_outlined, size: 22),
+              ),
+              onPressed: _showSalesHistoryDialog,
+              tooltip: 'سجل المبيعات المحفوظة محلياً',
+            ),
+            IconButton(
+              icon: const Icon(Icons.arrow_back, size: 22),
+              onPressed: () => Navigator.pop(context),
+              tooltip: 'العودة لشاشة الاتصال بالشبكة',
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            // Prominent Offline Alert Banner
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: const Color(0xFFFEF3C7),
+              child: Row(
+                children: [
+                  const Icon(Icons.wifi_off, size: 16, color: Color(0xFFB45309)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'وضع الكاشير المستقل نشط: يمكنك البيع وتسجيل الحسابات حتى دون اتصال بالراوتر أو الخادم.',
+                      style: TextStyle(fontSize: 10.5, color: Color(0xFF92400E), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _addNewQuickProductDialog,
+                    icon: const Icon(Icons.add, size: 14),
+                    label: const Text('مادة جديدة', style: TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF92400E),
+                      side: const BorderSide(color: Color(0xFFB45309)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Categories Filter Bar
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: categories.map((cat) {
+                  final isSelected = _selectedCategory == cat;
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: ChoiceChip(
+                      label: Text(cat),
+                      selected: isSelected,
+                      onSelected: (val) {
+                        setState(() => _selectedCategory = cat);
+                      },
+                      selectedColor: const Color(0xFF059669),
+                      labelStyle: TextStyle(
+                        color: isSelected ? Colors.white : const Color(0xFF334155),
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 11,
+                      ),
+                      backgroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+
+            // Quick Sale Product Grid
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 0.85,
+                ),
+                itemCount: filtered.length,
+                itemBuilder: (context, idx) {
+                  final item = filtered[idx];
+                  final id = item['id'] as String;
+                  final inCartCount = _cart[id] ?? 0;
+
+                  return InkWell(
+                    onTap: () => _addToCart(id),
+                    onLongPress: () => _removeFromCart(id),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: inCartCount > 0 ? const Color(0xFFECFDF5) : Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: inCartCount > 0 ? const Color(0xFF059669) : const Color(0xFFE2E8F0),
+                          width: inCartCount > 0 ? 1.5 : 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Text(item['emoji'] ?? '📦', style: const TextStyle(fontSize: 28)),
+                              if (inCartCount > 0)
+                                Positioned(
+                                  top: -4,
+                                  left: -6,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF059669),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      '$inCartCount',
+                                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            item['name'] ?? '',
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, height: 1.2),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '${(item['price'] as num).toStringAsFixed(0)} د.ج',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF059669),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            // Cart & Total Checkout Bottom Bar
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.shopping_cart, size: 20, color: Color(0xFF059669)),
+                            const SizedBox(width: 8),
+                            Text(
+                              'السلة: $itemCount قطع',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            if (itemCount > 0)
+                              TextButton(
+                                onPressed: _clearCart,
+                                child: const Text('إفراغ', style: TextStyle(color: Colors.redAccent, fontSize: 11)),
+                              ),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            const Text('المجموع الإجمالي', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                            Text(
+                              '${total.toStringAsFixed(2)} د.ج',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF059669),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: itemCount > 0 ? _completeSale : null,
+                        icon: const Icon(Icons.check_circle_outline, size: 20),
+                        label: Text(
+                          itemCount > 0
+                              ? 'إتمام البيع (${total.toStringAsFixed(0)} د.ج)'
+                              : 'اختر مواد لإتمام البيع',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF059669),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 3,
+                          disabledBackgroundColor: Colors.grey.shade300,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

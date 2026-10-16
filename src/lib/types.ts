@@ -12,6 +12,7 @@ export interface Product {
   expiryDate?: string | null;
   expiryDate2?: string | null;
   imageUrl?: string | null;
+  isNoBarcode?: boolean;
   supplierId?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -28,6 +29,7 @@ export interface NewProduct {
   expiryDate?: string | null;
   expiryDate2?: string | null;
   imageUrl?: string | null;
+  isNoBarcode?: boolean;
 }
 
 export interface ReceiptConfig {

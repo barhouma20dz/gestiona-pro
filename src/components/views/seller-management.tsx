@@ -16,7 +16,12 @@ import {
   TrendingUp,
   Users,
   KeyRound,
+  QrCode,
+  Smartphone,
+  Copy,
+  Check,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
 import { sellersApi, shopApi } from "@/lib/api";
 import type { Seller, NewSeller, SellerEarnings } from "@/lib/types";
@@ -120,6 +125,19 @@ export function SellerManagement() {
   const [pwdTarget, setPwdTarget] = useState<Seller | null>(null);
   const [pwdValue, setPwdValue] = useState("");
   const [pwdError, setPwdError] = useState<string>("");
+
+  // Phone pairing & role assignment dialog
+  const [pairTarget, setPairTarget] = useState<Seller | null>(null);
+  const [pairRole, setPairRole] = useState<"cashier" | "order_taker" | "monitor" | "customer_display">("order_taker");
+
+  const getPairingUrl = (seller: Seller, role: string): string => {
+    let origin = typeof window !== "undefined" ? window.location.origin : "http://192.168.100.64:3001";
+    if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
+      origin = origin.replace("localhost", "192.168.100.64").replace("127.0.0.1", "192.168.100.64");
+    }
+    const viewParam = role === "owner" ? "dashboard" : "pos";
+    return `${origin}/?view=${viewParam}&room=DZ-CLOSED-7788&pin=7788&role=${role}&devName=${encodeURIComponent(seller.name || "بائع")}&email=${encodeURIComponent(seller.email)}`;
+  };
 
   /* Derived stats */
   const stats = useMemo(() => {
@@ -409,6 +427,19 @@ export function SellerManagement() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-500/10"
+                          onClick={() => {
+                            setPairTarget(s);
+                            setPairRole("order_taker");
+                          }}
+                          aria-label={`ربط هاتف ${s.name ?? ""}`}
+                          title="📱 ربط الهاتف وتحديد الدور (QR Code)"
+                        >
+                          <QrCode className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8"
                           onClick={() => setEarningsTarget(s)}
                           aria-label={`${t("earnings")} ${s.name ?? ""}`}
@@ -496,6 +527,18 @@ export function SellerManagement() {
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <div className="flex gap-1">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 text-emerald-600 border-emerald-500/30"
+                          onClick={() => {
+                            setPairTarget(s);
+                            setPairRole("order_taker");
+                          }}
+                          title="ربط الهاتف وتحديد الدور"
+                        >
+                          <QrCode className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="outline"
                           size="icon"
@@ -713,6 +756,125 @@ export function SellerManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Pair Phone & Role Assignment Dialog */}
+      <Dialog open={!!pairTarget} onOpenChange={(o) => { if (!o) setPairTarget(null); }}>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden">
+          <DialogHeader className="p-5 pb-3 border-b text-start">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Smartphone className="h-5 w-5 text-emerald-600" />
+              <span>ربط الهاتف وتحديد الدور ({pairTarget?.name || "البائع"})</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              يحدد مدير المتجر دور هذا الهاتف مع حساب مخصص مشفر
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-5 space-y-4">
+            {/* Account Info */}
+            <div className="rounded-xl border bg-muted/30 p-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-foreground">{pairTarget?.name}</p>
+                <p className="text-[11px] text-muted-foreground">{pairTarget?.email}</p>
+              </div>
+              <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
+                حساب مصرح به
+              </Badge>
+            </div>
+
+            {/* Role Selector */}
+            <div className="space-y-2">
+              <Label className="text-xs font-bold text-foreground">
+                حدد دور الهاتف في المحل:
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  {
+                    id: "cashier",
+                    name: "كاشير رئيسي",
+                    desc: "بيع مباشر، دفع، طباعة",
+                    icon: "💳",
+                  },
+                  {
+                    id: "order_taker",
+                    name: "بائع أخذ طلبات",
+                    desc: "مسح السلع وإرسال للكاشير",
+                    icon: "🛒",
+                  },
+                  {
+                    id: "monitor",
+                    name: "فاحص الأسعار",
+                    desc: "مراقبة المخزون والأسعار",
+                    icon: "📦",
+                  },
+                  {
+                    id: "customer_display",
+                    name: "شاشة الزبون",
+                    desc: "عرض السلة أمام الزبون",
+                    icon: "🖥️",
+                  },
+                ].map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => setPairRole(r.id as any)}
+                    className={cn(
+                      "p-2.5 rounded-xl border text-start transition-all flex flex-col justify-between",
+                      pairRole === r.id
+                        ? "border-emerald-500 bg-emerald-500/10 shadow-xs ring-1 ring-emerald-500/30"
+                        : "border-border bg-card hover:bg-muted/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between w-full mb-1">
+                      <span className="text-lg">{r.icon}</span>
+                      {pairRole === r.id && (
+                        <span className="h-2 w-2 rounded-full bg-emerald-600" />
+                      )}
+                    </div>
+                    <p className="text-xs font-bold text-foreground">{r.name}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">{r.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* QR Code Container */}
+            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-xs">
+              {pairTarget && (
+                <div className="p-3 bg-white rounded-xl shadow-xs border">
+                  <QRCodeSVG
+                    value={getPairingUrl(pairTarget, pairRole)}
+                    size={175}
+                    level="M"
+                  />
+                </div>
+              )}
+              <p className="mt-2.5 text-xs font-bold text-foreground text-center">
+                امسح هذا الرمز بكاميرا تطبيق الهاتف
+              </p>
+              <p className="text-[10px] text-muted-foreground text-center">
+                يتم تكوين الهاتف فورياً بالدور والحساب المحدد
+              </p>
+            </div>
+
+            {/* Copy link button */}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full text-xs font-semibold gap-1.5 h-9"
+              onClick={() => {
+                if (pairTarget) {
+                  navigator.clipboard.writeText(getPairingUrl(pairTarget, pairRole));
+                  toast.success("تم نسخ رابط اقتران الهاتف بنجاح! 📋");
+                }
+              }}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              <span>نسخ رابط الاقتران المباشر</span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

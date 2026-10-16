@@ -155,6 +155,7 @@ interface FormState {
   expiryDate: string;
   expiryDate2: string;
   imageUrl: string;
+  isNoBarcode: boolean;
 }
 
 const emptyForm: FormState = {
@@ -168,6 +169,7 @@ const emptyForm: FormState = {
   expiryDate: "",
   expiryDate2: "",
   imageUrl: "",
+  isNoBarcode: false,
 };
 
 function toForm(p: Product): FormState {
@@ -182,6 +184,7 @@ function toForm(p: Product): FormState {
     expiryDate: p.expiryDate ? new Date(p.expiryDate).toISOString().split("T")[0] : "",
     expiryDate2: p.expiryDate2 ? new Date(p.expiryDate2).toISOString().split("T")[0] : "",
     imageUrl: p.imageUrl ?? "",
+    isNoBarcode: Boolean(p.isNoBarcode),
   };
 }
 
@@ -336,7 +339,7 @@ export function ProductManager() {
     setEditing(null);
     setForm({
       name: `${p.name} (Copy)`,
-      barcode: `${p.barcode}-COPY`,
+      barcode: p.isNoBarcode ? "" : `${p.barcode}-COPY`,
       price: String(p.price),
       costPrice: String(p.costPrice ?? 0),
       stock: String(p.stock),
@@ -345,6 +348,7 @@ export function ProductManager() {
       expiryDate: p.expiryDate ? new Date(p.expiryDate).toISOString().split("T")[0] : "",
       expiryDate2: p.expiryDate2 ? new Date(p.expiryDate2).toISOString().split("T")[0] : "",
       imageUrl: p.imageUrl ?? "",
+      isNoBarcode: Boolean(p.isNoBarcode),
     });
     setFormErrors({});
     setFormOpen(true);
@@ -354,7 +358,7 @@ export function ProductManager() {
   const validate = (): boolean => {
     const errs: Partial<Record<keyof FormState, string>> = {};
     if (!form.name.trim()) errs.name = t("nameRequired");
-    if (!form.barcode.trim()) errs.barcode = t("barcodeRequired");
+    if (!form.isNoBarcode && !form.barcode.trim()) errs.barcode = t("barcodeRequired");
     const price = Number(form.price);
     if (form.price === "" || Number.isNaN(price) || price < 0)
       errs.price = t("priceMin");
@@ -371,9 +375,13 @@ export function ProductManager() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
+    let finalBarcode = form.barcode.trim();
+    if (form.isNoBarcode && !finalBarcode) {
+      finalBarcode = `NB-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
     const payload: NewProduct = {
       name: form.name.trim(),
-      barcode: form.barcode.trim(),
+      barcode: finalBarcode,
       price: Number(form.price),
       costPrice: Number(form.costPrice),
       stock: Number(form.stock),
@@ -382,6 +390,7 @@ export function ProductManager() {
       expiryDate: form.expiryDate || null,
       expiryDate2: form.expiryDate2 || null,
       imageUrl: form.imageUrl || null,
+      isNoBarcode: form.isNoBarcode,
     };
     if (editing) {
       updateMutation.mutate({ id: editing.id, data: payload });
@@ -566,9 +575,16 @@ export function ProductManager() {
                   >
                     <TableCell className="pl-6 py-3.5">
                       <div className="flex flex-col">
-                        <span className="font-medium transition-colors group-hover:text-primary">
-                          {p.name}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium transition-colors group-hover:text-primary">
+                            {p.name}
+                          </span>
+                          {p.isNoBarcode && (
+                            <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[10px] font-bold py-0 h-4">
+                              ⚡ بيع سريع
+                            </Badge>
+                          )}
+                        </div>
                         <span className="font-mono text-[11px] text-muted-foreground">
                           {p.barcode}
                         </span>
@@ -641,7 +657,14 @@ export function ProductManager() {
                 <li key={p.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-medium">{p.name}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="truncate font-medium">{p.name}</p>
+                        {p.isNoBarcode && (
+                          <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[10px] font-bold py-0 h-4">
+                            ⚡ بيع سريع
+                          </Badge>
+                        )}
+                      </div>
                       <p className="font-mono text-[11px] text-muted-foreground">
                         {p.barcode}
                       </p>
@@ -713,6 +736,32 @@ export function ProductManager() {
 
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
             <div className="overflow-y-auto px-5 py-4 space-y-4 flex-1">
+              {/* Quick Sale / No Barcode Feature Toggle */}
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 flex items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-xl shadow-xs shrink-0">
+                    ⚡
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                      <span>سلعة بدون باركود (البيع السريع في الكاشير)</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      مثل: الخبز، البيض، الخضر والفواكه، المخبوزات — ستظهر بأزرار وصور كبيرة في الكاشير لبيعها بنقرة واحدة بدون مسح.
+                    </p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={form.isNoBarcode}
+                    onChange={(e) => setForm((f) => ({ ...f, isNoBarcode: e.target.checked }))}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
+              </div>
+
               {/* Row 1: Name & Barcode */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -721,7 +770,7 @@ export function ProductManager() {
                     id="p-name"
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="e.g. Coca-Cola 750ml"
+                    placeholder="e.g. خبز باكيط / طماطم / بيض"
                     autoFocus
                   />
                   {formErrors.name && (
@@ -730,7 +779,14 @@ export function ProductManager() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="p-barcode">{t("barcode")}</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="p-barcode">{t("barcode")}</Label>
+                    {form.isNoBarcode && (
+                      <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                        (اختياري — سيتم إنشاؤه تلقائياً)
+                      </span>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <Input
                       id="p-barcode"
@@ -738,24 +794,28 @@ export function ProductManager() {
                       onChange={(e) =>
                         setForm((f) => ({ ...f, barcode: e.target.value }))
                       }
-                      placeholder="e.g. 8901030867531"
+                      placeholder={form.isNoBarcode ? "(تلقائي للسلع السريعة)" : "e.g. 8901030867531"}
                       className="font-mono"
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="shrink-0 text-primary hover:text-primary"
-                      onClick={() => setScannerOpen(true)}
-                      aria-label={t("scanBarcode")}
-                      title={t("scanBarcode")}
-                    >
-                      <ScanLine className="h-4 w-4" />
-                    </Button>
+                    {!form.isNoBarcode && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0 text-primary hover:text-primary"
+                        onClick={() => setScannerOpen(true)}
+                        aria-label={t("scanBarcode")}
+                        title={t("scanBarcode")}
+                      >
+                        <ScanLine className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                   <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
                     <ScanLine className="h-3 w-3" />
-                    {t("tipUseScanner")}
+                    {form.isNoBarcode
+                      ? "يمكنك ترك الباركود فارغاً، سيتم تعيين كود سريع للسلعة تلقائياً."
+                      : t("tipUseScanner")}
                   </p>
                   {formErrors.barcode && (
                     <p className="text-xs text-red-600 dark:text-red-400">{formErrors.barcode}</p>

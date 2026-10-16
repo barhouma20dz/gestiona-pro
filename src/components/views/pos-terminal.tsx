@@ -30,6 +30,10 @@ import {
   HandCoins,
   Send,
   Radio,
+  Zap,
+  Sparkles,
+  ZoomIn,
+  Maximize2,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
@@ -342,6 +346,8 @@ function CameraScannerBody({
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
+
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
@@ -352,6 +358,52 @@ function CameraScannerBody({
     null
   );
   const [flash, setFlash] = useState(false);
+
+  // Smart size mode & zoom
+  const [barcodeSize, setBarcodeSize] = useState<"small" | "medium" | "large">("medium");
+  const [zoomLevel, setZoomLevel] = useState<number>(1.2);
+  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
+  const [hasTorchCapability, setHasTorchCapability] = useState<boolean>(false);
+  const [hasZoomCapability, setHasZoomCapability] = useState<boolean>(false);
+
+  const applyCameraZoom = async (level: number) => {
+    setZoomLevel(level);
+    const track = videoTrackRef.current;
+    if (track && hasZoomCapability) {
+      try {
+        await track.applyConstraints({
+          advanced: [{ zoom: level } as any],
+        });
+      } catch {
+        // Fallback to CSS video zoom
+      }
+    }
+  };
+
+  const toggleTorch = async () => {
+    const track = videoTrackRef.current;
+    if (!track) return;
+    try {
+      const nextTorch = !isTorchOn;
+      await track.applyConstraints({
+        advanced: [{ torch: nextTorch } as any],
+      });
+      setIsTorchOn(nextTorch);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSizeChange = (size: "small" | "medium" | "large") => {
+    setBarcodeSize(size);
+    if (size === "small") {
+      applyCameraZoom(2.2);
+    } else if (size === "medium") {
+      applyCameraZoom(1.3);
+    } else {
+      applyCameraZoom(1.0);
+    }
+  };
 
   useEffect(() => {
     keepOpenRef.current = keepOpen;
@@ -382,21 +434,22 @@ function CameraScannerBody({
           BarcodeFormat.CODE_93,
           BarcodeFormat.ITF,
           BarcodeFormat.CODABAR,
+          BarcodeFormat.QR_CODE,
+          BarcodeFormat.DATA_MATRIX,
         ]);
         hints.set(DecodeHintType.TRY_HARDER, true);
 
-        // Key speed fix: zxing's default delayBetweenScanAttempts is 500ms
-        // (only 2 decode tries per second!). 30ms → ~30 tries/sec.
+        // Ultra fast 15ms scan loop
         const reader = new BrowserMultiFormatReader(hints, {
-          delayBetweenScanAttempts: 30,
+          delayBetweenScanAttempts: 15,
           delayBetweenScanSuccess: 250,
         });
 
         const handleDetected = (text: string) => {
           if (cancelled) return;
           const now = Date.now();
-          // Ignore the same code re-detected within 1.5s (staying in frame).
-          if (text === lastCode && now - lastAt < 1500) return;
+          // Ignore the same code re-detected within 1.2s (staying in frame).
+          if (text === lastCode && now - lastAt < 1200) return;
           lastCode = text;
           lastAt = now;
 
@@ -407,7 +460,7 @@ function CameraScannerBody({
           setFlash(true);
           setTimeout(() => {
             if (!cancelled) setFlash(false);
-          }, 260);
+          }, 240);
 
           onScan(text);
 
@@ -417,13 +470,14 @@ function CameraScannerBody({
           }
         };
 
-        // High-resolution + back camera → reads barcodes from farther away.
         const controls = await reader.decodeFromConstraints(
           {
             video: {
               facingMode: "environment",
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
+              width: { ideal: 1920, min: 1280 },
+              height: { ideal: 1080, min: 720 },
+              // @ts-ignore
+              focusMode: "continuous",
             },
             audio: false,
           },
@@ -435,6 +489,19 @@ function CameraScannerBody({
         );
 
         controlsRef.current = controls;
+
+        // Check hardware track capabilities
+        if (videoRef.current && videoRef.current.srcObject) {
+          const stream = videoRef.current.srcObject as MediaStream;
+          const track = stream.getVideoTracks()[0];
+          if (track) {
+            videoTrackRef.current = track;
+            const capabilities = (track.getCapabilities ? (track.getCapabilities() as any) : {}) || {};
+            if (capabilities.zoom) setHasZoomCapability(true);
+            if (capabilities.torch) setHasTorchCapability(true);
+          }
+        }
+
         if (!cancelled) setCameraReady(true);
       } catch (err) {
         if (cancelled) return;
@@ -456,6 +523,14 @@ function CameraScannerBody({
         }
         controlsRef.current = null;
       }
+      if (videoTrackRef.current) {
+        try {
+          videoTrackRef.current.stop();
+        } catch {
+          // ignore
+        }
+        videoTrackRef.current = null;
+      }
     };
   }, [onScan, onOpenChange]);
 
@@ -471,18 +546,87 @@ function CameraScannerBody({
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <ScanLine className="h-5 w-5 text-primary" />
-          {t("scanBarcode")}
-        </DialogTitle>
-        <DialogDescription>
-          {t("cameraHint")}
+      <DialogHeader className="p-4 pb-2 border-b">
+        <div className="flex items-center justify-between">
+          <DialogTitle className="flex items-center gap-2 text-base font-bold">
+            <ScanLine className="h-5 w-5 text-emerald-600" />
+            <span>ماسح الباركود الذكي بكاميرا الهاتف</span>
+          </DialogTitle>
+          {hasTorchCapability && (
+            <Button
+              type="button"
+              variant={isTorchOn ? "default" : "outline"}
+              size="sm"
+              onClick={toggleTorch}
+              className={cn(
+                "h-7 px-2.5 text-xs font-semibold gap-1.5 rounded-full",
+                isTorchOn
+                  ? "bg-amber-500 hover:bg-amber-600 text-white"
+                  : "text-muted-foreground"
+              )}
+            >
+              <Zap className="h-3.5 w-3.5 fill-current" />
+              <span>{isTorchOn ? "الكشاف شغال" : "تشغيل الكشاف"}</span>
+            </Button>
+          )}
+        </div>
+        <DialogDescription className="text-xs">
+          يدعم جميع أحجام الباركود بدقة وسرعة فائقة
         </DialogDescription>
       </DialogHeader>
 
+      {/* Barcode Size Selection Presets */}
+      <div className="bg-muted/40 border-b px-4 py-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-bold text-muted-foreground shrink-0">
+          نوع وحجم الباركود:
+        </span>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => handleSizeChange("small")}
+            className={cn(
+              "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+              barcodeSize === "small"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-card border text-muted-foreground hover:text-foreground"
+            )}
+            title="مناسب للسلع الصغيرة (علكة، شوكولاتة، علب بهارات)"
+          >
+            <Sparkles className="h-3 w-3" />
+            <span>صغير (زووم 2x)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSizeChange("medium")}
+            className={cn(
+              "px-2.5 py-1 rounded-lg text-xs font-bold transition-all",
+              barcodeSize === "medium"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-card border text-muted-foreground hover:text-foreground"
+            )}
+            title="الباركود القياسي للسلع العادية"
+          >
+            <span>قياسي (1.3x)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSizeChange("large")}
+            className={cn(
+              "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+              barcodeSize === "large"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-card border text-muted-foreground hover:text-foreground"
+            )}
+            title="مناسب للكراتين والباركود الطويل والعريض"
+          >
+            <Maximize2 className="h-3 w-3" />
+            <span>عريض / كرتون</span>
+          </button>
+        </div>
+      </div>
+
       {/* Camera preview with live decoding */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-lg border bg-black">
+      <div className="relative aspect-video w-full overflow-hidden bg-black select-none">
         {cameraError ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
             <CameraOff className="h-8 w-8 text-muted-foreground" />
@@ -500,25 +644,37 @@ function CameraScannerBody({
               autoPlay
               playsInline
               muted
+              style={{
+                transform: `scale(${zoomLevel})`,
+                transformOrigin: "center center",
+                transition: "transform 0.2s ease-out",
+              }}
               className="h-full w-full object-cover"
             />
             {/* Success flash */}
             {flash && (
-              <div className="pointer-events-none absolute inset-0 bg-emerald-400/25 transition-opacity" />
+              <div className="pointer-events-none absolute inset-0 bg-emerald-400/35 transition-opacity" />
             )}
             {/* Scan frame overlay */}
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="relative h-24 w-3/4 max-w-[260px] rounded-md border-2 border-primary/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]">
-                <span className="absolute -left-1 -top-1 h-4 w-4 border-l-4 border-t-4 border-primary" />
-                <span className="absolute -right-1 -top-1 h-4 w-4 border-r-4 border-t-4 border-primary" />
-                <span className="absolute -bottom-1 -left-1 h-4 w-4 border-b-4 border-l-4 border-primary" />
-                <span className="absolute -bottom-1 -right-1 h-4 w-4 border-b-4 border-r-4 border-primary" />
+              <div
+                className={cn(
+                  "relative rounded-xl border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] transition-all duration-200",
+                  barcodeSize === "small" && "h-20 w-48 max-w-[200px]",
+                  barcodeSize === "medium" && "h-24 w-3/4 max-w-[270px]",
+                  barcodeSize === "large" && "h-32 w-[85%] max-w-[340px]"
+                )}
+              >
+                <span className="absolute -left-1 -top-1 h-4 w-4 border-l-4 border-t-4 border-emerald-400 rounded-tl" />
+                <span className="absolute -right-1 -top-1 h-4 w-4 border-r-4 border-t-4 border-emerald-400 rounded-tr" />
+                <span className="absolute -bottom-1 -left-1 h-4 w-4 border-b-4 border-l-4 border-emerald-400 rounded-bl" />
+                <span className="absolute -bottom-1 -right-1 h-4 w-4 border-b-4 border-r-4 border-emerald-400 rounded-br" />
                 <motion.span
-                  className="absolute inset-x-1 top-1/2 h-0.5 bg-primary"
-                  initial={{ y: -40 }}
-                  animate={{ y: 40 }}
+                  className="absolute inset-x-2 top-1/2 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_#34d399]"
+                  initial={{ y: -36 }}
+                  animate={{ y: 36 }}
                   transition={{
-                    duration: 1.6,
+                    duration: 1.2,
                     repeat: Infinity,
                     repeatType: "reverse",
                     ease: "easeInOut",
@@ -526,66 +682,83 @@ function CameraScannerBody({
                 />
               </div>
             </div>
+
+            {/* Zoom Chips Overlay */}
+            <div className="absolute top-2.5 right-2.5 flex items-center gap-1 bg-black/65 backdrop-blur-md px-2 py-1 rounded-full border border-white/20">
+              <ZoomIn className="h-3 w-3 text-white/80 ml-0.5" />
+              {[1.0, 1.5, 2.0, 2.5, 3.0].map((z) => (
+                <button
+                  key={z}
+                  type="button"
+                  onClick={() => applyCameraZoom(z)}
+                  className={cn(
+                    "px-1.5 py-0.5 rounded text-[10px] font-bold transition-all",
+                    Math.abs(zoomLevel - z) < 0.15
+                      ? "bg-emerald-500 text-white"
+                      : "text-white/80 hover:text-white"
+                  )}
+                >
+                  {z}x
+                </button>
+              ))}
+            </div>
+
             {/* Last detected code — feedback while continuous scanning */}
             {lastScan && keepOpen && (
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-emerald-500/90 p-2 text-white">
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-emerald-600/95 p-2 text-white">
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span className="truncate font-mono text-sm font-bold">
+                <span className="truncate font-mono text-sm font-extrabold tracking-wider">
                   {lastScan.code}
                 </span>
               </div>
             )}
             {!cameraReady && !cameraError && (
-              <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
-                {t("startingCamera")}
+              <div className="absolute inset-0 flex items-center justify-center text-xs text-white/80 bg-black/50">
+                جارٍ تشغيل الكاميرا وتحسين العدسة…
               </div>
             )}
           </>
         )}
       </div>
 
-      {/* Continuous scan toggle */}
-      <label className="flex cursor-pointer items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
-        <input
-          type="checkbox"
-          checked={keepOpen}
-          onChange={(e) => setKeepOpen(e.target.checked)}
-          className="h-4 w-4 accent-emerald-600"
-        />
-        <span className="text-sm font-medium">{t("keepScannerOpen")}</span>
-        <span className="text-xs text-muted-foreground">
-          — {t("keepScannerOpenHint")}
-        </span>
-      </label>
-
-      {/* Manual fallback — primary path */}
-      <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground">
-          {t("enterBarcodeManually")}
+      <div className="p-3 bg-card border-t space-y-2.5">
+        {/* Continuous scan toggle */}
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border bg-muted/40 px-3 py-2">
+          <input
+            type="checkbox"
+            checked={keepOpen}
+            onChange={(e) => setKeepOpen(e.target.checked)}
+            className="h-4 w-4 accent-emerald-600 rounded"
+          />
+          <span className="text-xs font-bold text-foreground">المسح المستمر المتتابع</span>
+          <span className="text-[11px] text-muted-foreground">
+            — إبقاء الكاميرا مفتوحة لإضافة عدة سلع متتالية
+          </span>
         </label>
+
+        {/* Manual fallback */}
         <div className="flex gap-2">
           <Input
             autoFocus={!!cameraError}
             value={manualCode}
-            placeholder="e.g. 8901030867531"
+            placeholder="أدخل كود السلعة يدوياً (مثلاً: 6130...)"
             onChange={(e) => setManualCode(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") submitManual();
             }}
-            className="font-mono"
+            className="font-mono text-xs"
           />
-          <Button type="button" onClick={submitManual} disabled={!manualCode.trim()}>
-            <Plus className="h-4 w-4" />
-            {t("add")}
+          <Button
+            type="button"
+            onClick={submitManual}
+            disabled={!manualCode.trim()}
+            className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-9 text-xs"
+          >
+            <Plus className="h-3.5 w-3.5 ml-1" />
+            إضافة
           </Button>
         </div>
       </div>
-
-      <DialogFooter>
-        <Button variant="outline" onClick={() => onOpenChange(false)}>
-          {t("close")}
-        </Button>
-      </DialogFooter>
     </>
   );
 }
@@ -1202,17 +1375,30 @@ export function PosTerminal() {
   const scanBufferRef = useRef("");
   const lastKeyAtRef = useRef(0);
 
+  const quickSaleProducts = useMemo(
+    () => products.filter((p) => p.isNoBarcode),
+    [products]
+  );
+
   const categories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => p.category && set.add(p.category));
-    return ["All", ...Array.from(set).sort()];
-  }, [products]);
+    const list = ["All"];
+    if (quickSaleProducts.length > 0) {
+      list.push("⚡ بدون باركود (بيع سريع)");
+    }
+    return [...list, ...Array.from(set).sort()];
+  }, [products, quickSaleProducts.length]);
 
   const filteredProducts = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return products.filter((p) => {
-      const matchCat =
-        activeCategory === "All" || p.category === activeCategory;
+      let matchCat = true;
+      if (activeCategory === "⚡ بدون باركود (بيع سريع)") {
+        matchCat = Boolean(p.isNoBarcode);
+      } else if (activeCategory !== "All") {
+        matchCat = p.category === activeCategory;
+      }
       const matchSearch =
         !term ||
         p.name.toLowerCase().includes(term) ||
@@ -1632,6 +1818,76 @@ export function PosTerminal() {
             </div>
           </div>
         </Card>
+
+        {/* Dedicated Quick-Sale Barcode-Free Items Panel */}
+        {quickSaleProducts.length > 0 && activeCategory !== "⚡ بدون باركود (بيع سريع)" && !searchTerm && (
+          <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent p-3.5 shadow-xs">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-amber-500 text-white font-bold text-sm shadow-xs">
+                  ⚡
+                </span>
+                <div>
+                  <h3 className="text-xs font-bold text-foreground">
+                    سلع البيع السريع المباشر (بدون باركود)
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground">
+                    انقر على أي سلعة لإضافتها فوراً لسلة الحساب بنقرة واحدة
+                  </p>
+                </div>
+              </div>
+              <Badge variant="outline" className="text-[10px] h-5 px-2 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 font-bold">
+                {quickSaleProducts.length} سلع سريعة
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+              {quickSaleProducts.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handleAddProduct(p)}
+                  className="group relative flex flex-col items-center justify-between p-2.5 rounded-xl border border-border bg-card hover:border-amber-500/60 hover:bg-amber-500/10 active:scale-95 transition-all text-center shadow-xs"
+                >
+                  <div className="relative w-full aspect-square max-h-24 rounded-lg overflow-hidden bg-muted/60 mb-2 flex items-center justify-center">
+                    {p.imageUrl ? (
+                      <img
+                        src={p.imageUrl}
+                        alt={p.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <span className="text-3xl select-none">
+                        {p.name.includes("خبز") || p.name.includes("باكيط") ? "🥖"
+                         : p.name.includes("بيض") ? "🥚"
+                         : p.name.includes("طماطم") || p.name.includes("تفاح") || p.name.includes("فواكه") ? "🍎"
+                         : p.name.includes("بطاطا") || p.name.includes("بصل") ? "🥔"
+                         : p.name.includes("كرواسون") || p.name.includes("حلوى") ? "🥐"
+                         : p.name.includes("ماء") ? "💧"
+                         : p.name.includes("كيس") ? "🛍️"
+                         : "⚡"}
+                      </span>
+                    )}
+                    <Badge className="absolute top-1 right-1 bg-amber-500 text-white text-[9px] px-1.5 py-0 font-bold shadow-xs">
+                      سريع
+                    </Badge>
+                  </div>
+                  <p className="w-full truncate font-bold text-xs text-foreground group-hover:text-amber-600 transition-colors">
+                    {p.name}
+                  </p>
+                  <div className="mt-1 flex items-center justify-between w-full border-t pt-1 border-border/50">
+                    <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      {formatMoney(p.price, currency)}
+                    </span>
+                    <span className="text-[10px] font-semibold text-muted-foreground">
+                      {p.unitType === "kg" ? "كغ" : "قطعة"}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Category chips */}
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-emerald">
