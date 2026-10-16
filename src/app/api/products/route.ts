@@ -64,13 +64,21 @@ export async function POST(request: Request) {
         ? body.imageUrl.trim()
         : null;
 
+    const isNoBarcode = Boolean(body?.isNoBarcode);
+
+    // If marked as no barcode and barcode is empty, generate a unique fast code
+    let finalBarcode = barcode;
+    if (isNoBarcode && !finalBarcode) {
+      finalBarcode = `NB-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+
     if (!name) {
       return NextResponse.json(
         { error: "Product name is required" },
         { status: 400 }
       );
     }
-    if (!barcode) {
+    if (!finalBarcode) {
       return NextResponse.json(
         { error: "Barcode is required" },
         { status: 400 }
@@ -120,24 +128,25 @@ export async function POST(request: Request) {
 
     // Enforce unique [storeId, barcode]
     const existing = await db.product.findFirst({
-      where: { storeId: session.storeId, barcode },
+      where: { storeId: session.storeId, barcode: finalBarcode },
       select: { id: true },
     });
     if (existing) {
       return NextResponse.json(
-        { error: `Product with barcode '${barcode}' already exists in your store` },
+        { error: `Product with barcode '${finalBarcode}' already exists in your store` },
         { status: 409 }
       );
     }
 
     const data: Prisma.ProductCreateInput = {
       name,
-      barcode,
+      barcode: finalBarcode,
       price,
       costPrice,
       stock: stockValue,
       unitType,
       category,
+      isNoBarcode,
       store: { connect: { id: session.storeId } },
     };
     if (expiryDate) data.expiryDate = expiryDate;

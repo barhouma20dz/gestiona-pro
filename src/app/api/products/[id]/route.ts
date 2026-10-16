@@ -169,6 +169,10 @@ export async function PUT(
       }
     }
 
+    if (body?.isNoBarcode !== undefined) {
+      data.isNoBarcode = Boolean(body.isNoBarcode);
+    }
+
     const updated = await db.product.update({
       where: { id },
       data,

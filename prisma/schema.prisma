@@ -121,6 +121,7 @@ model Product {
   expiryDate  DateTime?
   expiryDate2 DateTime?
   imageUrl    String?
+  isNoBarcode Boolean   @default(false) // مواد بدون باركود (خبز، بيض، فواكه، خضار للبيع السريع بالكاشير)
   supplierId  String?
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
   createdAt   DateTime  @default(now())
