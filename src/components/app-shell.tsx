@@ -346,6 +346,34 @@ export function AppShell() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const cartCount = useCartStore((s) => s.totalItems());
 
+  // URL search params handling (e.g. mobile app direct room connection or view select)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const urlView = params.get("view");
+    const urlRoom = params.get("room");
+    const urlPin = params.get("pin");
+    const urlRole = params.get("role");
+    const urlDevName = params.get("devName");
+
+    if (urlView && NAV.some((n) => n.key === urlView)) {
+      setView(urlView as ViewKey);
+    } else if (urlRole === "cashier" || urlRole === "order_taker") {
+      setView("pos");
+    } else if (urlRole === "customer_display") {
+      setView("roomSync");
+    }
+
+    if (urlRoom) {
+      import("@/lib/room-sync-store").then(({ useRoomSyncStore }) => {
+        const store = useRoomSyncStore.getState();
+        if (urlRole) store.setRole(urlRole as any);
+        if (urlDevName) store.setDeviceName(decodeURIComponent(urlDevName));
+        void store.joinRoom(urlRoom, urlPin || undefined);
+      });
+    }
+  }, []);
+
   // When the user role changes (e.g., right after login), ensure the view is valid
   useEffect(() => {
     setView((current) => {

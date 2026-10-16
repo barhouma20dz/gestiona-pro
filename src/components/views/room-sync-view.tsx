@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -25,6 +25,12 @@ import {
   AlertTriangle,
   Download,
   Info,
+  Database,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  HardDrive,
+  FileJson,
+  UploadCloud,
 } from "lucide-react";
 import { useRoomSyncStore, type DeviceRole } from "@/lib/room-sync-store";
 import { useCartStore } from "@/lib/cart-store";
@@ -53,6 +59,9 @@ export function RoomSyncView() {
     joinRoom,
     leaveRoom,
     syncWithServer,
+    pendingDbSnapshot,
+    clearPendingDbSnapshot,
+    broadcastDatabasePush,
   } = useRoomSyncStore();
 
   const cart = useCartStore();
@@ -70,7 +79,18 @@ export function RoomSyncView() {
   const [inputRoomId, setInputRoomId] = useState(currentRoomId || "DZ-STORE-1");
   const [inputPin, setInputPin] = useState(roomPin || "7788");
   const [editingDeviceName, setEditingDeviceName] = useState(deviceName);
-  const [activeTab, setActiveTab] = useState<"local" | "cloud" | "apk" | "orders">("local");
+  const [activeTab, setActiveTab] = useState<"local" | "cloud" | "db_transfer" | "apk" | "orders">("local");
+
+  // Database Transfer state
+  const [isExportingDb, setIsExportingDb] = useState(false);
+  const [isImportingDb, setIsImportingDb] = useState(false);
+  const [dbTransferStats, setDbTransferStats] = useState<{
+    importedProducts: number;
+    importedCustomers: number;
+    importedSuppliers: number;
+    importedSales: number;
+  } | null>(null);
+  const fileInputBackupRef = useRef<HTMLInputElement>(null);
 
   // Fetch local Wi-Fi info
   useEffect(() => {
@@ -154,6 +174,84 @@ export function RoomSyncView() {
     toast.success(`تم تحميل طلب ${order.senderName} (${order.items.length} أصناف) إلى سلة الكاشير!`);
   };
 
+  const handleExportDb = async (broadcastToRoom = false) => {
+    setIsExportingDb(true);
+    try {
+      const res = await fetch("/api/db-transfer");
+      const data = await res.json();
+      if (!data.success) {
+        toast.error("فشل تصدير قاعدة البيانات: " + (data.error || "خطأ غير معروف"));
+        return;
+      }
+
+      const snapshot = data.snapshot;
+
+      // If requested, broadcast to the room P2P
+      if (broadcastToRoom && isConnected) {
+        await broadcastDatabasePush(snapshot);
+        toast.success(`✓ تم بث قاعدة البيانات بنجاح إلى الأجهزة المتصلة في الغرفة (${snapshot.counts?.products || 0} منتج)!`);
+      }
+
+      // Download file as JSON
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `gestiona_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      if (!broadcastToRoom) {
+        toast.success("✓ تم تنزيل نسخة قاعدة البيانات بنجاح!");
+      }
+    } catch {
+      toast.error("حدث خطأ أثناء تصدير البيانات");
+    } finally {
+      setIsExportingDb(false);
+    }
+  };
+
+  const handleImportSnapshot = async (snapshotData: any) => {
+    setIsImportingDb(true);
+    try {
+      const res = await fetch("/api/db-transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snapshot: snapshotData }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDbTransferStats(data.stats);
+        toast.success(data.message || "✓ تم حفظ واستيراد قاعدة البيانات بنجاح!");
+        clearPendingDbSnapshot();
+      } else {
+        toast.error("فشل حفظ البيانات: " + (data.error || "خطأ"));
+      }
+    } catch {
+      toast.error("حدث خطأ أثناء حفظ قاعدة البيانات");
+    } finally {
+      setIsImportingDb(false);
+    }
+  };
+
+  const handleFileInputBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const json = JSON.parse(reader.result as string);
+        await handleImportSnapshot(json);
+      } catch {
+        toast.error("ملف النسخة الاحتياطية تالف أو غير صالح");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   return (
     <div className="space-y-6 pb-20">
       {/* Header Banner */}
@@ -196,6 +294,45 @@ export function RoomSyncView() {
           </div>
         </div>
       </div>
+
+      {/* Incoming P2P Database Snapshot Alert Banner */}
+      {pendingDbSnapshot && (
+        <div className="rounded-2xl border-2 border-emerald-500 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-3">
+          <div className="flex items-center gap-3">
+            <div className="size-11 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
+              <Database className="h-5 w-5 animate-bounce" />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                <span>وصل تحديث قاعدة بيانات كاملة من الهاتف ({pendingDbSnapshot.senderName})</span>
+                <Badge className="bg-emerald-600 text-white text-[10px]">مزامنة مباشرة P2P</Badge>
+              </h4>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                تتضمن: {pendingDbSnapshot.counts?.products ?? 0} منتج، {pendingDbSnapshot.counts?.customers ?? 0} عميل، {pendingDbSnapshot.counts?.sales ?? 0} مبيعات.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={clearPendingDbSnapshot}
+              className="text-xs"
+            >
+              تجاهل
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => handleImportSnapshot(pendingDbSnapshot.snapshot)}
+              disabled={isImportingDb}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold gap-1.5 shadow"
+            >
+              <ArrowDownToLine className="h-4 w-4" />
+              {isImportingDb ? "جاري الحفظ..." : "حفظ في قاعدة بيانات هذا الهاتف فوراً"}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Main Grid: Left Side Controls & Right Side Connection Modes */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -408,7 +545,7 @@ export function RoomSyncView() {
             onValueChange={(v) => setActiveTab(v as any)}
             className="w-full"
           >
-            <TabsList className="grid grid-cols-4 w-full h-auto p-1 bg-muted/60">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full h-auto p-1 bg-muted/60 gap-1">
               <TabsTrigger value="local" className="text-xs py-2 gap-1.5">
                 <Wifi className="h-3.5 w-3.5" />
                 <span>واي فاي محلي</span>
@@ -417,13 +554,17 @@ export function RoomSyncView() {
                 <Globe className="h-3.5 w-3.5" />
                 <span>غرفة عن بعد</span>
               </TabsTrigger>
+              <TabsTrigger value="db_transfer" className="text-xs py-2 gap-1.5 font-bold text-emerald-700 dark:text-emerald-400">
+                <Database className="h-3.5 w-3.5" />
+                <span>نقل البيانات</span>
+              </TabsTrigger>
               <TabsTrigger value="apk" className="text-xs py-2 gap-1.5">
                 <Smartphone className="h-3.5 w-3.5" />
-                <span>نسخة الهاتف APK</span>
+                <span>تطبيق APK</span>
               </TabsTrigger>
-              <TabsTrigger value="orders" className="text-xs py-2 gap-1.5 relative">
+              <TabsTrigger value="orders" className="text-xs py-2 gap-1.5 relative col-span-2 sm:col-span-1">
                 <Bell className="h-3.5 w-3.5" />
-                <span>طلبات الهواتف</span>
+                <span>الطلبات</span>
                 {incomingOrders.length > 0 && (
                   <span className="absolute -top-1 -right-1 bg-rose-500 text-white font-bold rounded-full size-4 text-[10px] flex items-center justify-center">
                     {incomingOrders.length}
@@ -635,6 +776,160 @@ export function RoomSyncView() {
                     </Button>
                   </div>
                 </div>
+              </Card>
+            </TabsContent>
+
+            {/* Tab: P2P Database Transfer & Sync between Phones */}
+            <TabsContent value="db_transfer" className="mt-4 space-y-4">
+              <Card className="p-6 border-border shadow-sm space-y-6">
+                <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <h3 className="text-base font-bold flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+                      <Database className="h-5 w-5" />
+                      مشاركة ونقل قاعدة البيانات بين هاتفين (P2P Database Transfer)
+                    </h3>
+                    <Badge variant="outline" className="border-emerald-500/30 text-emerald-600 bg-emerald-500/10 w-fit text-xs">
+                      مزامنة تلقائية + نقل فوري
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    عند اتصال هاتفين بنفس الشبكة المحلية وعلى نفس حساب المتجر، يمكنك نقل كامل السلع والمبيعات والعملاء إلى الهاتف الثاني وتخزينها محلياً بضغطة زر واحدة.
+                  </p>
+                </div>
+
+                {/* Transfer Action Cards Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Option A: Send / Export to Another Phone */}
+                  <div className="rounded-2xl border-2 border-emerald-500/20 bg-card p-5 space-y-4 shadow-sm hover:border-emerald-500/40 transition-all flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="size-11 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                          <ArrowUpFromLine className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm">نقل من هذا الهاتف (إرسال)</h4>
+                          <span className="text-[11px] text-muted-foreground">تصدير وبث السلع وقاعدة البيانات</span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        يقوم الهاتف الحالي بتجميع كامل بيانات المتجر وبثها عبر الغرفة المشتركة إلى الهاتف الثاني أو حفظها كملف نسخة كاملة.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-2 pt-2">
+                      <Button
+                        onClick={() => handleExportDb(true)}
+                        disabled={isExportingDb}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-2 h-10"
+                      >
+                        <Radio className="h-4 w-4 animate-pulse" />
+                        {isExportingDb ? "جاري التجهيز والبث..." : "بث وإرسال قاعدة البيانات للهاتف الآخر (P2P)"}
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        onClick={() => handleExportDb(false)}
+                        disabled={isExportingDb}
+                        className="w-full text-xs gap-2 h-9"
+                      >
+                        <Download className="h-4 w-4 text-emerald-600" />
+                        تنزيل كملف نسخة كاملة (JSON Backup)
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Option B: Receive / Import to this Phone */}
+                  <div className="rounded-2xl border-2 border-teal-500/20 bg-card p-5 space-y-4 shadow-sm hover:border-teal-500/40 transition-all flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="size-11 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center shrink-0">
+                          <ArrowDownToLine className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm">استقبال وحفظ في هذا الهاتف</h4>
+                          <span className="text-[11px] text-muted-foreground">استيراد وتحديث قاعدة البيانات المحلية</span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        يستقبل هذا الهاتف بيانات السلع والمبيعات من الهاتف الأول ويقوم بتخزينها محلياً فوراً ليصبح الهاتفان متطابقين تماماً.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-2 pt-2">
+                      <Button
+                        onClick={() => fileInputBackupRef.current?.click()}
+                        disabled={isImportingDb}
+                        className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs gap-2 h-10"
+                      >
+                        <UploadCloud className="h-4 w-4" />
+                        {isImportingDb ? "جاري حفظ واستيراد البيانات..." : "استيراد وحفظ من ملف نسخة احتياطية"}
+                      </Button>
+
+                      <input
+                        ref={fileInputBackupRef}
+                        type="file"
+                        accept=".json,application/json"
+                        className="hidden"
+                        onChange={handleFileInputBackup}
+                      />
+
+                      <Button
+                        variant="outline"
+                        onClick={async () => {
+                          setIsImportingDb(true);
+                          try {
+                            const res = await fetch("/api/db-transfer");
+                            const d = await res.json();
+                            if (d.success && d.snapshot) {
+                              await handleImportSnapshot(d.snapshot);
+                            } else {
+                              toast.error("لم يتم العثور على نسخة نشطة للاستقبال");
+                            }
+                          } catch {
+                            toast.error("فشل الاتصال بالهاتف الرئيسي");
+                          } finally {
+                            setIsImportingDb(false);
+                          }
+                        }}
+                        disabled={isImportingDb}
+                        className="w-full text-xs gap-2 h-9"
+                      >
+                        <RefreshCw className={`h-4 w-4 text-teal-600 ${isImportingDb ? "animate-spin" : ""}`} />
+                        مزامنة فورية من الخادم المحلي
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transfer Stats Result Banner */}
+                {dbTransferStats && (
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-50 dark:bg-emerald-950/20 p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold text-xs">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      <span>تقرير اكتمال حفظ واستيراد البيانات بنجاح:</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                      <div className="bg-white dark:bg-card p-2 rounded-lg border font-mono">
+                        <span className="text-[10px] text-muted-foreground block">المنتجات المحفوظة</span>
+                        <span className="font-bold text-emerald-600">{dbTransferStats.importedProducts}</span>
+                      </div>
+                      <div className="bg-white dark:bg-card p-2 rounded-lg border font-mono">
+                        <span className="text-[10px] text-muted-foreground block">العملاء</span>
+                        <span className="font-bold text-teal-600">{dbTransferStats.importedCustomers}</span>
+                      </div>
+                      <div className="bg-white dark:bg-card p-2 rounded-lg border font-mono">
+                        <span className="text-[10px] text-muted-foreground block">الموردين</span>
+                        <span className="font-bold text-cyan-600">{dbTransferStats.importedSuppliers}</span>
+                      </div>
+                      <div className="bg-white dark:bg-card p-2 rounded-lg border font-mono">
+                        <span className="text-[10px] text-muted-foreground block">المبيعات</span>
+                        <span className="font-bold text-amber-600">{dbTransferStats.importedSales}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </Card>
             </TabsContent>
 

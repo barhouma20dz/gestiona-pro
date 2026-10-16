@@ -51,9 +51,20 @@ export interface RoomSyncState {
     senderName: string;
   } | null;
 
+  // Pending P2P Database Snapshot received from another phone in the room
+  pendingDbSnapshot: {
+    senderName: string;
+    senderId: string;
+    snapshot: any;
+    receivedAt: number;
+    counts?: { products: number; customers: number; suppliers: number; sales: number };
+  } | null;
+
   // Actions
   joinRoom: (roomId: string, pin?: string, roomName?: string) => Promise<boolean>;
   leaveRoom: () => Promise<void>;
+  broadcastDatabasePush: (snapshot: any) => Promise<void>;
+  clearPendingDbSnapshot: () => void;
   submitOrderToCashier: (order: {
     items: CartItem[];
     tableName?: string;
@@ -126,6 +137,29 @@ export const useRoomSyncStore = create<RoomSyncState>()(
       connectedDevices: [],
       incomingOrders: [],
       remoteCart: null,
+      pendingDbSnapshot: null,
+
+      broadcastDatabasePush: async (snapshot: any) => {
+        const { currentRoomId, deviceId, deviceName, role, isConnected } = get();
+        if (!currentRoomId || !isConnected) return;
+        try {
+          await fetch("/api/room-sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "send_event",
+              roomId: currentRoomId,
+              device: { id: deviceId, name: deviceName, role },
+              event: {
+                type: "DATABASE_TRANSFER_PUSH",
+                payload: { snapshot },
+              },
+            }),
+          });
+        } catch {}
+      },
+
+      clearPendingDbSnapshot: () => set({ pendingDbSnapshot: null }),
 
       joinRoom: async (roomId: string, pin = "", roomName = "") => {
         const { deviceId, deviceName, role } = get();
@@ -293,6 +327,20 @@ export const useRoomSyncStore = create<RoomSyncState>()(
                     remoteCart: {
                       ...evt.payload,
                       senderName: evt.senderName,
+                    },
+                  });
+                }
+
+                // If database transfer push received from another phone in the room
+                if (evt.type === "DATABASE_TRANSFER_PUSH" && evt.senderId !== deviceId) {
+                  playAlertChime();
+                  set({
+                    pendingDbSnapshot: {
+                      senderName: evt.senderName,
+                      senderId: evt.senderId,
+                      snapshot: evt.payload.snapshot,
+                      receivedAt: evt.timestamp,
+                      counts: evt.payload.snapshot?.counts,
                     },
                   });
                 }
