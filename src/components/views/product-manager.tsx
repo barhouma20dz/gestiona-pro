@@ -22,6 +22,7 @@ import {
   Calendar,
   Trash,
   Scale,
+  Crop,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
@@ -30,6 +31,7 @@ import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
 import { toast } from "sonner";
+import { ImageCropperDialog } from "@/components/image-cropper-dialog";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -209,17 +211,21 @@ export function ProductManager() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Convert file to base64 data URL for storage
+  const [cropperOpen, setCropperOpen] = useState(false);
+  const [rawCropperImage, setRawCropperImage] = useState<string | null>(null);
+
+  // Convert uploaded/captured file and open the Interactive Image Cropper & Compressor
   const handleFileUpload = (file: File) => {
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("حجم الصورة كبير جداً (الحد 2MB)");
+    if (file.size > 30 * 1024 * 1024) {
+      toast.error("حجم الملف كبير جداً (الحد الأقصى 30MB)");
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      setForm((f) => ({ ...f, imageUrl: result }));
+      setRawCropperImage(result);
+      setCropperOpen(true);
     };
     reader.readAsDataURL(file);
   };
@@ -963,24 +969,48 @@ export function ProductManager() {
                     </div>
                     {/* Upload + Camera buttons */}
                     <div className="flex flex-col gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <ImagePlus className="h-4 w-4" />
-                        {t("chooseFile")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => cameraInputRef.current?.click()}
-                      >
-                        <Camera className="h-4 w-4" />
-                        {t("captureFromCamera")}
-                      </Button>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="h-8 text-xs gap-1"
+                        >
+                          <ImagePlus className="h-3.5 w-3.5" />
+                          {t("chooseFile")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="h-8 text-xs gap-1"
+                        >
+                          <Camera className="h-3.5 w-3.5 text-emerald-600" />
+                          {t("captureFromCamera")}
+                        </Button>
+                      </div>
+
+                      {form.imageUrl && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setRawCropperImage(form.imageUrl);
+                            setCropperOpen(true);
+                          }}
+                          className="h-7 text-xs gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300"
+                        >
+                          <Crop className="h-3 w-3" />
+                          تحديد وقص المنتج / تعديل الحجم
+                        </Button>
+                      )}
+
+                      <p className="text-[10px] text-muted-foreground">
+                        يتم فتح أداة تحديد وقص المنتج وضغط الحجم تلقائياً إلى بكسلات خفيفة وسريعة.
+                      </p>
                     </div>
                     {/* Hidden file inputs */}
                     <input
@@ -1007,6 +1037,17 @@ export function ProductManager() {
                       }}
                     />
                   </div>
+
+                  {/* Product Image Cropper & Compressor Modal */}
+                  <ImageCropperDialog
+                    open={cropperOpen}
+                    onOpenChange={setCropperOpen}
+                    imageSrc={rawCropperImage}
+                    onConfirm={(cropped) => {
+                      setForm((f) => ({ ...f, imageUrl: cropped }));
+                      toast.success("✓ تم تحديد وقص وضغط صورة المنتج بنجاح!");
+                    }}
+                  />
                 </div>
 
                 {/* Expiry Dates */}

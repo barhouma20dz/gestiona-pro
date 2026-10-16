@@ -46,7 +46,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
   final _nameController = TextEditingController(text: 'هاتف البائع 1');
   final _qrInputController = TextEditingController();
 
-  String _selectedRole = 'order_taker';
+  String _selectedRole = 'owner';
   bool _isLoading = true;
   bool _isAutoDiscovering = false;
   bool _isClosedRoom = true;
@@ -205,8 +205,43 @@ class _ConnectScreenState extends State<ConnectScreen> {
 
     final cleanServer =
         server.endsWith('/') ? server.substring(0, server.length - 1) : server;
+    final viewParam = _selectedRole == 'owner' ? 'dashboard' : 'pos';
     final targetUrl =
-        '$cleanServer/?room=$room&pin=$pin&role=$_selectedRole&devName=${Uri.encodeComponent(name)}';
+        '$cleanServer/?view=$viewParam&room=$room&pin=$pin&role=$_selectedRole&devName=${Uri.encodeComponent(name)}';
+
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PosWebViewScreen(
+          initialUrl: targetUrl,
+          serverUrl: cleanServer,
+          role: _selectedRole,
+          deviceName: name,
+          roomId: room,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openDatabaseTransferDirectly() async {
+    final server = _serverController.text.trim();
+    final room = _roomController.text.trim();
+    final pin = _pinController.text.trim();
+    final name = _nameController.text.trim();
+
+    if (server.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الرجاء إدخال عنوان خادم نقطة البيع')),
+      );
+      return;
+    }
+
+    await _savePreferences();
+
+    final cleanServer =
+        server.endsWith('/') ? server.substring(0, server.length - 1) : server;
+    final targetUrl =
+        '$cleanServer/?view=roomSync&room=$room&pin=$pin&role=$_selectedRole&devName=${Uri.encodeComponent(name)}';
 
     if (!mounted) return;
     Navigator.of(context).push(
@@ -592,6 +627,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
                     ),
                     const SizedBox(height: 14),
                     _buildRoleRadio(
+                      title: 'حساب المتجر الكامل (إدارة متجر + كاشير + مخزون)',
+                      subtitle:
+                          'مثل الموقع تماماً: لوحة التحكم، نقطة البيع، المنتجات، المبيعات، ونقل واستقبال قاعدة البيانات.',
+                      value: 'owner',
+                      icon: Icons.storefront,
+                    ),
+                    _buildRoleRadio(
                       title: 'نادل / بائع متجول (Order Taker)',
                       subtitle:
                           'مسح الباركود بالكاميرا، جمع طلبات الزبائن، وإرسال السلة للكاشير بلمسة واحدة.',
@@ -670,7 +712,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
 
               const SizedBox(height: 24),
 
-              // Connect Button
+              // Main Store & POS Connect Button
               ElevatedButton(
                 onPressed: _saveAndConnect,
                 style: ElevatedButton.styleFrom(
@@ -686,13 +728,33 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.bolt, size: 22),
+                    Icon(Icons.storefront, size: 22),
                     SizedBox(width: 8),
                     Text(
-                      'دخول غرفة المتجر وبدء العمل',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      'الدخول إلى حساب المتجر ونقطة البيع',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                     ),
                   ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Direct P2P Database Transfer Button
+              OutlinedButton.icon(
+                onPressed: _openDatabaseTransferDirectly,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF059669),
+                  side: const BorderSide(color: Color(0xFF059669), width: 1.5),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                icon: const Icon(Icons.sync_alt, size: 20),
+                label: const Text(
+                  '📦 نقل أو استقبال قاعدة البيانات بين هاتفين (نقل / حفظ)',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                 ),
               ),
 
@@ -949,6 +1011,8 @@ class _PosWebViewScreenState extends State<PosWebViewScreen> {
 
   String _getRoleTitle() {
     switch (widget.role) {
+      case 'owner':
+        return '🏪 حساب المتجر الكامل';
       case 'order_taker':
         return '🛒 بائع متجول — أخذ الطلبات';
       case 'customer_display':
@@ -989,14 +1053,30 @@ class _PosWebViewScreenState extends State<PosWebViewScreen> {
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.refresh, size: 20),
+                icon: const Icon(Icons.sync_alt, size: 19),
+                onPressed: () {
+                  _controller.loadRequest(
+                      Uri.parse('${widget.serverUrl}/?view=roomSync'));
+                },
+                tooltip: 'نقل واستقبال قاعدة البيانات',
+              ),
+              IconButton(
+                icon: const Icon(Icons.point_of_sale, size: 19),
+                onPressed: () {
+                  _controller.loadRequest(
+                      Uri.parse('${widget.serverUrl}/?view=pos'));
+                },
+                tooltip: 'واجهة نقطة البيع والكاشير',
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 19),
                 onPressed: () => _controller.reload(),
                 tooltip: 'تحديث الصفحة',
               ),
               IconButton(
-                icon: const Icon(Icons.settings, size: 20),
+                icon: const Icon(Icons.tune, size: 19),
                 onPressed: () => Navigator.of(context).pop(),
-                tooltip: 'إعدادات الغرفة والدور',
+                tooltip: 'خيارات الاتصال والشبكة',
               ),
             ],
             bottom: _loadingProgress < 100

@@ -741,12 +741,21 @@ function ProductTile({
         )}
       >
         <div
-          className="relative flex h-20 items-center justify-center text-xl font-bold transition-transform duration-200 group-hover:scale-105"
-          style={{ backgroundColor: colorFromString(product.name) }}
+          className="relative flex h-24 items-center justify-center overflow-hidden transition-transform duration-200 group-hover:scale-105"
+          style={{ backgroundColor: product.imageUrl ? "#f8fafc" : colorFromString(product.name) }}
         >
-          <span className="grid h-12 w-12 place-items-center rounded-full bg-white/70 text-sm font-bold text-foreground/80 backdrop-blur transition-transform duration-200 group-hover:scale-110">
-            {initialsOf(product.name)}
-          </span>
+          {product.imageUrl ? (
+            <img
+              src={product.imageUrl}
+              alt={product.name}
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
+              loading="lazy"
+            />
+          ) : (
+            <span className="grid h-12 w-12 place-items-center rounded-full bg-white/70 text-sm font-bold text-foreground/80 backdrop-blur transition-transform duration-200 group-hover:scale-110">
+              {initialsOf(product.name)}
+            </span>
+          )}
           {/* Catalog index badge — top-right */}
           {typeof catalogIndex === "number" && (
             <span
@@ -851,12 +860,20 @@ function CartItemRow({
       className="overflow-hidden"
     >
       <div className="flex items-start gap-2 px-3 py-2.5">
-        <div
-          className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-md text-[10px] font-bold text-foreground/70"
-          style={{ backgroundColor: colorFromString(item.product.name) }}
-        >
-          {initialsOf(item.product.name)}
-        </div>
+        {item.product.imageUrl ? (
+          <img
+            src={item.product.imageUrl}
+            alt={item.product.name}
+            className="mt-0.5 h-9 w-9 shrink-0 rounded-lg object-cover border border-border"
+          />
+        ) : (
+          <div
+            className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[10px] font-bold text-foreground/70"
+            style={{ backgroundColor: colorFromString(item.product.name) }}
+          >
+            {initialsOf(item.product.name)}
+          </div>
+        )}
 
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium leading-tight">
@@ -1018,6 +1035,13 @@ export function PosTerminal() {
   // Weight dialog state — opened when a kg product is clicked.
   const [weighProduct, setWeighProduct] = useState<Product | null>(null);
   const weighOpen = weighProduct !== null;
+
+  // Mobile responsive view mode (catalog vs cart)
+  const [mobileTab, setMobileTab] = useState<"catalog" | "cart">("catalog");
+
+  // Cash change quick calculator
+  const [receivedCash, setReceivedCash] = useState<string>("");
+  const currentRoomId = useRoomSyncStore((s) => s.currentRoomId);
 
   const scanInputRef = useRef<HTMLInputElement>(null);
 
@@ -1208,6 +1232,8 @@ export function PosTerminal() {
   const taxableAmount = Math.max(0, subtotal - discount);
   const taxAmount = (taxableAmount * taxRate) / 100;
   const grandTotal = taxableAmount + taxAmount;
+  const receivedNum = parseFloat(receivedCash) || 0;
+  const changeDue = receivedNum > 0 ? receivedNum - grandTotal : 0;
 
   const handleSendOrderToCashier = async () => {
     if (items.length === 0) {
@@ -1475,9 +1501,71 @@ export function PosTerminal() {
   };
 
   return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-      {/* ---------------- Left column: catalog & scan ---------------- */}
-      <div className="flex-1 min-w-0 space-y-4">
+    <div className="space-y-3">
+      {/* Mobile view switcher tab bar (Visible only on screens < lg) */}
+      <div className="flex lg:hidden items-center p-1 rounded-2xl bg-muted/60 border border-border shadow-xs">
+        <button
+          type="button"
+          onClick={() => setMobileTab("catalog")}
+          className={cn(
+            "flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5",
+            mobileTab === "catalog"
+              ? "bg-card text-foreground shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Search className="h-4 w-4 text-emerald-600" />
+          <span>المنتجات والبحث</span>
+          <Badge variant="secondary" className="text-[10px] h-5 px-1.5 py-0 font-bold">
+            {filteredProducts.length}
+          </Badge>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileTab("cart")}
+          className={cn(
+            "flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 relative",
+            mobileTab === "cart"
+              ? "bg-card text-foreground shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <ShoppingCart className="h-4 w-4 text-emerald-600" />
+          <span>سلة الطلب</span>
+          {totalItems > 0 && (
+            <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white text-[10px] h-5 px-2 py-0 font-bold shadow-xs">
+              {totalItems} · {formatMoney(grandTotal, currency)}
+            </Badge>
+          )}
+        </button>
+      </div>
+
+      {/* Room Sync Live Banner if connected */}
+      {isConnected && currentRoomId && (
+        <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span className="font-semibold">
+              متصل بالغرفة المغلقة: <span className="font-mono font-bold">{currentRoomId}</span>
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              ({role === "cashier" ? "كاشير رئيسي" : role === "order_taker" ? "بائع أخذ طلبات" : role})
+            </span>
+          </div>
+          <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+            مزامنة حية نشطة ✓
+          </span>
+        </div>
+      )}
+
+      {/* Main Two-Column Layout */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        {/* ---------------- Left column: catalog & scan ---------------- */}
+        <div className={cn("flex-1 min-w-0 space-y-4", mobileTab === "cart" ? "hidden lg:block" : "block")}>
         {/* Scan bar */}
         <Card className="gap-0 p-3 sm:p-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1603,7 +1691,7 @@ export function PosTerminal() {
       </div>
 
       {/* ---------------- Right column: cart ---------------- */}
-      <div className="w-full lg:w-[380px] lg:shrink-0 space-y-3">
+      <div className={cn("w-full lg:w-[400px] lg:shrink-0 space-y-3", mobileTab === "catalog" ? "hidden lg:block" : "block")}>
         {/* Held carts panel — visible strip of waiting customers */}
         {heldOrders.length > 0 && (
           <Card className="gap-0 p-0 overflow-hidden border-amber-500/30 bg-amber-500/5">
@@ -1860,10 +1948,81 @@ export function PosTerminal() {
                 })}
               </div>
 
+              {/* Quick Cash & Change Calculator */}
+              {paymentMethod === "Cash" && (
+                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                      <Banknote className="h-4 w-4 text-emerald-600" />
+                      المبلغ المستلم من الزبون:
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        min={0}
+                        step="100"
+                        placeholder={String(Math.ceil(grandTotal))}
+                        value={receivedCash}
+                        onChange={(e) => setReceivedCash(e.target.value)}
+                        className="h-8 w-28 text-right font-mono text-xs font-bold"
+                      />
+                      <span className="text-[11px] text-muted-foreground">{currency}</span>
+                    </div>
+                  </div>
+
+                  {/* Quick cash presets */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setReceivedCash(String(Math.ceil(grandTotal)))}
+                      className="text-[10px] px-2.5 py-1 rounded-lg border border-emerald-500/30 bg-card hover:bg-emerald-500/10 font-medium transition"
+                    >
+                      بالضبط ({Math.ceil(grandTotal)})
+                    </button>
+                    {[500, 1000, 2000, 5000].map((bill) => (
+                      <button
+                        key={bill}
+                        type="button"
+                        onClick={() => setReceivedCash(String(bill))}
+                        className="text-[10px] px-2.5 py-1 rounded-lg border border-border bg-card hover:border-emerald-500/40 hover:bg-emerald-500/10 font-mono font-semibold transition"
+                      >
+                        {bill} {currency}
+                      </button>
+                    ))}
+                    {receivedCash && (
+                      <button
+                        type="button"
+                        onClick={() => setReceivedCash("")}
+                        className="text-[10px] text-muted-foreground hover:text-destructive px-1.5 py-0.5"
+                      >
+                        مسح
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Calculated change banner */}
+                  {receivedNum > 0 && (
+                    <div
+                      className={cn(
+                        "flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold shadow-xs",
+                        changeDue >= 0
+                          ? "bg-emerald-600 text-white"
+                          : "bg-red-500 text-white"
+                      )}
+                    >
+                      <span>{changeDue >= 0 ? "الفكة / الباقي للزبون:" : "المبلغ المتبقي على الزبون:"}</span>
+                      <span className="font-mono text-sm tabular-nums">
+                        {formatMoney(Math.abs(changeDue), currency)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {role === "order_taker" ? (
                 <Button
                   size="lg"
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md rounded-xl"
                   onClick={handleSendOrderToCashier}
                 >
                   <Send className="h-4 w-4 ml-1.5" />
@@ -1872,12 +2031,12 @@ export function PosTerminal() {
               ) : (
                 <Button
                   size="lg"
-                  className="w-full"
+                  className="w-full font-bold text-sm shadow-md rounded-xl"
                   onClick={() => setCheckoutOpen(true)}
                 >
-                  <CheckCircle2 className="h-4 w-4" />
+                  <CheckCircle2 className="h-4 w-4 ml-1.5" />
                   {t("checkout")} · {formatMoney(grandTotal, currency)}
-                  <kbd className="ml-2 rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-medium">
+                  <kbd className="mr-2 rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-medium">
                     F9
                   </kbd>
                 </Button>
@@ -1886,50 +2045,36 @@ export function PosTerminal() {
           )}
         </Card>
       </div>
+      </div>
 
-      {/* Mobile floating quick cart summary (visible on small screens when cart has items) */}
-      {items.length > 0 && (
-        <div className="fixed bottom-16 inset-x-0 z-30 p-2.5 bg-card/95 backdrop-blur-md border-t border-border shadow-2xl lg:hidden flex items-center justify-between gap-3 safe-area-bottom">
-          <div className="flex flex-col">
-            <span className="text-[11px] text-muted-foreground">
-              {totalItems} {totalItems === 1 ? "صنف" : "أصناف"}
-            </span>
-            <span className="text-base font-extrabold text-primary font-mono">
-              {formatMoney(grandTotal, currency)}
-            </span>
+      {/* Mobile floating quick cart summary (visible in catalog tab when cart has items) */}
+      {items.length > 0 && mobileTab === "catalog" && (
+        <div className="fixed bottom-16 inset-x-3 z-30 p-3 bg-card/95 backdrop-blur-md border border-border shadow-2xl rounded-2xl lg:hidden flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center gap-2.5">
+            <div className="relative grid h-10 w-10 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+              <ShoppingCart className="h-5 w-5" />
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">
+                {totalItems}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[11px] text-muted-foreground font-medium">
+                المجموع الحالي
+              </span>
+              <span className="text-base font-extrabold text-primary font-mono tabular-nums leading-none">
+                {formatMoney(grandTotal, currency)}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {role === "order_taker" ? (
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
-                onClick={handleSendOrderToCashier}
-              >
-                <Send className="h-3.5 w-3.5 ml-1" />
-                إرسال للكاشير
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                onClick={() => setCheckoutOpen(true)}
-                className="font-bold text-xs"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5 ml-1" />
-                الدفع
-              </Button>
-            )}
-
             <Button
               size="sm"
-              variant="outline"
-              onClick={() => {
-                document.getElementById("cart-container")?.scrollIntoView({ behavior: "smooth" });
-              }}
-              title="عرض السلة"
-              className="h-8 w-8 p-0"
+              onClick={() => setMobileTab("cart")}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md rounded-xl px-4 py-2"
             >
-              <ShoppingCart className="h-4 w-4" />
+              <CheckCircle2 className="h-3.5 w-3.5 ml-1" />
+              عرض السلة والمحاسبة
             </Button>
           </div>
         </div>

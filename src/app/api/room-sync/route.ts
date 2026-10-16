@@ -25,6 +25,8 @@ export interface RoomEvent {
     | "PING_DEVICE"
     | "PONG_DEVICE"
     | "STOCK_SYNC_BROADCAST"
+    | "DATABASE_TRANSFER_PUSH"
+    | "DATABASE_TRANSFER_ACK"
     | "PRINT_RECEIPT_REQUEST";
   payload: any;
   timestamp: number;
