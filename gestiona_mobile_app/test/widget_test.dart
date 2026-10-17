@@ -11,7 +11,7 @@ import 'package:gestiona_pos_app/main.dart';
 
 void main() {
   testWidgets('Gestiona App smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(const GestionaApp());
-    expect(find.byType(GestionaApp), findsOneWidget);
+    await tester.pumpWidget(const GestionaProApp());
+    expect(find.byType(GestionaProApp), findsOneWidget);
   });
 }
