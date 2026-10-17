@@ -132,21 +132,31 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         >
           {/* Top Header Bar */}
           <div className="flex items-start justify-between border-b-2 border-emerald-700 pb-5 mb-6">
-            <div className="space-y-1">
-              <h1 className="text-2xl font-black text-emerald-900 tracking-tight">
-                {cfg.headerTitle || "متجرنا"}
-              </h1>
-              {cfg.addressLine1 && (
-                <p className="text-xs text-gray-700">{cfg.addressLine1}</p>
+            <div className="flex items-center gap-4">
+              {shop.logoUrl && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={shop.logoUrl}
+                  alt={cfg.headerTitle || "Logo"}
+                  className="h-16 w-16 object-contain rounded-md border p-1"
+                />
               )}
-              {cfg.addressLine2 && (
-                <p className="text-xs text-gray-700">{cfg.addressLine2}</p>
-              )}
-              {cfg.phoneNumber && (
-                <p className="text-xs font-semibold text-gray-800">
-                  رقم الهاتف: {cfg.phoneNumber}
-                </p>
-              )}
+              <div className="space-y-1">
+                <h1 className="text-2xl font-black text-emerald-900 tracking-tight">
+                  {cfg.headerTitle || "متجرنا"}
+                </h1>
+                {cfg.addressLine1 && (
+                  <p className="text-xs text-gray-700">{cfg.addressLine1}</p>
+                )}
+                {cfg.addressLine2 && (
+                  <p className="text-xs text-gray-700">{cfg.addressLine2}</p>
+                )}
+                {cfg.phoneNumber && (
+                  <p className="text-xs font-semibold text-gray-800">
+                    رقم الهاتف: {cfg.phoneNumber}
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="text-left space-y-1">
@@ -300,6 +310,16 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
             1. STORE HEADER (INFO / Address / Phone)
             ======================================================== */}
         <div className="text-center space-y-1 mb-2">
+          {shop.logoUrl && (
+            <div className="flex justify-center mb-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={shop.logoUrl}
+                alt={cfg.headerTitle || "Logo"}
+                className="h-10 w-auto max-w-[120px] object-contain grayscale"
+              />
+            </div>
+          )}
           {/* Header Title (e.g. INFO) */}
           <h1 className="text-[17px] font-black tracking-wider text-black uppercase">
             {cfg.headerTitle || "INFO"}

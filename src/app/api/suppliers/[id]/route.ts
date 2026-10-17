@@ -39,6 +39,8 @@ export async function PUT(
     if (typeof body?.email === "string") data.email = body.email;
     if (typeof body?.address === "string") data.address = body.address;
     if (typeof body?.notes === "string") data.notes = body.notes;
+    if (typeof body?.leadTimeDays === "number") data.leadTimeDays = body.leadTimeDays;
+    if (typeof body?.paymentTerms === "string") data.paymentTerms = body.paymentTerms;
 
     const updated = await db.supplier.update({
       where: { id },

@@ -2008,64 +2008,72 @@ export function PosTerminal() {
 
         <Card id="cart-container" className="sticky top-0 flex flex-col gap-0 overflow-hidden p-0 lg:top-0 scroll-mt-20">
           {/* Header */}
-          <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
-            <div className="flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold">{t("currentOrder")}</h2>
+          <div className="flex items-center justify-between gap-1.5 border-b px-3.5 py-2.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <ShoppingCart className="h-4 w-4 shrink-0 text-primary" />
+              <h2 className="text-sm font-semibold truncate">{t("currentOrder")}</h2>
               {totalItems > 0 && (
-                <Badge className="ml-1 h-5 min-w-5 justify-center px-1.5 text-[11px]">
+                <Badge className="h-5 min-w-5 shrink-0 justify-center px-1.5 text-[11px] font-bold">
                   {totalItems}
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               {/* Cash Drawer button */}
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-emerald-600"
+                className="h-8 w-8 p-0 rounded-md text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
                 onClick={handleOpenCashDrawer}
                 title={`${t("openCashDrawer")} (F8)`}
+                aria-label={t("openCashDrawer")}
               >
-                <Banknote className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t("cashDrawer")}</span>
+                <Banknote className="h-4 w-4" />
               </Button>
+
               {/* Held orders button */}
               <Button
                 size="sm"
                 variant="ghost"
-                className="relative h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+                className="relative h-8 px-2 rounded-md text-xs text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors gap-1"
                 onClick={() => setHeldOrdersOpen(true)}
                 title={`${t("heldOrders")} (F7)`}
+                aria-label={t("heldOrders")}
               >
-                <History className="h-3.5 w-3.5" />
-                {t("held")}
+                <History className="h-4 w-4" />
+                <span className="hidden xl:inline text-[11px]">{t("held")}</span>
                 {heldOrders.length > 0 && (
-                  <span className="ml-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                  <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
                     {heldOrders.length}
                   </span>
                 )}
               </Button>
+
               {items.length > 0 && (
                 <>
+                  {/* Hold current order */}
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+                    className="h-8 px-2 rounded-md text-xs text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors gap-1"
                     onClick={handleHoldOrder}
                     title={`${t("hold")} (F6)`}
+                    aria-label={t("hold")}
                   >
-                    <Pause className="h-3.5 w-3.5" />
-                    {t("hold")}
+                    <Pause className="h-4 w-4" />
+                    <span className="hidden xl:inline text-[11px]">{t("hold")}</span>
                   </Button>
+
+                  {/* Clear cart */}
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                    className="h-8 w-8 p-0 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                     onClick={() => setClearConfirmOpen(true)}
+                    title={t("clear")}
+                    aria-label={t("clear")}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    {t("clear")}
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </>
               )}

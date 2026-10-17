@@ -737,14 +737,14 @@ function AuditDetail({ auditId, onBack, onApprove }: AuditDetailProps) {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="pl-6">{t("name")}</TableHead>
-                <TableHead>{t("barcode")}</TableHead>
+                <TableHead className="pl-6 text-start">{t("name")}</TableHead>
+                <TableHead className="text-center">{t("barcode")}</TableHead>
                 <TableHead className="text-center">{t("unit")}</TableHead>
-                <TableHead className="text-right">{t("systemStock")}</TableHead>
-                <TableHead className="text-right">{t("countedStock")}</TableHead>
-                <TableHead className="text-right">{t("difference")}</TableHead>
-                <TableHead className="text-right">{t("costPrice")}</TableHead>
-                <TableHead className="pr-6 text-right">{t("differenceValue")}</TableHead>
+                <TableHead className="text-center">{t("systemStock")}</TableHead>
+                <TableHead className="text-center">{t("countedStock")}</TableHead>
+                <TableHead className="text-center">{t("difference")}</TableHead>
+                <TableHead className="text-center">{t("costPrice")}</TableHead>
+                <TableHead className="pr-6 text-center">{t("differenceValue")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -811,35 +811,37 @@ function AuditItemRow({ item, currency, draft, readOnly, onChange, t }: AuditIte
 
   return (
     <TableRow className="transition-colors hover:bg-emerald-500/5">
-      <TableCell className="pl-6 py-2.5">
+      <TableCell className="pl-6 py-2.5 text-start">
         <span className="font-medium">{item.productName}</span>
       </TableCell>
-      <TableCell className="font-mono text-xs">{item.barcode || "—"}</TableCell>
+      <TableCell className="text-center font-mono text-xs">{item.barcode || "—"}</TableCell>
       <TableCell className="text-center text-xs">{unitSuffix}</TableCell>
-      <TableCell className="text-right tabular-nums">
+      <TableCell className="text-center tabular-nums">
         {item.systemStock} {isKg ? t("unitKg") : ""}
       </TableCell>
-      <TableCell className="text-right">
-        <Input
-          type="number"
-          min={0}
-          step={isKg ? 0.001 : 1}
-          inputMode={isKg ? "decimal" : "numeric"}
-          value={draft === undefined ? item.countedStock : draft}
-          onChange={(e) => onChange(e.target.value)}
-          readOnly={readOnly}
-          disabled={readOnly}
-          className="h-8 w-24 text-end tabular-nums"
-        />
+      <TableCell className="text-center">
+        <div className="flex justify-center">
+          <Input
+            type="number"
+            min={0}
+            step={isKg ? 0.001 : 1}
+            inputMode={isKg ? "decimal" : "numeric"}
+            value={draft === undefined ? item.countedStock : draft}
+            onChange={(e) => onChange(e.target.value)}
+            readOnly={readOnly}
+            disabled={readOnly}
+            className="h-8 w-24 text-center tabular-nums"
+          />
+        </div>
       </TableCell>
-      <TableCell className={cn("text-right tabular-nums font-medium", diffTone)}>
+      <TableCell className={cn("text-center tabular-nums font-medium", diffTone)}>
         {liveDiff > 0 ? "+" : ""}
         {liveDiff.toFixed(isKg ? 3 : 0)} {isKg ? t("unitKg") : ""}
       </TableCell>
-      <TableCell className="text-right tabular-nums text-muted-foreground">
+      <TableCell className="text-center tabular-nums text-muted-foreground">
         {formatMoney(item.costPrice, currency)}
       </TableCell>
-      <TableCell className={cn("pr-6 text-right tabular-nums font-semibold", diffTone)}>
+      <TableCell className={cn("pr-6 text-center tabular-nums font-semibold", diffTone)}>
         {liveDiffValue > 0 ? "+" : ""}
         {formatMoney(liveDiffValue, currency)}
       </TableCell>

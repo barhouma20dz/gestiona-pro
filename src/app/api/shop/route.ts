@@ -72,8 +72,17 @@ export async function PUT(request: Request) {
     if (typeof body?.businessType === "string") {
       data.businessType = body.businessType;
     }
-    if (typeof body?.logoUrl === "string") {
-      data.logoUrl = body.logoUrl.trim() === "" ? null : body.logoUrl.trim();
+    if (typeof body?.logoUrl === "string" || body?.logoUrl === null) {
+      data.logoUrl = typeof body.logoUrl === "string" && body.logoUrl.trim() !== "" ? body.logoUrl.trim() : null;
+    }
+    if (body?.storePhotoUrl !== undefined) {
+      data.storePhotoUrl = typeof body.storePhotoUrl === "string" && body.storePhotoUrl.trim() !== "" ? body.storePhotoUrl.trim() : null;
+    }
+    if (typeof body?.primaryDisplayImage === "string") {
+      data.primaryDisplayImage = body.primaryDisplayImage === "STORE_PHOTO" ? "STORE_PHOTO" : "LOGO";
+    }
+    if (body?.sidebarConfig !== undefined) {
+      data.sidebarConfig = typeof body.sidebarConfig === "string" ? body.sidebarConfig : JSON.stringify(body.sidebarConfig);
     }
     if (typeof body?.timezone === "string") {
       data.timezone = body.timezone;

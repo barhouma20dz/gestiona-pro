@@ -26,9 +26,13 @@ import {
   ClipboardCheck,
   HandHeart,
   Radio,
+  BarChart3,
+  Landmark,
+  Wallet,
 } from "lucide-react";
-import type { ViewKey } from "@/lib/types";
+import type { ViewKey, Shop } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery } from "@tanstack/react-query";
@@ -52,82 +56,29 @@ import { InventoryAudit } from "@/components/views/inventory-audit";
 import { Zakat } from "@/components/views/zakat";
 import { Customers } from "@/components/views/customers";
 import { RoomSyncView } from "@/components/views/room-sync-view";
+import { DailyReportView } from "@/components/views/daily-report-view";
+import { ExpensesView } from "@/components/views/expenses-view";
+import { CashDrawerDialog } from "@/components/cash-drawer-dialog";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { CommandPalette } from "@/components/command-palette";
 import { toast } from "sonner";
 
-interface NavItem {
-  key: ViewKey;
-  labelKey:
-    | "dashboard"
-    | "posTerminal"
-    | "products"
-    | "salesHistory"
-    | "suppliers"
-    | "customers"
-    | "expiryTracking"
-    | "shopDetails"
-    | "settings"
-    | "adminDashboard"
-    | "sellerManagement"
-    | "sellerDashboard"
-    | "sellerSettings"
-    | "inventoryAudit"
-    | "zakat"
-    | "roomSync";
-  descKey:
-    | "storeOverview"
-    | "scanBillCheckout"
-    | "manageInventory"
-    | "pastBills"
-    | "suppliersSubtitle"
-    | "customersSubtitle"
-    | "expiryTrackingSubtitle"
-    | "businessInformation"
-    | "appConfiguration"
-    | "adminSubtitle"
-    | "sellerManagementSubtitle"
-    | "sellerDashboardSubtitle"
-    | "sellerSettingsSubtitle"
-    | "annualAuditDesc"
-    | "zakatDesc"
-    | "roomSyncDesc";
-  icon: typeof ScanLine;
-  superAdminOnly?: boolean;
-  ownerOnly?: boolean;
-  staffOnly?: boolean;
-}
+import {
+  NAV_ITEMS_CATALOG,
+  NAV_SECTIONS,
+  parseSidebarConfig,
+  type NavItemDef,
+} from "@/lib/navigation";
 
-const NAV: NavItem[] = [
-  // Owner dashboard (owner only)
-  { key: "dashboard", labelKey: "dashboard", descKey: "storeOverview", icon: LayoutDashboard, ownerOnly: true },
-  // Seller dashboard (staff only)
-  { key: "sellerDashboard", labelKey: "sellerDashboard", descKey: "sellerDashboardSubtitle", icon: LayoutGrid, staffOnly: true },
-  // Shared store views
-  { key: "pos", labelKey: "posTerminal", descKey: "scanBillCheckout", icon: ScanLine },
-  { key: "products", labelKey: "products", descKey: "manageInventory", icon: Package },
-  { key: "sales", labelKey: "salesHistory", descKey: "pastBills", icon: ReceiptText },
-  { key: "roomSync", labelKey: "roomSync", descKey: "roomSyncDesc", icon: Radio },
-  { key: "suppliers", labelKey: "suppliers", descKey: "suppliersSubtitle", icon: Truck },
-  { key: "customers", labelKey: "customers", descKey: "customersSubtitle", icon: UserRound, ownerOnly: true },
-  { key: "expiry", labelKey: "expiryTracking", descKey: "expiryTrackingSubtitle", icon: CalendarClock },
-  // Owner-only management views
-  { key: "inventoryAudit", labelKey: "inventoryAudit", descKey: "annualAuditDesc", icon: ClipboardCheck, ownerOnly: true },
-  { key: "zakat", labelKey: "zakat", descKey: "zakatDesc", icon: HandHeart, ownerOnly: true },
-  { key: "sellerMgmt", labelKey: "sellerManagement", descKey: "sellerManagementSubtitle", icon: Users, ownerOnly: true },
-  { key: "shop", labelKey: "shopDetails", descKey: "businessInformation", icon: Store, ownerOnly: true },
-  { key: "settings", labelKey: "settings", descKey: "appConfiguration", icon: Settings, ownerOnly: true },
-  // Staff-only settings
-  { key: "sellerSettings", labelKey: "sellerSettings", descKey: "sellerSettingsSubtitle", icon: UserCircle, staffOnly: true },
-  // Super admin
-  { key: "admin", labelKey: "adminDashboard", descKey: "adminSubtitle", icon: ShieldCheck, superAdminOnly: true },
-];
+type NavItem = NavItemDef;
+const NAV = NAV_ITEMS_CATALOG;
 
 function SidebarContent({
   view,
   onSelect,
+  shop,
   shopName,
   lowStockCount,
   isSuperAdmin,
@@ -139,6 +90,7 @@ function SidebarContent({
 }: {
   view: ViewKey;
   onSelect: (v: ViewKey) => void;
+  shop?: Shop | null;
   shopName?: string;
   lowStockCount: number;
   isSuperAdmin: boolean;
@@ -149,89 +101,186 @@ function SidebarContent({
   subStatus: string;
 }) {
   const { t } = useLanguage();
-  // Filter nav items by role:
-  // - super admin: only admin dashboard
-  // - staff: staff-only + shared (no owner-only, no super-admin-only)
-  // - owner: owner-only + shared (no staff-only, no super-admin-only)
-  const visibleNav = NAV.filter((item) => {
-    if (isSuperAdmin) return item.superAdminOnly;
-    if (isStaff) return item.staffOnly || (!item.ownerOnly && !item.superAdminOnly);
-    // owner
-    return item.ownerOnly || (!item.staffOnly && !item.superAdminOnly);
-  });
+
+  // Parse custom sidebar ordering & visibility if configured
+  const effectiveConfig = useMemo(() => {
+    let rawConfig = shop?.sidebarConfig;
+    if (typeof window !== "undefined") {
+      try {
+        const local = localStorage.getItem("gestiona_user_sidebar_config");
+        if (local) {
+          rawConfig = local;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return parseSidebarConfig(rawConfig);
+  }, [shop?.sidebarConfig]);
+
+  // Group and sort nav items into sections
+  const navSections = useMemo(() => {
+    const itemConfigMap = new Map<string, { visible: boolean; order: number; sectionId?: string }>();
+    effectiveConfig.items.forEach((it) => {
+      itemConfigMap.set(it.id, it);
+    });
+
+    const sectionConfigMap = new Map<string, { visible: boolean; order: number }>();
+    effectiveConfig.sections.forEach((s) => {
+      sectionConfigMap.set(s.id, s);
+    });
+
+    // Security & Role check:
+    const roleFiltered = NAV_ITEMS_CATALOG.filter((item) => {
+      if (isSuperAdmin) return item.superAdminOnly;
+      if (isStaff) return item.staffOnly || (!item.ownerOnly && !item.superAdminOnly);
+      return item.ownerOnly || (!item.staffOnly && !item.superAdminOnly);
+    });
+
+    return NAV_SECTIONS.map((sec) => {
+      const secCfg = sectionConfigMap.get(sec.id);
+      const isSecVisible = secCfg ? secCfg.visible : true;
+      const secOrder = secCfg ? secCfg.order : sec.order;
+
+      // Filter items for this section
+      const items = roleFiltered
+        .filter((it) => {
+          const cfg = itemConfigMap.get(it.key);
+          const assignedSection = cfg?.sectionId || it.sectionId;
+          return assignedSection === sec.id;
+        })
+        .filter((it) => {
+          // Settings is always accessible for owner to prevent lock-out
+          if (it.fixed || it.key === "settings") return true;
+          if (!isSecVisible) return false;
+          const cfg = itemConfigMap.get(it.key);
+          return cfg ? cfg.visible : true;
+        })
+        .sort((a, b) => {
+          const orderA = itemConfigMap.get(a.key)?.order ?? a.defaultOrder;
+          const orderB = itemConfigMap.get(b.key)?.order ?? b.defaultOrder;
+          return orderA - orderB;
+        });
+
+      return {
+        ...sec,
+        order: secOrder,
+        visible: isSecVisible && items.length > 0,
+        items,
+      };
+    })
+      .filter((sec) => sec.visible && sec.items.length > 0)
+      .sort((a, b) => a.order - b.order);
+  }, [effectiveConfig, isSuperAdmin, isStaff]);
+
+  // Determine primary display image (LOGO vs STORE_PHOTO)
+  const displayImage = useMemo(() => {
+    if (!shop) return null;
+    if (shop.primaryDisplayImage === "STORE_PHOTO" && shop.storePhotoUrl) {
+      return { url: shop.storePhotoUrl, isPhoto: true };
+    }
+    if (shop.logoUrl) {
+      return { url: shop.logoUrl, isPhoto: false };
+    }
+    if (shop.storePhotoUrl) {
+      return { url: shop.storePhotoUrl, isPhoto: true };
+    }
+    return null;
+  }, [shop]);
+
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      {/* Brand */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-sidebar-border">
-        <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/30">
-          S
-        </div>
-        <div className="leading-tight">
-          <p className="font-bold text-base tracking-tight">{t("appName")}</p>
-          <p className="text-[11px] text-sidebar-foreground/60">{t("appTagline")}</p>
+      {/* Brand Header */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-sidebar-border">
+        {displayImage ? (
+          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-sidebar-border bg-black/20 flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={displayImage.url}
+              alt={shop?.name || t("appName")}
+              className="h-full w-full object-cover"
+            />
+          </div>
+        ) : (
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/30">
+            {shop?.name ? shop.name.slice(0, 1).toUpperCase() : "S"}
+          </div>
+        )}
+        <div className="leading-tight min-w-0">
+          <p className="font-bold text-sm tracking-tight truncate">
+            {shop?.name || t("appName")}
+          </p>
+          <p className="text-[11px] text-sidebar-foreground/60 truncate">
+            {shop?.businessType || t("appTagline")}
+          </p>
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-emerald">
-        <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
-          {t("menu")}
-        </p>
-        {visibleNav.map((item) => {
-          const active = view === item.key;
-          const Icon = item.icon;
-          // Show low-stock badge on Products nav item
-          const showStockBadge = item.key === "products" && lowStockCount > 0;
-          return (
-            <button
-              key={item.key}
-              onClick={() => onSelect(item.key)}
-              className={cn(
-                "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
-                active
-                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
-            >
-              <Icon
-                className={cn(
-                  "h-[18px] w-[18px] shrink-0",
-                  active ? "text-primary-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground"
-                )}
-              />
-              <span className="flex-1 text-left">{t(item.labelKey)}</span>
-              {showStockBadge && (
-                <span
+      {/* Nav with Section Groups */}
+      <nav className="flex-1 px-3 py-3 space-y-3 overflow-y-auto scrollbar-emerald">
+        {navSections.map((sec) => (
+          <div key={sec.id} className="space-y-1">
+            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-sidebar-foreground/45">
+              {sec.titleAr}
+            </p>
+            {sec.items.map((item) => {
+              const active = view === item.key;
+              const Icon = item.icon;
+              const showStockBadge = item.key === "products" && lowStockCount > 0;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => onSelect(item.key)}
                   className={cn(
-                    "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[10px] font-bold tabular-nums",
+                    "group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all",
                     active
-                      ? "bg-primary-foreground/20 text-primary-foreground"
-                      : "bg-amber-500 text-white"
+                      ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                      : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   )}
-                  title={`${lowStockCount} ${t("needRestocking")}`}
                 >
-                  {lowStockCount}
-                </span>
-              )}
-              {item.superAdminOnly && (
-                <span
-                  className={cn(
-                    "grid h-5 min-w-5 place-items-center rounded-full px-1 text-[10px] font-bold",
-                    active
-                      ? "bg-primary-foreground/20 text-primary-foreground"
-                      : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                  <Icon
+                    className={cn(
+                      "h-[18px] w-[18px] shrink-0",
+                      active
+                        ? "text-primary-foreground"
+                        : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground"
+                    )}
+                  />
+                  <span className="flex-1 text-start truncate">{t(item.labelKey)}</span>
+                  {showStockBadge && (
+                    <span
+                      className={cn(
+                        "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[10px] font-bold tabular-nums",
+                        active
+                          ? "bg-primary-foreground/20 text-primary-foreground"
+                          : "bg-amber-500 text-white"
+                      )}
+                      title={`${lowStockCount} ${t("needRestocking")}`}
+                    >
+                      {lowStockCount}
+                    </span>
                   )}
-                  title="SUPER_ADMIN"
-                >
-                  <ShieldCheck className="h-3 w-3" />
-                </span>
-              )}
-              {active && !showStockBadge && !item.superAdminOnly && (
-                <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground/80" />
-              )}
-            </button>
-          );
-        })}
+                  {item.superAdminOnly && (
+                    <span
+                      className={cn(
+                        "grid h-5 min-w-5 place-items-center rounded-full px-1 text-[10px] font-bold",
+                        active
+                          ? "bg-primary-foreground/20 text-primary-foreground"
+                          : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                      )}
+                      title="SUPER_ADMIN"
+                    >
+                      <ShieldCheck className="h-3 w-3" />
+                    </span>
+                  )}
+                  {active && !showStockBadge && !item.superAdminOnly && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground/80" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Subscription status badge (store owners only — not staff, not super admin) */}
@@ -344,6 +393,7 @@ export function AppShell() {
   const [view, setView] = useState<ViewKey>(defaultView);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [cashDrawerOpen, setCashDrawerOpen] = useState(false);
   const cartCount = useCartStore((s) => s.totalItems());
 
   // URL search params handling (e.g. mobile app direct room connection or view select)
@@ -494,7 +544,7 @@ export function AppShell() {
     }
     switch (view) {
       case "dashboard":
-        return <Dashboard onNavigate={select} />;
+        return <Dashboard onNavigate={select} onOpenCashDrawer={() => setCashDrawerOpen(true)} />;
       case "pos":
         return <PosTerminal />;
       case "products":
@@ -525,6 +575,10 @@ export function AppShell() {
         return <Zakat />;
       case "roomSync":
         return <RoomSyncView />;
+      case "dailyReport":
+        return <DailyReportView />;
+      case "expenses":
+        return <ExpensesView />;
       default:
         return isStaff ? (
           <SellerDashboard onNavigate={select} />
@@ -538,13 +592,13 @@ export function AppShell() {
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Desktop sidebar */}
       <aside className="hidden md:block w-64 shrink-0">
-        <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} isStaff={isStaff} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
+        <SidebarContent view={view} onSelect={select} shop={shop} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} isStaff={isStaff} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
       </aside>
 
       {/* Mobile sidebar — opens from the right in RTL, left in LTR */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side={isRTL ? "right" : "left"} className="w-64 p-0">
-          <SidebarContent view={view} onSelect={select} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} isStaff={isStaff} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
+          <SidebarContent view={view} onSelect={select} shop={shop} shopName={shop?.name} lowStockCount={lowStockCount} isSuperAdmin={isSuperAdmin} isStaff={isStaff} onLogout={handleLogout} userEmail={user?.email} subDaysRemaining={subDaysRemaining} subStatus={subStatus} />
         </SheetContent>
       </Sheet>
 
@@ -597,6 +651,18 @@ export function AppShell() {
               ⌘K
             </kbd>
           </button>
+
+          {/* Cash Drawer button */}
+          {!isSuperAdmin && (
+            <button
+              onClick={() => setCashDrawerOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 transition hover:bg-emerald-500/20"
+              title="إدارة درج النقود والورديات"
+            >
+              <Wallet className="h-3.5 w-3.5" />
+              <span>درج النقود</span>
+            </button>
+          )}
 
           <div className="flex items-center gap-1.5 ml-auto sm:ml-2">
             <ThemeToggle />
@@ -658,12 +724,8 @@ export function AppShell() {
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden md:inline">
-              {new Date().toLocaleDateString("ar-DZ-u-nu-latn", {
-                weekday: "short",
-                day: "numeric",
-                month: "short",
-              })}
+            <span className="hidden md:inline font-mono">
+              {formatDate(new Date())}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -679,6 +741,8 @@ export function AppShell() {
           onOpenMenu={() => setMobileOpen(true)}
         />
       </div>
+
+      <CashDrawerDialog open={cashDrawerOpen} onOpenChange={setCashDrawerOpen} />
     </div>
   );
 }

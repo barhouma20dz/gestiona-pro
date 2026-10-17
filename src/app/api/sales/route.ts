@@ -322,6 +322,22 @@ export async function POST(request: Request) {
           where: { id: l.product.id },
           data: { stock: newStock },
         });
+
+        // Record stock movement for audit
+        await tx.stockMovement.create({
+          data: {
+            storeId,
+            productId: l.product.id,
+            type: "SALE",
+            quantity: l.quantity,
+            beforeQty: l.product.stock,
+            afterQty: newStock,
+            unitCost: l.product.costPrice,
+            reason: `بيع كاشير - وصل #${receiptNo}`,
+            referenceId: sale.id,
+            userId: sellerId ?? session.userId,
+          },
+        });
       }
 
       // Apply loyalty balance change (+earned − redeemed) atomically.

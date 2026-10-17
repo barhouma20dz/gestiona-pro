@@ -35,31 +35,55 @@ export function formatMoneyNumber(amount: number): string {
   });
 }
 
-export function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString(currentDateLocale, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+/**
+ * Format any date/time into strict, unified YYYY/MM/DD (e.g. 2026/10/18)
+ * Immune to timezone offset day-shifting.
+ */
+export function formatDate(input: string | Date | number | null | undefined): string {
+  if (!input) return "—";
+
+  if (typeof input === "string") {
+    const trimmed = input.trim();
+    // Fast match for ISO or standard dates starting with YYYY-MM-DD or YYYY/MM/DD
+    const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (match) {
+      const year = match[1];
+      const month = match[2].padStart(2, "0");
+      const day = match[3].padStart(2, "0");
+      return `${year}/${month}/${day}`;
+    }
+  }
+
+  const d = typeof input === "object" && input instanceof Date ? input : new Date(input);
+  if (isNaN(d.getTime())) return "—";
+
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}/${month}/${day}`;
 }
 
-export function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(currentDateLocale, {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+/**
+ * Format date & time into strict YYYY/MM/DD HH:mm
+ */
+export function formatDateTime(input: string | Date | number | null | undefined): string {
+  if (!input) return "—";
+  const d = typeof input === "object" && input instanceof Date ? input : new Date(input);
+  if (isNaN(d.getTime())) return "—";
+
+  const datePart = formatDate(input);
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${datePart} ${hours}:${minutes}`;
 }
 
-export function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString(currentDateLocale, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+export function formatTime(input: string | Date | number | null | undefined): string {
+  if (!input) return "—";
+  const d = typeof input === "object" && input instanceof Date ? input : new Date(input);
+  if (isNaN(d.getTime())) return "—";
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
 }
 
 export function initialsOf(name: string): string {

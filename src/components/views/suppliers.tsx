@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -20,6 +20,13 @@ import {
   Banknote,
   CheckCircle2,
   Clock,
+  ShoppingCart,
+  Camera,
+  Image as ImageIcon,
+  Upload,
+  RefreshCw,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 
 import {
@@ -28,7 +35,10 @@ import {
   supplierPaymentsApi,
   shopApi,
   productsApi,
+  uploadApi,
 } from "@/lib/api";
+import { PurchaseOrdersView } from "@/components/purchase-orders-view";
+import { StatementDialog } from "@/components/statement-dialog";
 import type {
   Supplier,
   NewSupplier,
@@ -94,7 +104,16 @@ type T = (key: TranslationKey) => string;
 
 /* ---------- helpers ---------- */
 
-function statusBadge(status: SupplierInvoice["status"], t: T) {
+function statusBadge(status: SupplierInvoice["status"], t: T, dueDate?: string | null) {
+  const isOverdue = dueDate && new Date(dueDate).getTime() < Date.now() && status !== "PAID";
+  if (isOverdue) {
+    return (
+      <Badge className="bg-red-500/20 text-red-600 border-red-500/40 hover:bg-red-500/20 dark:text-red-300 font-bold gap-1">
+        <AlertTriangle className="h-3 w-3" />
+        متأخرة عن الاستحقاق
+      </Badge>
+    );
+  }
   if (status === "PAID") {
     return (
       <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/15 dark:text-emerald-400">
@@ -152,6 +171,8 @@ interface SupplierForm {
   phone: string;
   email: string;
   address: string;
+  leadTimeDays: string;
+  paymentTerms: string;
   notes: string;
 }
 
@@ -160,6 +181,8 @@ const emptySupplierForm: SupplierForm = {
   phone: "",
   email: "",
   address: "",
+  leadTimeDays: "3",
+  paymentTerms: "نقد عند الاستلام",
   notes: "",
 };
 
@@ -169,6 +192,8 @@ function toSupplierForm(s: Supplier): SupplierForm {
     phone: s.phone,
     email: s.email,
     address: s.address,
+    leadTimeDays: String(s.leadTimeDays ?? 3),
+    paymentTerms: s.paymentTerms ?? "نقد عند الاستلام",
     notes: s.notes,
   };
 }
@@ -201,11 +226,15 @@ function makeEmptyItem(products: Product[]): InvoiceItemRow {
 }
 
 interface InvoiceForm {
+  mode: "QUICK_PHOTO" | "DETAILED_ITEMS";
   supplierId: string;
   invoiceNo: string;
   invoiceDate: string;
-  items: InvoiceItemRow[];
+  dueDate: string;
+  totalAmount: string;
   paidAmount: string;
+  attachmentUrl: string | null;
+  items: InvoiceItemRow[];
   notes: string;
 }
 
@@ -229,10 +258,12 @@ export function Suppliers() {
   });
   const currency = shop?.currency ?? "دج";
 
-  // Filter state
+  // Filter & SubTab state
+  const [subTab, setSubTab] = useState<"suppliers" | "purchase_orders">("suppliers");
   const [search, setSearch] = useState("");
 
   // Supplier dialog state
+  const [statementTarget, setStatementTarget] = useState<Supplier | null>(null);
   const [supplierFormOpen, setSupplierFormOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [supplierForm, setSupplierForm] = useState<SupplierForm>(emptySupplierForm);
@@ -245,6 +276,17 @@ export function Suppliers() {
   const [invoiceFormOpen, setInvoiceFormOpen] = useState(false);
   const [invoiceForm, setInvoiceForm] = useState<InvoiceForm | null>(null);
   const [invoiceFormErrors, setInvoiceFormErrors] = useState<Record<string, string>>({});
+
+  // Camera & Image Upload state for invoice creation
+  const [uploadingInvoicePhoto, setUploadingInvoicePhoto] = useState(false);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Lightbox modal for viewing and replacing invoice photos
+  const [lightboxInvoice, setLightboxInvoice] = useState<SupplierInvoice | null>(null);
+  const [replacingPhoto, setReplacingPhoto] = useState(false);
+  const replaceCameraInputRef = useRef<HTMLInputElement>(null);
+  const replaceFileInputRef = useRef<HTMLInputElement>(null);
 
   // Invoices viewer dialog
   const [invoicesViewer, setInvoicesViewer] = useState<{
@@ -599,6 +641,8 @@ export function Suppliers() {
       phone: supplierForm.phone.trim(),
       email: supplierForm.email.trim(),
       address: supplierForm.address.trim(),
+      leadTimeDays: parseInt(supplierForm.leadTimeDays) || 3,
+      paymentTerms: supplierForm.paymentTerms.trim() || "نقد عند الاستلام",
       notes: supplierForm.notes.trim(),
     };
     if (editingSupplier) {
@@ -617,42 +661,93 @@ export function Suppliers() {
       toast.error(t("noSuppliersYet"));
       return;
     }
-    if (products.length === 0) {
-      toast.error(t("noProductsYet"));
-      return;
-    }
     const supplierId = presetSupplierId ?? suppliers[0]?.id ?? "";
     const today = new Date().toISOString().slice(0, 10);
     setInvoiceForm({
+      mode: "QUICK_PHOTO",
       supplierId,
-      invoiceNo: `PUR-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 1000)
-        .toString()
-        .padStart(3, "0")}`,
+      invoiceNo: "",
       invoiceDate: today,
-      items: [makeEmptyItem(products)],
+      dueDate: "",
+      totalAmount: "",
       paidAmount: "0",
+      attachmentUrl: null,
+      items: products.length > 0 ? [makeEmptyItem(products)] : [],
       notes: "",
     });
     setInvoiceFormErrors({});
     setInvoiceFormOpen(true);
   };
 
+  const handleInvoicePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingInvoicePhoto(true);
+      const res = await uploadApi.upload(file, "invoices");
+      setInvoiceForm((f) => (f ? { ...f, attachmentUrl: res.url } : f));
+      toast.success("تم رفع وحفظ صورة الفاتورة بنجاح");
+    } catch (err: any) {
+      toast.error(err.message || "فشل رفع الصورة، يرجى فحص إذن الكاميرا أو حجم الملف");
+    } finally {
+      setUploadingInvoicePhoto(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  const handleReplaceInvoicePhoto = async (e: React.ChangeEvent<HTMLInputElement>, invoiceId: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setReplacingPhoto(true);
+      const res = await uploadApi.upload(file, "invoices");
+      const updated = await supplierInvoicesApi.update(invoiceId, { attachmentUrl: res.url });
+      setLightboxInvoice(updated);
+      toast.success("تم استبدال صورة الفاتورة بنجاح");
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      qc.invalidateQueries({ queryKey: ["supplier-invoices"] });
+      if (invoicesViewer) {
+        setInvoicesViewer((prev) =>
+          prev
+            ? {
+                ...prev,
+                invoices: prev.invoices.map((inv) => (inv.id === updated.id ? updated : inv)),
+              }
+            : null
+        );
+      }
+    } catch (err: any) {
+      toast.error(err.message || "فشل استبدال صورة الفاتورة");
+    } finally {
+      setReplacingPhoto(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
   const validateInvoice = (): boolean => {
     if (!invoiceForm) return false;
     const errs: Record<string, string> = {};
     if (!invoiceForm.supplierId) errs.supplierId = t("selectSupplier");
-    if (!invoiceForm.invoiceNo.trim()) errs.invoiceNo = t("invoiceNo");
     if (!invoiceForm.invoiceDate) errs.invoiceDate = t("invoiceDate");
-    if (!invoiceForm.items.length) errs.items = t("noItemsYet");
-    invoiceForm.items.forEach((it, idx) => {
-      if (!it.productName.trim()) errs[`item-${idx}-name`] = t("nameRequired");
-      const q = Number(it.quantity);
-      if (!Number.isInteger(q) || q <= 0)
-        errs[`item-${idx}-qty`] = t("stockMin");
-      const up = Number(it.unitPrice);
-      if (Number.isNaN(up) || up < 0)
-        errs[`item-${idx}-price`] = t("priceMin");
-    });
+
+    if (invoiceForm.mode === "QUICK_PHOTO") {
+      const tot = Number(invoiceForm.totalAmount);
+      if (Number.isNaN(tot) || tot <= 0) {
+        errs.totalAmount = "المبلغ الإجمالي للفاتورة مطلوب ويجب أن يكون أكبر من الصفر";
+      }
+    } else {
+      if (!invoiceForm.invoiceNo.trim()) errs.invoiceNo = t("invoiceNo");
+      if (!invoiceForm.items.length) errs.items = t("noItemsYet");
+      invoiceForm.items.forEach((it, idx) => {
+        if (!it.productName.trim()) errs[`item-${idx}-name`] = t("nameRequired");
+        const q = Number(it.quantity);
+        if (!Number.isInteger(q) || q <= 0)
+          errs[`item-${idx}-qty`] = t("stockMin");
+        const up = Number(it.unitPrice);
+        if (Number.isNaN(up) || up < 0)
+          errs[`item-${idx}-price`] = t("priceMin");
+      });
+    }
     setInvoiceFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -660,20 +755,29 @@ export function Suppliers() {
   const submitInvoice = (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceForm || !validateInvoice()) return;
-    const items: NewSupplierInvoiceItem[] = invoiceForm.items.map((r) => ({
-      productId: r.productId || null,
-      productName: r.productName.trim(),
-      quantity: Number(r.quantity),
-      unitPrice: Number(r.unitPrice),
-    }));
+    if (savingInvoice) return; // Prevent duplicate submit
+
     const payload: NewSupplierInvoice = {
       supplierId: invoiceForm.supplierId,
-      invoiceNo: invoiceForm.invoiceNo.trim(),
+      invoiceNo: invoiceForm.invoiceNo.trim() || undefined,
       invoiceDate: invoiceForm.invoiceDate,
-      items,
+      dueDate: invoiceForm.dueDate ? invoiceForm.dueDate : undefined,
       paidAmount: Number(invoiceForm.paidAmount) || 0,
+      attachmentUrl: invoiceForm.attachmentUrl,
       notes: invoiceForm.notes.trim(),
     };
+
+    if (invoiceForm.mode === "QUICK_PHOTO") {
+      payload.totalAmount = Number(invoiceForm.totalAmount);
+    } else {
+      payload.items = invoiceForm.items.map((r) => ({
+        productId: r.productId || null,
+        productName: r.productName.trim(),
+        quantity: Number(r.quantity),
+        unitPrice: Number(r.unitPrice),
+      }));
+    }
+
     createInvoiceMutation.mutate(payload);
   };
 
@@ -681,6 +785,9 @@ export function Suppliers() {
 
   const invoiceTotal = useMemo(() => {
     if (!invoiceForm) return 0;
+    if (invoiceForm.mode === "QUICK_PHOTO") {
+      return Number(invoiceForm.totalAmount) || 0;
+    }
     return invoiceForm.items.reduce((sum, it) => {
       const qty = Number(it.quantity) || 0;
       const up = Number(it.unitPrice) || 0;
@@ -764,8 +871,34 @@ export function Suppliers() {
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      {/* Sub-navigation tabs */}
+      <div className="flex items-center gap-2 border-b border-border/50 pb-2">
+        <Button
+          variant={subTab === "suppliers" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setSubTab("suppliers")}
+          className="gap-2 font-medium"
+        >
+          <Truck className="h-4 w-4" />
+          الموردون وفواتير الشراء
+        </Button>
+        <Button
+          variant={subTab === "purchase_orders" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setSubTab("purchase_orders")}
+          className="gap-2 font-medium"
+        >
+          <ShoppingCart className="h-4 w-4" />
+          طلبيات الشراء (Purchase Orders)
+        </Button>
+      </div>
+
+      {subTab === "purchase_orders" ? (
+        <PurchaseOrdersView />
+      ) : (
+        <>
+          {/* Stats row */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {statCards.map((s, i) => {
           const Icon = s.icon;
           return (
@@ -834,12 +967,12 @@ export function Suppliers() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="pl-6">{t("supplierName")}</TableHead>
-                <TableHead>{t("supplierPhone")}</TableHead>
-                <TableHead>{t("supplierEmail")}</TableHead>
-                <TableHead className="text-right">{t("outstandingAmount")}</TableHead>
+                <TableHead className="px-6 text-start">{t("supplierName")}</TableHead>
+                <TableHead className="text-center">{t("supplierPhone")}</TableHead>
+                <TableHead className="text-center">{t("supplierEmail")}</TableHead>
+                <TableHead className="text-center">{t("outstandingAmount")}</TableHead>
                 <TableHead className="text-center">{t("invoiceCount")}</TableHead>
-                <TableHead className="pr-6 text-right">{t("actions")}</TableHead>
+                <TableHead className="px-6 text-center">{t("actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -874,7 +1007,7 @@ export function Suppliers() {
                       key={s.id}
                       className="group transition-colors hover:bg-emerald-500/5"
                     >
-                      <TableCell className="pl-6 py-3.5">
+                      <TableCell className="px-6 py-3.5 text-start">
                         <div className="flex items-center gap-3">
                           <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold">
                             {s.name.slice(0, 2).toUpperCase()}
@@ -891,11 +1024,11 @@ export function Suppliers() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono text-sm tabular-nums">
+                      <TableCell className="text-center font-mono text-sm tabular-nums">
                         {s.phone || "—"}
                       </TableCell>
-                      <TableCell className="text-sm">{s.email || "—"}</TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums">
+                      <TableCell className="text-center text-sm">{s.email || "—"}</TableCell>
+                      <TableCell className="text-center font-semibold tabular-nums">
                         {outstanding > 0 ? (
                           <span className="text-red-600 dark:text-red-400">
                             {formatMoney(outstanding, currency)}
@@ -907,12 +1040,24 @@ export function Suppliers() {
                         )}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="secondary" className="tabular-nums">
-                          {invoiceCount}
-                        </Badge>
+                        <div className="flex justify-center">
+                          <Badge variant="secondary" className="tabular-nums">
+                            {invoiceCount}
+                          </Badge>
+                        </div>
                       </TableCell>
-                      <TableCell className="pr-6 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                      <TableCell className="px-6 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-primary"
+                            onClick={() => setStatementTarget(s)}
+                            aria-label={`كشف حساب ${s.name}`}
+                            title="كشف حساب تفصيلي"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1019,6 +1164,16 @@ export function Suppliers() {
                           <Button
                             variant="outline"
                             size="icon"
+                            className="h-8 w-8 text-primary"
+                            onClick={() => setStatementTarget(s)}
+                            aria-label="كشف حساب تفصيلي"
+                            title="كشف حساب"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
                             className="h-8 w-8"
                             onClick={() => openInvoicesViewer(s)}
                             aria-label={t("viewInvoices")}
@@ -1053,6 +1208,8 @@ export function Suppliers() {
           )}
         </div>
       </Card>
+        </>
+      )}
 
       {/* Add/Edit Supplier dialog */}
       <Dialog open={supplierFormOpen} onOpenChange={setSupplierFormOpen}>
@@ -1117,6 +1274,34 @@ export function Suppliers() {
               />
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="s-lead-time">مدة التوريد (بالأيام)</Label>
+                <Input
+                  id="s-lead-time"
+                  type="number"
+                  min={1}
+                  value={supplierForm.leadTimeDays}
+                  onChange={(e) =>
+                    setSupplierForm((f) => ({ ...f, leadTimeDays: e.target.value }))
+                  }
+                  className="font-mono"
+                  placeholder="3"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="s-payment-terms">شروط الدفع</Label>
+                <Input
+                  id="s-payment-terms"
+                  value={supplierForm.paymentTerms}
+                  onChange={(e) =>
+                    setSupplierForm((f) => ({ ...f, paymentTerms: e.target.value }))
+                  }
+                  placeholder="نقد عند الاستلام / أجل 30 يوم"
+                />
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="s-notes">{t("supplierNotes")}</Label>
               <Textarea
@@ -1163,6 +1348,204 @@ export function Suppliers() {
           </DialogHeader>
           {invoiceForm && (
             <form onSubmit={submitInvoice} className="space-y-4">
+              {/* Mode switch */}
+              <div className="grid grid-cols-2 p-1 bg-muted/50 rounded-xl border border-border/60 text-xs">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setInvoiceForm((f) => (f ? { ...f, mode: "QUICK_PHOTO" } : f))
+                  }
+                  className={cn(
+                    "flex items-center justify-center gap-2 py-2 rounded-lg font-medium transition-all",
+                    invoiceForm.mode === "QUICK_PHOTO"
+                      ? "bg-emerald-600 text-white shadow-sm font-bold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Camera className="h-4 w-4" />
+                  <span>تسجيل بتصوير الفاتورة</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setInvoiceForm((f) => (f ? { ...f, mode: "DETAILED_ITEMS" } : f))
+                  }
+                  className={cn(
+                    "flex items-center justify-center gap-2 py-2 rounded-lg font-medium transition-all",
+                    invoiceForm.mode === "DETAILED_ITEMS"
+                      ? "bg-emerald-600 text-white shadow-sm font-bold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>تسجيل تفصيلي بالأصناف</span>
+                </button>
+              </div>
+
+              {/* Photo Mode Section */}
+              {invoiceForm.mode === "QUICK_PHOTO" && (
+                <div className="space-y-3 rounded-xl border border-dashed border-emerald-500/40 bg-emerald-500/5 p-3.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <Camera className="h-4 w-4 text-emerald-500" />
+                      <span>صورة فاتورة المورد</span>
+                    </Label>
+                    {invoiceForm.attachmentUrl ? (
+                      <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 gap-1 text-[11px]">
+                        <CheckCircle2 className="h-3 w-3" />
+                        تم إرفاق الصورة
+                      </Badge>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">
+                        التقط صورة بالكاميرا أو ارفع ملفاً
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Hidden file inputs for direct camera and storage */}
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleInvoicePhotoUpload}
+                  />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleInvoicePhotoUpload}
+                  />
+
+                  {invoiceForm.attachmentUrl ? (
+                    <div className="relative rounded-lg overflow-hidden border border-border bg-black/60 flex items-center justify-center h-44 group">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={invoiceForm.attachmentUrl}
+                        alt="صورة الفاتورة"
+                        className="object-contain w-full h-full"
+                      />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={uploadingInvoicePhoto}
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="gap-1 h-8 text-xs"
+                        >
+                          <Camera className="h-3.5 w-3.5" />
+                          إعادة التقاط
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={uploadingInvoicePhoto}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="gap-1 h-8 text-xs"
+                        >
+                          <Upload className="h-3.5 w-3.5" />
+                          اختيار أخرى
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          disabled={uploadingInvoicePhoto}
+                          onClick={() =>
+                            setInvoiceForm((f) => (f ? { ...f, attachmentUrl: null } : f))
+                          }
+                          className="gap-1 h-8 text-xs"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          حذف
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={uploadingInvoicePhoto}
+                        onClick={() => cameraInputRef.current?.click()}
+                        className="h-20 flex flex-col items-center justify-center gap-1.5 border-emerald-500/40 hover:bg-emerald-500/10 hover:border-emerald-500 transition-all bg-card"
+                      >
+                        {uploadingInvoicePhoto ? (
+                          <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
+                        ) : (
+                          <Camera className="h-5 w-5 text-emerald-500" />
+                        )}
+                        <span className="text-xs font-bold text-foreground">
+                          التقاط بكاميرا الهاتف
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          تصوير مباشر للفاتورة الورقية
+                        </span>
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={uploadingInvoicePhoto}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="h-20 flex flex-col items-center justify-center gap-1.5 border-border hover:border-foreground/40 transition-all bg-card"
+                      >
+                        {uploadingInvoicePhoto ? (
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Upload className="h-5 w-5 text-muted-foreground" />
+                        )}
+                        <span className="text-xs font-bold text-foreground">
+                          رفع صورة من الجهاز
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          اختيار صورة من المعرض أو الملفات
+                        </span>
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Prominent Total Amount Input */}
+                  <div className="space-y-1.5 pt-2 border-t border-emerald-500/20">
+                    <Label htmlFor="inv-total-manual" className="text-sm font-bold text-foreground flex items-center justify-between">
+                      <span>المبلغ الإجمالي للفاتورة (دج) *</span>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        المبلغ الكلي المسجل على ورقة الفاتورة
+                      </span>
+                    </Label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                        {currency}
+                      </span>
+                      <Input
+                        id="inv-total-manual"
+                        type="number"
+                        min={0.01}
+                        step="0.01"
+                        inputMode="decimal"
+                        placeholder="مثال: 35000"
+                        value={invoiceForm.totalAmount}
+                        onChange={(e) =>
+                          setInvoiceForm((f) =>
+                            f ? { ...f, totalAmount: e.target.value } : f
+                          )
+                        }
+                        className="pl-9 text-base font-bold tabular-nums h-11"
+                      />
+                    </div>
+                    {invoiceFormErrors.totalAmount && (
+                      <p className="text-xs text-red-600 dark:text-red-400">
+                        {invoiceFormErrors.totalAmount}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>{t("selectSupplier")}</Label>
@@ -1229,6 +1612,20 @@ export function Suppliers() {
                 </div>
 
                 <div className="space-y-1.5">
+                  <Label htmlFor="inv-due-date">تاريخ الاستحقاق (اختياري)</Label>
+                  <Input
+                    id="inv-due-date"
+                    type="date"
+                    value={invoiceForm.dueDate}
+                    onChange={(e) =>
+                      setInvoiceForm((f) =>
+                        f ? { ...f, dueDate: e.target.value } : f
+                      )
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1.5">
                   <Label htmlFor="inv-paid">{t("paidAmount")}</Label>
                   <div className="relative">
                     <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
@@ -1252,187 +1649,189 @@ export function Suppliers() {
                 </div>
               </div>
 
-              {/* Items list */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>{t("invoiceItems")}</Label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setInvoiceForm((f) =>
-                        f
-                          ? { ...f, items: [...f.items, makeEmptyItem(products)] }
-                          : f
-                      )
-                    }
-                  >
-                    <Plus className="h-4 w-4" />
-                    {t("addItem")}
-                  </Button>
-                </div>
-
-                <div className="space-y-2 max-h-72 overflow-y-auto pr-1 scrollbar-emerald">
-                  {invoiceForm.items.map((item, idx) => (
-                    <div
-                      key={item.id}
-                      className="grid grid-cols-12 gap-2 rounded-lg border bg-muted/30 p-2"
+              {/* Items list (only for DETAILED_ITEMS mode) */}
+              {invoiceForm.mode === "DETAILED_ITEMS" && (
+                <div className="space-y-2 border-t pt-3">
+                  <div className="flex items-center justify-between">
+                    <Label>{t("invoiceItems")}</Label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setInvoiceForm((f) =>
+                          f
+                            ? { ...f, items: [...f.items, makeEmptyItem(products)] }
+                            : f
+                        )
+                      }
                     >
-                      <div className="col-span-12 sm:col-span-5">
-                        <Select
-                          value={item.productId ?? "__manual__"}
-                          onValueChange={(v) => {
-                            setInvoiceForm((f) => {
-                              if (!f) return f;
-                              const next = [...f.items];
-                              if (v === "__manual__") {
-                                next[idx] = {
-                                  ...next[idx],
-                                  productId: null,
-                                  productName: "",
-                                };
-                              } else {
-                                const p = products.find((pp) => pp.id === v);
-                                next[idx] = {
-                                  ...next[idx],
-                                  productId: v,
-                                  productName: p?.name ?? next[idx].productName,
-                                  unitPrice: p
-                                    ? String(p.costPrice ?? p.price)
-                                    : next[idx].unitPrice,
-                                };
-                              }
-                              return { ...f, items: next };
-                            });
-                          }}
-                        >
-                          <SelectTrigger className="h-9">
-                            <SelectValue placeholder={t("selectProduct")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__manual__">
-                              {t("manualItem")}
-                            </SelectItem>
-                            {products.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="col-span-7 sm:col-span-3">
-                        <Input
-                          placeholder={t("itemNameField")}
-                          value={item.productName}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setInvoiceForm((f) => {
-                              if (!f) return f;
-                              const next = [...f.items];
-                              next[idx] = { ...next[idx], productName: v };
-                              return { ...f, items: next };
-                            });
-                          }}
-                          className="h-9"
-                        />
-                        {invoiceFormErrors[`item-${idx}-name`] && (
-                          <p className="text-[10px] text-red-600 dark:text-red-400">
-                            {invoiceFormErrors[`item-${idx}-name`]}
-                          </p>
-                        )}
-                      </div>
-                      <div className="col-span-5 sm:col-span-2">
-                        <Input
-                          type="number"
-                          min={1}
-                          step="1"
-                          inputMode="numeric"
-                          placeholder={t("quantity")}
-                          value={item.quantity}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setInvoiceForm((f) => {
-                              if (!f) return f;
-                              const next = [...f.items];
-                              next[idx] = { ...next[idx], quantity: v };
-                              return { ...f, items: next };
-                            });
-                          }}
-                          className="h-9 tabular-nums"
-                        />
-                        {invoiceFormErrors[`item-${idx}-qty`] && (
-                          <p className="text-[10px] text-red-600 dark:text-red-400">
-                            {invoiceFormErrors[`item-${idx}-qty`]}
-                          </p>
-                        )}
-                      </div>
-                      <div className="col-span-6 sm:col-span-2">
-                        <Input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          inputMode="decimal"
-                          placeholder={t("unitPrice")}
-                          value={item.unitPrice}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setInvoiceForm((f) => {
-                              if (!f) return f;
-                              const next = [...f.items];
-                              next[idx] = { ...next[idx], unitPrice: v };
-                              return { ...f, items: next };
-                            });
-                          }}
-                          className="h-9 tabular-nums"
-                        />
-                        {invoiceFormErrors[`item-${idx}-price`] && (
-                          <p className="text-[10px] text-red-600 dark:text-red-400">
-                            {invoiceFormErrors[`item-${idx}-price`]}
-                          </p>
-                        )}
-                      </div>
-                      <div className="col-span-1 flex items-center justify-end">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-600 dark:text-red-400 hover:bg-red-500/10"
-                          onClick={() =>
-                            setInvoiceForm((f) => {
-                              if (!f) return f;
-                              return {
-                                ...f,
-                                items: f.items.filter((_, i) => i !== idx),
-                              };
-                            })
-                          }
-                          aria-label={t("remove")}
-                          disabled={invoiceForm.items.length === 1}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {invoiceForm.items.length === 0 && (
-                    <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-xs text-muted-foreground">
-                      {t("noItemsYet")}
-                    </div>
-                  )}
-                </div>
+                      <Plus className="h-4 w-4" />
+                      {t("addItem")}
+                    </Button>
+                  </div>
 
-                {/* Totals */}
-                <div className="flex items-center justify-between rounded-lg border bg-emerald-500/5 px-3 py-2 text-sm">
-                  <span className="font-medium text-muted-foreground">
-                    {t("totalAmount")}
-                  </span>
-                  <span className="font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
-                    {formatMoney(invoiceTotal, currency)}
-                  </span>
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1 scrollbar-emerald">
+                    {invoiceForm.items.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        className="grid grid-cols-12 gap-2 rounded-lg border bg-muted/30 p-2"
+                      >
+                        <div className="col-span-12 sm:col-span-5">
+                          <Select
+                            value={item.productId ?? "__manual__"}
+                            onValueChange={(v) => {
+                              setInvoiceForm((f) => {
+                                if (!f) return f;
+                                const next = [...f.items];
+                                if (v === "__manual__") {
+                                  next[idx] = {
+                                    ...next[idx],
+                                    productId: null,
+                                    productName: "",
+                                  };
+                                } else {
+                                  const p = products.find((pp) => pp.id === v);
+                                  next[idx] = {
+                                    ...next[idx],
+                                    productId: v,
+                                    productName: p?.name ?? next[idx].productName,
+                                    unitPrice: p
+                                      ? String(p.costPrice ?? p.price)
+                                      : next[idx].unitPrice,
+                                  };
+                                }
+                                return { ...f, items: next };
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder={t("selectProduct")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__manual__">
+                                {t("manualItem")}
+                              </SelectItem>
+                              {products.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="col-span-7 sm:col-span-3">
+                          <Input
+                            placeholder={t("itemNameField")}
+                            value={item.productName}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setInvoiceForm((f) => {
+                                if (!f) return f;
+                                const next = [...f.items];
+                                next[idx] = { ...next[idx], productName: v };
+                                return { ...f, items: next };
+                              });
+                            }}
+                            className="h-9"
+                          />
+                          {invoiceFormErrors[`item-${idx}-name`] && (
+                            <p className="text-[10px] text-red-600 dark:text-red-400">
+                              {invoiceFormErrors[`item-${idx}-name`]}
+                            </p>
+                          )}
+                        </div>
+                        <div className="col-span-5 sm:col-span-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            step="1"
+                            inputMode="numeric"
+                            placeholder={t("quantity")}
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setInvoiceForm((f) => {
+                                if (!f) return f;
+                                const next = [...f.items];
+                                next[idx] = { ...next[idx], quantity: v };
+                                return { ...f, items: next };
+                              });
+                            }}
+                            className="h-9 tabular-nums"
+                          />
+                          {invoiceFormErrors[`item-${idx}-qty`] && (
+                            <p className="text-[10px] text-red-600 dark:text-red-400">
+                              {invoiceFormErrors[`item-${idx}-qty`]}
+                            </p>
+                          )}
+                        </div>
+                        <div className="col-span-6 sm:col-span-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            inputMode="decimal"
+                            placeholder={t("unitPrice")}
+                            value={item.unitPrice}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setInvoiceForm((f) => {
+                                if (!f) return f;
+                                const next = [...f.items];
+                                next[idx] = { ...next[idx], unitPrice: v };
+                                return { ...f, items: next };
+                              });
+                            }}
+                            className="h-9 tabular-nums"
+                          />
+                          {invoiceFormErrors[`item-${idx}-price`] && (
+                            <p className="text-[10px] text-red-600 dark:text-red-400">
+                              {invoiceFormErrors[`item-${idx}-price`]}
+                            </p>
+                          )}
+                        </div>
+                        <div className="col-span-1 flex items-center justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-600 dark:text-red-400 hover:bg-red-500/10"
+                            onClick={() =>
+                              setInvoiceForm((f) => {
+                                if (!f) return f;
+                                return {
+                                  ...f,
+                                  items: f.items.filter((_, i) => i !== idx),
+                                };
+                              })
+                            }
+                            aria-label={t("remove")}
+                            disabled={invoiceForm.items.length === 1}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {invoiceForm.items.length === 0 && (
+                      <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-xs text-muted-foreground">
+                        {t("noItemsYet")}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Totals */}
+                  <div className="flex items-center justify-between rounded-lg border bg-emerald-500/5 px-3 py-2 text-sm">
+                    <span className="font-medium text-muted-foreground">
+                      {t("totalAmount")}
+                    </span>
+                    <span className="font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
+                      {formatMoney(invoiceTotal, currency)}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label htmlFor="inv-notes">{t("supplierNotes")}</Label>
@@ -1565,6 +1964,16 @@ export function Suppliers() {
                               {inv.invoiceNo}
                             </span>
                             {statusBadge(inv.status, t)}
+                            {inv.attachmentUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setLightboxInvoice(inv)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
+                              >
+                                <Camera className="h-3 w-3" />
+                                <span>صورة الفاتورة</span>
+                              </button>
+                            )}
                           </div>
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             {formatDate(inv.invoiceDate)}
@@ -1590,6 +1999,29 @@ export function Suppliers() {
                             {formatMoney(inv.totalAmount, currency)}
                           </span>
                           <div className="flex items-center gap-1">
+                            {inv.attachmentUrl ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs gap-1 border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
+                                onClick={() => setLightboxInvoice(inv)}
+                                title="معاينة صورة الفاتورة"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                <span>الصورة</span>
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                                onClick={() => setLightboxInvoice(inv)}
+                                title="إرفاق صورة للفاتورة"
+                              >
+                                <Camera className="h-3.5 w-3.5" />
+                                <span>إرفاق</span>
+                              </Button>
+                            )}
                             <Button
                               variant="outline"
                               size="sm"
@@ -1652,22 +2084,22 @@ export function Suppliers() {
                                 <Table>
                                   <TableHeader>
                                     <TableRow className="border-border/50">
-                                      <TableHead className="h-8 text-[11px]">
+                                      <TableHead className="h-8 text-[11px] text-center">
                                         {t("paymentDate")}
                                       </TableHead>
-                                      <TableHead className="h-8 text-[11px]">
+                                      <TableHead className="h-8 text-[11px] text-center">
                                         {t("paymentAmount")}
                                       </TableHead>
-                                      <TableHead className="h-8 text-[11px]">
+                                      <TableHead className="h-8 text-[11px] text-center">
                                         {t("paymentMethod")}
                                       </TableHead>
-                                      <TableHead className="h-8 text-[11px]">
+                                      <TableHead className="h-8 text-[11px] text-center">
                                         {t("paymentNotes")}
                                       </TableHead>
-                                      <TableHead className="h-8 text-[11px]">
+                                      <TableHead className="h-8 text-[11px] text-center">
                                         {t("recordedBy")}
                                       </TableHead>
-                                      <TableHead className="h-8 text-[11px] text-right">
+                                      <TableHead className="h-8 text-[11px] text-center">
                                         {t("actions")}
                                       </TableHead>
                                     </TableRow>
@@ -1678,41 +2110,45 @@ export function Suppliers() {
                                         key={pmt.id}
                                         className="border-border/40"
                                       >
-                                        <TableCell className="py-2 text-xs">
+                                        <TableCell className="py-2 text-xs text-center">
                                           {formatDate(pmt.paymentDate)}
                                         </TableCell>
-                                        <TableCell className="py-2 text-xs font-semibold tabular-nums">
+                                        <TableCell className="py-2 text-xs font-semibold tabular-nums text-center">
                                           {formatMoney(pmt.amount, currency)}
                                         </TableCell>
-                                        <TableCell className="py-2 text-xs">
-                                          <PaymentMethodBadge
-                                            method={pmt.paymentMethod}
-                                            t={t}
-                                          />
+                                        <TableCell className="py-2 text-xs text-center">
+                                          <div className="flex justify-center">
+                                            <PaymentMethodBadge
+                                              method={pmt.paymentMethod}
+                                              t={t}
+                                            />
+                                          </div>
                                         </TableCell>
-                                        <TableCell className="py-2 text-xs text-muted-foreground">
+                                        <TableCell className="py-2 text-xs text-muted-foreground text-center">
                                           {pmt.notes || "—"}
                                         </TableCell>
-                                        <TableCell className="py-2 text-xs text-muted-foreground">
+                                        <TableCell className="py-2 text-xs text-muted-foreground text-center">
                                           {pmt.user?.name ??
                                             pmt.user?.email ??
                                             "—"}
                                         </TableCell>
-                                        <TableCell className="py-2 text-right">
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 text-red-600 dark:text-red-400"
-                                            onClick={() =>
-                                              setDeletePaymentTarget({
-                                                invoice: inv,
-                                                payment: pmt,
-                                              })
-                                            }
-                                            aria-label={t("delete")}
-                                          >
-                                            <Trash2 className="h-3 w-3" />
-                                          </Button>
+                                        <TableCell className="py-2 text-center">
+                                          <div className="flex items-center justify-center">
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-6 w-6 text-red-600 dark:text-red-400"
+                                              onClick={() =>
+                                                setDeletePaymentTarget({
+                                                  invoice: inv,
+                                                  payment: pmt,
+                                                })
+                                              }
+                                              aria-label={t("delete")}
+                                            >
+                                              <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                          </div>
                                         </TableCell>
                                       </TableRow>
                                     ))}
@@ -1743,6 +2179,157 @@ export function Suppliers() {
               </Button>
             </DialogFooter>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox / View & Replace Invoice Photo Dialog */}
+      <Dialog
+        open={lightboxInvoice !== null}
+        onOpenChange={(o) => !o && setLightboxInvoice(null)}
+      >
+        <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="flex items-center gap-2">
+                  <Camera className="h-5 w-5 text-emerald-500" />
+                  <span>فاتورة رقم {lightboxInvoice?.invoiceNo}</span>
+                  {lightboxInvoice && statusBadge(lightboxInvoice.status, t)}
+                </DialogTitle>
+                <DialogDescription>
+                  {lightboxInvoice ? `${formatDate(lightboxInvoice.invoiceDate)} · ${formatMoney(lightboxInvoice.totalAmount, currency)}` : ""}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {/* Hidden file inputs for replacing photo */}
+          <input
+            ref={replaceCameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              if (lightboxInvoice) handleReplaceInvoicePhoto(e, lightboxInvoice.id);
+            }}
+          />
+          <input
+            ref={replaceFileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              if (lightboxInvoice) handleReplaceInvoicePhoto(e, lightboxInvoice.id);
+            }}
+          />
+
+          <div className="space-y-4">
+            {lightboxInvoice?.attachmentUrl ? (
+              <div className="relative rounded-xl overflow-hidden border border-border bg-black/80 flex items-center justify-center min-h-[320px] max-h-[60vh]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={lightboxInvoice.attachmentUrl}
+                  alt={`فاتورة ${lightboxInvoice.invoiceNo}`}
+                  className="max-h-[58vh] max-w-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center space-y-3">
+                <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-500 mx-auto">
+                  <ImageIcon className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">لم يتم إرفاق صورة لهذه الفاتورة بعد</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    يمكنك التقاط صورة الفاتورة الورقية بكاميرا الهاتف أو رفعها من المعرض
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Quick Invoice Financial Summary */}
+            {lightboxInvoice && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-lg border bg-muted/30 p-3 text-xs">
+                <div>
+                  <span className="text-muted-foreground block">تاريخ الفاتورة:</span>
+                  <span className="font-semibold">{formatDate(lightboxInvoice.invoiceDate)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">المبلغ الإجمالي:</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    {formatMoney(lightboxInvoice.totalAmount, currency)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">المدفوع:</span>
+                  <span className="font-semibold">{formatMoney(lightboxInvoice.paidAmount, currency)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">المتبقي:</span>
+                  <span className="font-bold text-amber-600 dark:text-amber-400">
+                    {formatMoney(Math.max(0, lightboxInvoice.totalAmount - lightboxInvoice.paidAmount), currency)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex-wrap gap-2 pt-2 justify-between sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={replacingPhoto}
+                onClick={() => replaceCameraInputRef.current?.click()}
+                className="gap-1.5 text-xs bg-card hover:bg-emerald-500/10 hover:border-emerald-500"
+              >
+                {replacingPhoto ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Camera className="h-3.5 w-3.5 text-emerald-500" />
+                )}
+                <span>{lightboxInvoice?.attachmentUrl ? "إعادة التصوير بالكاميرا" : "تصوير بالكاميرا"}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={replacingPhoto}
+                onClick={() => replaceFileInputRef.current?.click()}
+                className="gap-1.5 text-xs bg-card"
+              >
+                {replacingPhoto ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+                <span>{lightboxInvoice?.attachmentUrl ? "استبدال من الجهاز" : "رفع من الجهاز"}</span>
+              </Button>
+              {lightboxInvoice?.attachmentUrl && (
+                <a
+                  href={lightboxInvoice.attachmentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>فتح بالحجم الكامل</span>
+                </a>
+              )}
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setLightboxInvoice(null)}
+            >
+              <X className="h-4 w-4" />
+              <span>إغلاق</span>
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -2035,6 +2622,14 @@ export function Suppliers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Statement of Account Dialog */}
+      <StatementDialog
+        type="supplier"
+        targetId={statementTarget?.id ?? null}
+        targetName={statementTarget?.name}
+        open={!!statementTarget}
+        onOpenChange={(op) => !op && setStatementTarget(null)}
+      />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 
 interface LoginBody {
   email?: string;
+  username?: string;
   password?: string;
 }
 
@@ -17,32 +18,47 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as LoginBody;
 
-    const email = body.email?.trim().toLowerCase();
+    const identifier = (body.username || body.email)?.trim();
     const password = body.password;
 
-    if (!email || !password) {
+    if (!identifier || !password) {
       return NextResponse.json(
-        { error: "Missing email or password" },
+        { error: "يرجى إدخال اسم المستخدم أو البريد الإلكتروني وكلمة المرور" },
         { status: 400 }
       );
     }
 
-    const user = await db.user.findUnique({
-      where: { email },
+    const isEmail = identifier.includes("@");
+    const user = await db.user.findFirst({
+      where: isEmail
+        ? { email: identifier.toLowerCase() }
+        : {
+            OR: [
+              { username: identifier },
+              { email: identifier.toLowerCase() },
+            ],
+          },
       include: { store: true },
     });
 
     if (!user) {
       return NextResponse.json(
-        { error: "Invalid credentials" },
+        { error: "بيانات الدخول غير صحيحة" },
         { status: 401 }
+      );
+    }
+
+    if (user.isActive === false) {
+      return NextResponse.json(
+        { error: "هذا الحساب معطل حالياً. يرجى التواصل مع إدارة المتجر" },
+        { status: 403 }
       );
     }
 
     const passwordMatches = await bcrypt.compare(password, user.password);
     if (!passwordMatches) {
       return NextResponse.json(
-        { error: "Invalid credentials" },
+        { error: "بيانات الدخول غير صحيحة" },
         { status: 401 }
       );
     }
@@ -50,9 +66,21 @@ export async function POST(request: Request) {
     // Check store status (skip for SUPER_ADMIN who has no store)
     if (user.store && user.store.status === "SUSPENDED") {
       return NextResponse.json(
-        { error: "Store suspended" },
+        { error: "تم تجميد هذا المتجر مؤقتاً" },
         { status: 403 }
       );
+    }
+
+    // Parse user permissions
+    let parsedPerms: string[] = [];
+    if (user.role === "OWNER" || user.role === "SUPER_ADMIN") {
+      parsedPerms = ["*"];
+    } else if (user.permissions) {
+      try {
+        parsedPerms = JSON.parse(user.permissions);
+      } catch {
+        parsedPerms = [];
+      }
     }
 
     // Sign JWT
@@ -77,8 +105,11 @@ export async function POST(request: Request) {
         user: {
           id: user.id,
           email: user.email,
+          username: user.username,
           name: user.name,
           role: user.role,
+          isActive: user.isActive,
+          permissions: parsedPerms,
         },
         store: user.store
           ? {
@@ -86,6 +117,10 @@ export async function POST(request: Request) {
               name: user.store.name,
               businessType: user.store.businessType,
               status: user.store.status,
+              logoUrl: user.store.logoUrl,
+              storePhotoUrl: user.store.storePhotoUrl,
+              primaryDisplayImage: user.store.primaryDisplayImage,
+              sidebarConfig: user.store.sidebarConfig,
             }
           : null,
       },

@@ -17,10 +17,13 @@ interface CreateInvoiceBody {
   supplierPhone?: string;
   supplierEmail?: string;
   supplierAddress?: string;
-  invoiceNo: string;
+  invoiceNo?: string;
   invoiceDate?: string;
-  items: InvoiceItemInput[];
+  dueDate?: string;
+  items?: InvoiceItemInput[];
+  totalAmount?: number;
   paidAmount?: number;
+  attachmentUrl?: string | null;
   notes?: string;
 }
 
@@ -55,18 +58,23 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    if (typeof body.invoiceNo !== "string" || !body.invoiceNo.trim()) {
-      return NextResponse.json(
-        { error: "invoiceNo is required" },
-        { status: 400 }
-      );
+
+    const hasItems = Array.isArray(body.items) && body.items.length > 0;
+    const manualTotal = Number(body.totalAmount);
+
+    if (!hasItems) {
+      if (Number.isNaN(manualTotal) || manualTotal <= 0) {
+        return NextResponse.json(
+          { error: "المبلغ الإجمالي للفاتورة مطلوب ويجب أن يكون أكبر من الصفر" },
+          { status: 400 }
+        );
+      }
     }
-    if (!Array.isArray(body.items) || body.items.length === 0) {
-      return NextResponse.json(
-        { error: "Invoice must contain at least one item" },
-        { status: 400 }
-      );
-    }
+
+    const invoiceNo =
+      typeof body.invoiceNo === "string" && body.invoiceNo.trim()
+        ? body.invoiceNo.trim()
+        : `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
 
     // Validate supplier: either use existing supplierId, or auto-create from invoice info
     let supplierId = body.supplierId?.trim();
@@ -119,7 +127,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Validate items
+    // Validate items if provided
     const normalizedItems: {
       productId: string | null;
       productName: string;
@@ -127,59 +135,62 @@ export async function POST(request: Request) {
       unitPrice: number;
       total: number;
     }[] = [];
-    for (const item of body.items) {
-      const productName =
-        typeof item.productName === "string" ? item.productName.trim() : "";
-      if (!productName) {
-        return NextResponse.json(
-          { error: "Each invoice item must have a productName" },
-          { status: 400 }
-        );
-      }
-      const qty = Number(item.quantity);
-      const unitPrice = Number(item.unitPrice);
-      if (
-        Number.isNaN(qty) ||
-        !Number.isInteger(qty) ||
-        qty <= 0
-      ) {
-        return NextResponse.json(
-          { error: "Each item quantity must be a positive integer" },
-          { status: 400 }
-        );
-      }
-      if (Number.isNaN(unitPrice) || unitPrice < 0) {
-        return NextResponse.json(
-          { error: "Each item unitPrice must be a number >= 0" },
-          { status: 400 }
-        );
-      }
-      // If productId provided, verify it belongs to the store
-      if (item.productId) {
-        const product = await db.product.findFirst({
-          where: { id: item.productId, storeId: session.storeId },
-          select: { id: true },
-        });
-        if (!product) {
+
+    if (hasItems && body.items) {
+      for (const item of body.items) {
+        const productName =
+          typeof item.productName === "string" ? item.productName.trim() : "";
+        if (!productName) {
           return NextResponse.json(
-            { error: `Product '${item.productId}' not found in your store` },
+            { error: "Each invoice item must have a productName" },
             { status: 400 }
           );
         }
+        const qty = Number(item.quantity);
+        const unitPrice = Number(item.unitPrice);
+        if (
+          Number.isNaN(qty) ||
+          !Number.isInteger(qty) ||
+          qty <= 0
+        ) {
+          return NextResponse.json(
+            { error: "Each item quantity must be a positive integer" },
+            { status: 400 }
+          );
+        }
+        if (Number.isNaN(unitPrice) || unitPrice < 0) {
+          return NextResponse.json(
+            { error: "Each item unitPrice must be a number >= 0" },
+            { status: 400 }
+          );
+        }
+        // If productId provided, verify it belongs to the store
+        if (item.productId) {
+          const product = await db.product.findFirst({
+            where: { id: item.productId, storeId: session.storeId },
+            select: { id: true },
+          });
+          if (!product) {
+            return NextResponse.json(
+              { error: `Product '${item.productId}' not found in your store` },
+              { status: 400 }
+            );
+          }
+        }
+        normalizedItems.push({
+          productId: item.productId ?? null,
+          productName,
+          quantity: qty,
+          unitPrice,
+          total: qty * unitPrice,
+        });
       }
-      normalizedItems.push({
-        productId: item.productId ?? null,
-        productName,
-        quantity: qty,
-        unitPrice,
-        total: qty * unitPrice,
-      });
     }
 
-    const totalAmount = normalizedItems.reduce(
-      (sum, i) => sum + i.total,
-      0
-    );
+    const totalAmount = hasItems
+      ? normalizedItems.reduce((sum, i) => sum + i.total, 0)
+      : manualTotal;
+
     const paidAmount = Number(body.paidAmount ?? 0);
     if (Number.isNaN(paidAmount) || paidAmount < 0) {
       return NextResponse.json(
@@ -196,12 +207,12 @@ export async function POST(request: Request) {
 
     // Enforce unique [storeId, invoiceNo]
     const dupInvoice = await db.supplierInvoice.findFirst({
-      where: { storeId: session.storeId, invoiceNo: body.invoiceNo },
+      where: { storeId: session.storeId, invoiceNo },
       select: { id: true },
     });
     if (dupInvoice) {
       return NextResponse.json(
-        { error: `Invoice number '${body.invoiceNo}' already exists in your store` },
+        { error: `Invoice number '${invoiceNo}' already exists in your store` },
         { status: 409 }
       );
     }
@@ -216,7 +227,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Atomically create invoice + items + bump product stock
+    const dueDate = body.dueDate ? new Date(body.dueDate) : null;
+
+    // Atomically create invoice + items + bump product stock + log stock movement
     const created = await db.$transaction(async (tx) => {
       const itemsCreate: Prisma.SupplierInvoiceItemCreateWithoutInvoiceInput[] =
         normalizedItems.map((i) => {
@@ -234,11 +247,13 @@ export async function POST(request: Request) {
 
       const invoice = await tx.supplierInvoice.create({
         data: {
-          invoiceNo: body.invoiceNo,
+          invoiceNo,
           invoiceDate,
+          dueDate,
           totalAmount,
           paidAmount,
           status,
+          attachmentUrl: body.attachmentUrl?.trim() || null,
           notes: body.notes ?? "",
           store: { connect: { id: session.storeId } },
           supplier: { connect: { id: supplierId } },
@@ -247,14 +262,61 @@ export async function POST(request: Request) {
         include: { items: true, supplier: true },
       });
 
-      // Increment stock for each item that has a productId
+      // Increment stock for each item that has a productId and record StockMovement
       for (const item of normalizedItems) {
         if (item.productId) {
-          await tx.product.update({
+          const prod = await tx.product.findUnique({
             where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
+            select: { stock: true },
           });
+          if (prod) {
+            const beforeQty = prod.stock;
+            const afterQty = beforeQty + item.quantity;
+
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: afterQty },
+            });
+
+            await tx.stockMovement.create({
+              data: {
+                storeId: session.storeId,
+                productId: item.productId,
+                type: "PURCHASE",
+                quantity: item.quantity,
+                beforeQty,
+                afterQty,
+                unitCost: item.unitPrice,
+                reason: `توريد فاتورة مشتريات: ${invoice.invoiceNo}`,
+                referenceId: invoice.invoiceNo,
+                userId: session.userId,
+              },
+            });
+          }
         }
+      }
+
+      // Audit log entry
+      try {
+        await tx.auditLog.create({
+          data: {
+            storeId: session.storeId,
+            userId: session.userId,
+            userName: session.email,
+            action: "INVOICE_CREATE",
+            entity: "INVOICE",
+            entityId: invoice.id,
+            details: JSON.stringify({
+              invoiceNo: invoice.invoiceNo,
+              supplierId,
+              totalAmount: invoice.totalAmount,
+              hasAttachment: !!invoice.attachmentUrl,
+              itemCount: normalizedItems.length,
+            }),
+          },
+        });
+      } catch {
+        /* ignore audit log failure */
       }
 
       return invoice;
