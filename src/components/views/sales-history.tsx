@@ -935,12 +935,12 @@ export function SalesHistory() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="pl-6">{t("receiptNo")}</TableHead>
-                <TableHead>{t("dateTime")}</TableHead>
-                <TableHead className="text-right">{t("items")}</TableHead>
-                <TableHead>{t("payment")}</TableHead>
-                <TableHead className="text-right">{t("total")}</TableHead>
-                <TableHead className="pr-6 text-right">{t("action")}</TableHead>
+                <TableHead className="px-6 text-start">{t("receiptNo")}</TableHead>
+                <TableHead className="text-center">{t("dateTime")}</TableHead>
+                <TableHead className="text-center">{t("items")}</TableHead>
+                <TableHead className="text-center">{t("payment")}</TableHead>
+                <TableHead className="text-center">{t("total")}</TableHead>
+                <TableHead className="px-6 text-center">{t("action")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -965,31 +965,35 @@ export function SalesHistory() {
                     key={s.id}
                     className="group transition-colors hover:bg-emerald-500/5"
                   >
-                    <TableCell className="pl-6 py-3.5">
+                    <TableCell className="px-6 py-3.5 text-start">
                       <span className="font-mono text-[13px] font-medium transition-colors group-hover:text-primary">
                         {s.receiptNo}
                       </span>
                     </TableCell>
-                    <TableCell className="py-3.5 text-muted-foreground">
+                    <TableCell className="py-3.5 text-center text-muted-foreground">
                       {formatDateTime(s.createdAt)}
                     </TableCell>
-                    <TableCell className="py-3.5 text-right tabular-nums">
+                    <TableCell className="py-3.5 text-center tabular-nums font-medium">
                       {s.itemCount}
                     </TableCell>
-                    <TableCell className="py-3.5">{paymentBadge(s.paymentMethod, t)}</TableCell>
-                    <TableCell className="py-3.5 text-right font-bold tabular-nums transition-colors group-hover:text-primary">
+                    <TableCell className="py-3.5 text-center">
+                      <div className="flex justify-center">{paymentBadge(s.paymentMethod, t)}</div>
+                    </TableCell>
+                    <TableCell className="py-3.5 text-center font-bold tabular-nums transition-colors group-hover:text-primary">
                       {formatMoney(s.total, currency)}
                     </TableCell>
-                    <TableCell className="pr-6 py-3.5 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openReceipt(s.id)}
-                        className="transition-all group-hover:border-primary/40 group-hover:text-primary"
-                      >
-                        <Eye className="h-4 w-4" />
-                        {t("view")}
-                      </Button>
+                    <TableCell className="px-6 py-3.5 text-center">
+                      <div className="flex justify-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openReceipt(s.id)}
+                          className="transition-all group-hover:border-primary/40 group-hover:text-primary"
+                        >
+                          <Eye className="h-4 w-4" />
+                          {t("view")}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -21,12 +21,25 @@ import {
   PieChart,
   Clock,
   Calendar,
+  Sparkles,
 } from "lucide-react";
 
-import { productsApi, salesApi, shopApi } from "@/lib/api";
+import {
+  productsApi,
+  salesApi,
+  shopApi,
+  batchesApi,
+  supplierInvoicesApi,
+  customersApi,
+  cashSessionsApi,
+  dailyReportApi,
+} from "@/lib/api";
+import { StoreManagementCenter } from "@/components/store-management-center";
+import { ReorderRecommendationsModal } from "@/components/reorder-recommendations-modal";
+import { SmartAssistantDialog } from "@/components/smart-assistant-dialog";
 import { paymentLabelKey } from "@/lib/payment";
 import type { ViewKey } from "@/lib/types";
-import { formatMoney, formatTime } from "@/lib/format";
+import { formatMoney, formatTime, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
 import type { TranslationKey } from "@/lib/i18n";
@@ -79,15 +92,15 @@ function paymentBadge(method: string, t: T) {
   );
 }
 
-function stockBadgeFor(stock: number, t: T) {
-  if (stock === 0) {
+function stockBadgeFor(stock: number, minStock: number = 5, t: T) {
+  if (stock <= 0) {
     return (
       <Badge className="bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30 hover:bg-red-500/15">
         0 {t("left")}
       </Badge>
     );
   }
-  if (stock <= 5) {
+  if (stock <= minStock) {
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
         {stock} {t("left")}
@@ -387,10 +400,15 @@ function PaymentLegendRow({
 
 export function Dashboard({
   onNavigate,
+  onOpenCashDrawer,
 }: {
   onNavigate: (view: ViewKey) => void;
+  onOpenCashDrawer?: () => void;
 }) {
   const { t } = useLanguage();
+  const [reorderModalOpen, setReorderModalOpen] = useState(false);
+  const [assistantModalOpen, setAssistantModalOpen] = useState(false);
+
   /* queries */
   const shopQuery = useQuery({ queryKey: ["shop"], queryFn: shopApi.get });
   const statsQuery = useQuery({
@@ -402,6 +420,28 @@ export function Dashboard({
     queryFn: productsApi.list,
   });
   const salesQuery = useQuery({ queryKey: ["sales"], queryFn: salesApi.list });
+
+  // Phase 4 & 5 live operational queries
+  const batchesQuery = useQuery({
+    queryKey: ["batchesOverview"],
+    queryFn: () => batchesApi.list(),
+  });
+  const supplierInvoicesQuery = useQuery({
+    queryKey: ["supplierInvoices"],
+    queryFn: supplierInvoicesApi.list,
+  });
+  const customersQuery = useQuery({
+    queryKey: ["customers"],
+    queryFn: customersApi.list,
+  });
+  const cashSessionQuery = useQuery({
+    queryKey: ["cashSession"],
+    queryFn: cashSessionsApi.get,
+  });
+  const dailyReportQuery = useQuery({
+    queryKey: ["dailyReportToday"],
+    queryFn: () => dailyReportApi.get(),
+  });
 
   const shop = shopQuery.data;
   const currency = shop?.currency ?? "دج";
@@ -415,16 +455,16 @@ export function Dashboard({
     [products]
   );
   const lowStockCount = useMemo(
-    () => products.filter((p) => p.stock >= 1 && p.stock <= 5).length,
+    () => products.filter((p) => p.stock > 0 && p.stock <= (p.minStock ?? 5)).length,
     [products]
   );
   const outOfStockCount = useMemo(
-    () => products.filter((p) => p.stock === 0).length,
+    () => products.filter((p) => p.stock <= 0).length,
     [products]
   );
-  const healthyCount = Math.max(
-    0,
-    products.length - lowStockCount - outOfStockCount
+  const healthyCount = useMemo(
+    () => products.filter((p) => p.stock > (p.minStock ?? 5)).length,
+    [products]
   );
 
   const topLowStock = useMemo(
@@ -569,12 +609,8 @@ export function Dashboard({
 
   /* greeting */
   const now = new Date();
-  const fullDate = now.toLocaleDateString("ar-DZ-u-nu-latn", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  const weekday = now.toLocaleDateString("ar-DZ-u-nu-latn", { weekday: "long" });
+  const fullDate = `${weekday} ${formatDate(now)}`;
 
   /* KPI cards */
   const kpis: {
@@ -654,7 +690,7 @@ export function Dashboard({
             </h1>
             <p className="mt-1.5 text-sm text-emerald-50/80">{fullDate}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 flex-wrap">
             <Button
               onClick={() => onNavigate("pos")}
               className="bg-card text-primary shadow-md hover:bg-primary/10"
@@ -670,9 +706,41 @@ export function Dashboard({
               <Plus className="h-4 w-4" />
               {t("addProduct")}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setAssistantModalOpen(true)}
+              className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white hidden sm:flex items-center gap-1.5"
+            >
+              <Sparkles className="h-4 w-4 text-emerald-300" />
+              <span>المساعد الذكي</span>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setReorderModalOpen(true)}
+              className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white hidden md:flex items-center gap-1.5"
+            >
+              <Boxes className="h-4 w-4 text-amber-300" />
+              <span>توصيات التوريد</span>
+            </Button>
           </div>
         </div>
       </div>
+
+      {/* 1.5. مركز إدارة المتجر (Store Management Center) */}
+      <StoreManagementCenter
+        products={products}
+        batchesStats={batchesQuery.data?.stats}
+        supplierInvoices={supplierInvoicesQuery.data ?? []}
+        customers={customersQuery.data ?? []}
+        cashSession={cashSessionQuery.data?.activeSession ?? null}
+        dailyReport={dailyReportQuery.data}
+        currency={currency}
+        onNavigate={onNavigate}
+        onOpenCashDrawer={onOpenCashDrawer}
+        onOpenReorderModal={() => setReorderModalOpen(true)}
+        onOpenAssistantModal={() => setAssistantModalOpen(true)}
+        isLoading={productsQuery.isLoading || batchesQuery.isLoading}
+      />
 
       {/* 2. KPI cards */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
@@ -951,12 +1019,12 @@ export function Dashboard({
                 />
                 <LegendRow
                   color="bg-amber-500"
-                  label={`${t("lowStock")} (1-5)`}
+                  label={`${t("lowStock")} (≤ الحد الأدنى)`}
                   count={lowStockCount}
                 />
                 <LegendRow
                   color="bg-emerald-500"
-                  label={`${t("healthy")} (>5)`}
+                  label={`${t("healthy")} (> الحد الأدنى)`}
                   count={healthyCount}
                 />
               </div>
@@ -982,7 +1050,7 @@ export function Dashboard({
                           {formatMoney(p.price, currency)}
                         </p>
                       </div>
-                      {stockBadgeFor(p.stock, t)}
+                      {stockBadgeFor(p.stock, p.minStock ?? 5, t)}
                     </li>
                   ))}
                 </ul>
@@ -1376,6 +1444,20 @@ export function Dashboard({
           })}
         </div>
       </div>
+
+      {/* Smart Reorder Recommendations Modal */}
+      <ReorderRecommendationsModal
+        open={reorderModalOpen}
+        onOpenChange={setReorderModalOpen}
+        currency={currency}
+        onNavigateToPurchaseOrders={() => onNavigate("suppliers")}
+      />
+
+      {/* Grounded Smart Store Assistant Dialog */}
+      <SmartAssistantDialog
+        open={assistantModalOpen}
+        onOpenChange={setAssistantModalOpen}
+      />
     </div>
   );
 }

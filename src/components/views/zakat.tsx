@@ -464,62 +464,66 @@ function ZakatRecordsTab() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="pl-6">{t("auditYear")}</TableHead>
-                  <TableHead>{t("calculationDate")}</TableHead>
-                  <TableHead className="text-right">{t("zakatBase")}</TableHead>
-                  <TableHead className="text-right">{t("zakatRate")}</TableHead>
-                  <TableHead className="text-right">{t("zakatAmount")}</TableHead>
+                  <TableHead className="pl-6 text-center">{t("auditYear")}</TableHead>
+                  <TableHead className="text-center">{t("calculationDate")}</TableHead>
+                  <TableHead className="text-center">{t("zakatBase")}</TableHead>
+                  <TableHead className="text-center">{t("zakatRate")}</TableHead>
+                  <TableHead className="text-center">{t("zakatAmount")}</TableHead>
                   <TableHead className="text-center">{t("status")}</TableHead>
-                  <TableHead className="pr-6 text-right">{t("actions")}</TableHead>
+                  <TableHead className="pr-6 text-center">{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {records.map((r) => (
                   <TableRow key={r.id} className="hover:bg-emerald-500/5">
-                    <TableCell className="pl-6 py-2.5 font-semibold tabular-nums">
+                    <TableCell className="pl-6 py-2.5 text-center font-semibold tabular-nums">
                       {r.year}
                     </TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="text-center text-xs">
                       {formatDate(r.calculationDate)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="text-center tabular-nums">
                       {formatMoney(r.zakatBase, currency)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                    <TableCell className="text-center tabular-nums text-muted-foreground">
                       {r.zakatRate}%
                     </TableCell>
-                    <TableCell className="text-right tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
+                    <TableCell className="text-center tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
                       {formatMoney(r.zakatAmount, currency)}
                     </TableCell>
                     <TableCell className="text-center">
-                      {r.status === "PAID" ? (
-                        <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/15 dark:text-emerald-400">
-                          <CheckCircle2 className="me-1 h-3 w-3" />
-                          {t("zakatStatusPaid")}
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30 hover:bg-amber-500/15 dark:text-amber-400">
-                          {t("zakatStatusUnpaid")}
-                        </Badge>
-                      )}
+                      <div className="flex justify-center">
+                        {r.status === "PAID" ? (
+                          <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/15 dark:text-emerald-400">
+                            <CheckCircle2 className="me-1 h-3 w-3" />
+                            {t("zakatStatusPaid")}
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30 hover:bg-amber-500/15 dark:text-amber-400">
+                            {t("zakatStatusUnpaid")}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
-                    <TableCell className="pr-6 text-right">
-                      {r.status !== "PAID" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setMarkPaidTarget(r)}
-                          className="bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          {t("markZakatPaid")}
-                        </Button>
-                      )}
-                      {r.status === "PAID" && r.paidDate && (
-                        <span className="text-[11px] text-muted-foreground">
-                          {formatDate(r.paidDate)}
-                        </span>
-                      )}
+                    <TableCell className="pr-6 text-center">
+                      <div className="flex items-center justify-center">
+                        {r.status !== "PAID" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setMarkPaidTarget(r)}
+                            className="bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {t("markZakatPaid")}
+                          </Button>
+                        )}
+                        {r.status === "PAID" && r.paidDate && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {formatDate(r.paidDate)}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

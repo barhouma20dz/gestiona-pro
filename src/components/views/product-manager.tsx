@@ -23,6 +23,7 @@ import {
   Trash,
   Scale,
   Crop,
+  History,
 } from "lucide-react";
 
 import { productsApi, shopApi } from "@/lib/api";
@@ -32,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
 import { toast } from "sonner";
 import { ImageCropperDialog } from "@/components/image-cropper-dialog";
+import { StockMovementDialog } from "@/components/stock-movement-dialog";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,7 +88,8 @@ type StockBadgeKey =
 function stockBadge(
   stock: number,
   unitType: string,
-  t: (k: StockBadgeKey) => string
+  t: (k: StockBadgeKey) => string,
+  minStock: number = 5
 ) {
   const isKg = unitType === "kg";
   if (stock === 0) {
@@ -96,7 +99,7 @@ function stockBadge(
       </Badge>
     );
   }
-  if (stock <= 5) {
+  if (stock <= minStock) {
     return (
       <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15">
         {t("lowWithLeft")}{" "}
@@ -150,6 +153,7 @@ interface FormState {
   price: string;
   costPrice: string;
   stock: string;
+  minStock: string;
   unitType: string; // "count" | "kg"
   category: string;
   expiryDate: string;
@@ -164,6 +168,7 @@ const emptyForm: FormState = {
   price: "",
   costPrice: "0",
   stock: "0",
+  minStock: "5",
   unitType: "count",
   category: "General",
   expiryDate: "",
@@ -179,6 +184,7 @@ function toForm(p: Product): FormState {
     price: String(p.price),
     costPrice: String(p.costPrice ?? 0),
     stock: String(p.stock),
+    minStock: String(p.minStock ?? 5),
     unitType: p.unitType === "kg" ? "kg" : "count",
     category: p.category,
     expiryDate: p.expiryDate ? new Date(p.expiryDate).toISOString().split("T")[0] : "",
@@ -206,6 +212,10 @@ export function ProductManager() {
   // Filter state
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("all");
+  const [filterMode, setFilterMode] = useState<"all" | "low_stock" | "no_barcode">("all");
+
+  // Stock movement history target
+  const [movementTarget, setMovementTarget] = useState<Product | null>(null);
 
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
@@ -249,7 +259,7 @@ export function ProductManager() {
     const potentialProfit = totalValue - totalCost;
     const avgMargin =
       totalValue > 0 ? (potentialProfit / totalValue) * 100 : 0;
-    const lowStock = list.filter((p) => p.stock >= 1 && p.stock <= 5).length;
+    const lowStock = list.filter((p) => p.stock > 0 && p.stock <= (p.minStock ?? 5)).length;
     const outStock = list.filter((p) => p.stock === 0).length;
     return {
       total: list.length,
@@ -275,6 +285,15 @@ export function ProductManager() {
     const q = search.trim().toLowerCase();
     return list
       .filter((p) => (category === "all" ? true : p.category === category))
+      .filter((p) => {
+        if (filterMode === "low_stock") {
+          return p.stock <= (p.minStock ?? 5);
+        }
+        if (filterMode === "no_barcode") {
+          return Boolean(p.isNoBarcode);
+        }
+        return true;
+      })
       .filter((p) =>
         q === ""
           ? true
@@ -285,7 +304,7 @@ export function ProductManager() {
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
-  }, [products, search, category]);
+  }, [products, search, category, filterMode]);
 
   /* Mutations */
   const createMutation = useMutation({
@@ -343,6 +362,7 @@ export function ProductManager() {
       price: String(p.price),
       costPrice: String(p.costPrice ?? 0),
       stock: String(p.stock),
+      minStock: String(p.minStock ?? 5),
       unitType: p.unitType === "kg" ? "kg" : "count",
       category: p.category,
       expiryDate: p.expiryDate ? new Date(p.expiryDate).toISOString().split("T")[0] : "",
@@ -385,6 +405,7 @@ export function ProductManager() {
       price: Number(form.price),
       costPrice: Number(form.costPrice),
       stock: Number(form.stock),
+      minStock: Number(form.minStock) || 5,
       unitType: form.unitType === "kg" ? "kg" : "count",
       category: form.category.trim() || "General",
       expiryDate: form.expiryDate || null,
@@ -495,33 +516,76 @@ export function ProductManager() {
       </div>
 
       {/* Toolbar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={t("searchByNameOrBarcode")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={t("searchByNameOrBarcode")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder={t("category")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("allCategories")}</SelectItem>
+              {categories.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={openAdd} className="w-full sm:w-auto">
+            <Plus className="h-4 w-4" />
+            {t("addProduct")}
+          </Button>
         </div>
-        <Select value={category} onValueChange={setCategory}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder={t("category")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("allCategories")}</SelectItem>
-            {categories.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button onClick={openAdd} className="w-full sm:w-auto">
-          <Plus className="h-4 w-4" />
-          {t("addProduct")}
-        </Button>
+
+        {/* Quick filter pills */}
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <span className="text-muted-foreground text-xs font-medium">تصفية سريعة:</span>
+          <Button
+            type="button"
+            size="sm"
+            variant={filterMode === "all" ? "default" : "outline"}
+            className="h-7 text-xs px-2.5 gap-1"
+            onClick={() => setFilterMode("all")}
+          >
+            الكل
+            <span className="opacity-70 text-[10px]">({stats.total})</span>
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={filterMode === "low_stock" ? "default" : "outline"}
+            className={cn(
+              "h-7 text-xs px-2.5 gap-1",
+              filterMode === "low_stock"
+                ? "bg-amber-600 text-white hover:bg-amber-700"
+                : "text-amber-700 border-amber-300 dark:border-amber-700 hover:bg-amber-500/10"
+            )}
+            onClick={() => setFilterMode("low_stock")}
+          >
+            ⚠️ ناقص أو نافد
+            <span className="opacity-80 text-[10px] font-bold">
+              ({stats.lowStock + stats.outStock})
+            </span>
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={filterMode === "no_barcode" ? "default" : "outline"}
+            className="h-7 text-xs px-2.5 gap-1"
+            onClick={() => setFilterMode("no_barcode")}
+          >
+            ⚡ بيع سريع بدون باركود
+          </Button>
+        </div>
       </div>
 
       {/* Products card */}
@@ -543,12 +607,12 @@ export function ProductManager() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="pl-6">{t("product")}</TableHead>
-                <TableHead>{t("category")}</TableHead>
-                <TableHead className="text-right">{t("priceLabel")}</TableHead>
-                <TableHead>{t("unit")}</TableHead>
-                <TableHead>{t("stock")}</TableHead>
-                <TableHead className="pr-6 text-right">{t("actions")}</TableHead>
+                <TableHead className="px-6 text-start">{t("product")}</TableHead>
+                <TableHead className="text-center">{t("category")}</TableHead>
+                <TableHead className="text-center">{t("priceLabel")}</TableHead>
+                <TableHead className="text-center">{t("unit")}</TableHead>
+                <TableHead className="text-center">{t("stock")}</TableHead>
+                <TableHead className="px-6 text-center">{t("actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -573,7 +637,7 @@ export function ProductManager() {
                     key={p.id}
                     className="group transition-colors hover:bg-emerald-500/5"
                   >
-                    <TableCell className="pl-6 py-3.5">
+                    <TableCell className="px-6 py-3.5 text-start">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-medium transition-colors group-hover:text-primary">
@@ -590,8 +654,10 @@ export function ProductManager() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell>{categoryBadge(p.category)}</TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
+                    <TableCell className="text-center">
+                      <div className="flex justify-center">{categoryBadge(p.category)}</div>
+                    </TableCell>
+                    <TableCell className="text-center font-medium tabular-nums">
                       {formatMoney(p.price, currency)}
                       {p.unitType === "kg" && (
                         <span className="ml-1 text-[10px] font-normal text-muted-foreground">
@@ -599,10 +665,24 @@ export function ProductManager() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell>{unitBadge(p.unitType, t)}</TableCell>
-                    <TableCell>{stockBadge(p.stock, p.unitType, t)}</TableCell>
-                    <TableCell className="pr-6 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                    <TableCell className="text-center">
+                      <div className="flex justify-center">{unitBadge(p.unitType, t)}</div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex justify-center">{stockBadge(p.stock, p.unitType, t, p.minStock)}</div>
+                    </TableCell>
+                    <TableCell className="px-6 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-emerald-600"
+                          onClick={() => setMovementTarget(p)}
+                          aria-label="سجل حركات وتدقيق المخزون"
+                          title="سجل حركات وتدقيق المخزون"
+                        >
+                          <History className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -671,7 +751,7 @@ export function ProductManager() {
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {categoryBadge(p.category)}
                         {unitBadge(p.unitType, t)}
-                        {stockBadge(p.stock, p.unitType, t)}
+                        {stockBadge(p.stock, p.unitType, t, p.minStock)}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
@@ -684,6 +764,16 @@ export function ProductManager() {
                         )}
                       </span>
                       <div className="flex gap-1">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-emerald-600"
+                          onClick={() => setMovementTarget(p)}
+                          aria-label="سجل حركة المخزون"
+                          title="سجل حركة المخزون"
+                        >
+                          <History className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="outline"
                           size="icon"
@@ -885,8 +975,8 @@ export function ProductManager() {
                 </div>
               </div>
 
-              {/* Row 3: Prices & Stock */}
-              <div className="grid grid-cols-3 gap-3">
+              {/* Row 3: Prices & Stock & Min Stock */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="p-price">
                     {form.unitType === "kg" ? t("pricePerKg") : t("sellingPrice")}
@@ -956,6 +1046,27 @@ export function ProductManager() {
                   {formErrors.stock && (
                     <p className="text-xs text-red-600 dark:text-red-400">{formErrors.stock}</p>
                   )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="p-min-stock" className="flex items-center gap-1">
+                    <span>حد الطلب الأدنى</span>
+                  </Label>
+                  <Input
+                    id="p-min-stock"
+                    type="number"
+                    min={0}
+                    step={form.unitType === "kg" ? "0.1" : "1"}
+                    inputMode={form.unitType === "kg" ? "decimal" : "numeric"}
+                    value={form.minStock}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, minStock: e.target.value }))
+                    }
+                    placeholder="5"
+                    className="tabular-nums"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    تنبيه النقص
+                  </p>
                 </div>
               </div>
 
@@ -1235,6 +1346,14 @@ export function ProductManager() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Stock movement history & audit adjustments */}
+      <StockMovementDialog
+        product={movementTarget}
+        open={movementTarget !== null}
+        onOpenChange={(o) => !o && setMovementTarget(null)}
+        currency={currency}
+      />
     </div>
   );
 }

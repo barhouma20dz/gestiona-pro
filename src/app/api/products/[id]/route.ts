@@ -169,13 +169,46 @@ export async function PUT(
       }
     }
 
+    if (body?.minStock !== undefined) {
+      const minStock = Number(body.minStock);
+      if (!Number.isNaN(minStock) && minStock >= 0) {
+        data.minStock = minStock;
+      }
+    }
+
     if (body?.isNoBarcode !== undefined) {
       data.isNoBarcode = Boolean(body.isNoBarcode);
     }
 
-    const updated = await db.product.update({
-      where: { id },
-      data,
+    const updated = await db.$transaction(async (tx) => {
+      const p = await tx.product.update({
+        where: { id },
+        data,
+      });
+
+      if (data.stock !== undefined && data.stock !== existing.stock) {
+        const diff = Number(data.stock) - existing.stock;
+        await tx.stockMovement.create({
+          data: {
+            storeId: session.storeId,
+            productId: id,
+            type: diff > 0 ? "ADJUSTMENT" : "WASTE",
+            quantity: Math.abs(diff),
+            beforeQty: existing.stock,
+            afterQty: Number(data.stock),
+            unitCost: existing.costPrice,
+            reason:
+              typeof body?.stockReason === "string" && body.stockReason.trim()
+                ? body.stockReason.trim()
+                : diff > 0
+                ? "تسوية جرد / إضافة مخزون يدوية"
+                : "تسوية جرد / إنقاص أو تلف مخزون",
+            userId: session.userId,
+          },
+        });
+      }
+
+      return p;
     });
 
     return NextResponse.json(updated);

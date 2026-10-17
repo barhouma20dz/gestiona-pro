@@ -27,12 +27,30 @@ export async function POST(
     }
 
     await db.$transaction(async (tx) => {
-      // 1. Update product stock to match countedStock for each item
+      // 1. Update product stock to match countedStock for each item and record StockMovement
       for (const item of audit.items) {
         await tx.product.update({
           where: { id: item.productId },
           data: { stock: item.countedStock },
         });
+
+        // Record stock movement if there is a difference or audit adjustment
+        if (item.difference !== 0) {
+          await tx.stockMovement.create({
+            data: {
+              storeId: session.storeId,
+              productId: item.productId,
+              type: "AUDIT",
+              quantity: item.difference,
+              beforeQty: item.systemStock,
+              afterQty: item.countedStock,
+              unitCost: item.costPrice ?? 0,
+              reason: item.difference > 0 ? `فائض جرد (${audit.year})` : `عجز جرد (${audit.year})`,
+              referenceId: audit.id,
+              userId: session.userId,
+            },
+          });
+        }
       }
 
       // 2. Mark audit approved

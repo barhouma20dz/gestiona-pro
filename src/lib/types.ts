@@ -7,6 +7,7 @@ export interface Product {
   price: number;
   costPrice: number;
   stock: number;
+  minStock?: number;
   unitType: string; // "count" | "kg"
   category: string;
   expiryDate?: string | null;
@@ -24,6 +25,7 @@ export interface NewProduct {
   price: number;
   costPrice?: number;
   stock: number;
+  minStock?: number;
   unitType?: string;
   category?: string;
   expiryDate?: string | null;
@@ -61,11 +63,16 @@ export interface Shop {
   footerText: string;
   currency: string;
   taxRate: number;
+  businessType?: string | null;
   loyaltyEnabled?: boolean;
   loyaltyEarnRate?: number;
   loyaltyPointValue?: number;
   receiptConfig?: string | null;
   parsedReceiptConfig?: ReceiptConfig;
+  logoUrl?: string | null;
+  storePhotoUrl?: string | null;
+  primaryDisplayImage?: "LOGO" | "STORE_PHOTO";
+  sidebarConfig?: string | null;
   updatedAt: string;
 }
 
@@ -118,7 +125,9 @@ export type ViewKey =
   | "sellerSettings"
   | "inventoryAudit"
   | "zakat"
-  | "roomSync";
+  | "roomSync"
+  | "dailyReport"
+  | "expenses";
 
 export interface DailyStats {
   totalSales: number;
@@ -135,6 +144,8 @@ export interface Supplier {
   phone: string;
   email: string;
   address: string;
+  leadTimeDays?: number;
+  paymentTerms?: string;
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -146,6 +157,8 @@ export interface NewSupplier {
   phone?: string;
   email?: string;
   address?: string;
+  leadTimeDays?: number;
+  paymentTerms?: string;
   notes?: string;
 }
 
@@ -164,9 +177,11 @@ export interface SupplierInvoice {
   supplierId: string;
   invoiceNo: string;
   invoiceDate: string;
+  dueDate?: string | null;
   totalAmount: number;
   paidAmount: number;
   status: "PAID" | "PARTIAL" | "UNPAID";
+  attachmentUrl?: string | null;
   notes: string;
   createdAt: string;
   items: SupplierInvoiceItem[];
@@ -182,11 +197,62 @@ export interface NewSupplierInvoiceItem {
 
 export interface NewSupplierInvoice {
   supplierId: string;
-  invoiceNo: string;
+  invoiceNo?: string;
   invoiceDate?: string;
-  items: NewSupplierInvoiceItem[];
+  dueDate?: string | null;
+  items?: NewSupplierInvoiceItem[];
+  totalAmount?: number;
   paidAmount?: number;
+  attachmentUrl?: string | null;
   notes?: string;
+}
+
+export type PurchaseOrderStatus = "DRAFT" | "SENT" | "PARTIAL" | "RECEIVED" | "CANCELLED";
+
+export interface PurchaseOrderItem {
+  id: string;
+  orderId: string;
+  productId: string | null;
+  productName: string;
+  orderedQty: number;
+  receivedQty: number;
+  unitCost: number;
+  total: number;
+  product?: Pick<Product, "id" | "name" | "barcode" | "unitType"> | null;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  storeId: string;
+  supplierId: string;
+  orderNo: string;
+  status: PurchaseOrderStatus;
+  orderDate: string;
+  expectedDate?: string | null;
+  totalAmount: number;
+  notes: string;
+  invoiceId?: string | null;
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: PurchaseOrderItem[];
+  supplier?: Pick<Supplier, "id" | "name" | "phone" | "leadTimeDays" | "paymentTerms">;
+  invoice?: Pick<SupplierInvoice, "id" | "invoiceNo" | "status" | "totalAmount"> | null;
+}
+
+export interface NewPurchaseOrderItem {
+  productId?: string | null;
+  productName: string;
+  orderedQty: number;
+  unitCost: number;
+}
+
+export interface NewPurchaseOrder {
+  supplierId: string;
+  orderNo?: string;
+  expectedDate?: string | null;
+  notes?: string;
+  items: NewPurchaseOrderItem[];
 }
 
 export type ExpiryProduct = Product;
@@ -287,8 +353,12 @@ export interface LicenseKey {
 export interface Seller {
   id: string;
   name: string | null;
+  username?: string | null;
   email: string;
   role: string;
+  isActive?: boolean;
+  permissions?: string[] | string | null;
+  phone?: string | null;
   storeId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -299,9 +369,13 @@ export interface Seller {
 }
 
 export interface NewSeller {
-  name: string;
-  email: string;
+  username?: string;
+  name?: string;
+  email?: string;
   password: string;
+  phone?: string;
+  isActive?: boolean;
+  permissions?: string[];
 }
 
 export interface SellerEarnings {
@@ -479,3 +553,389 @@ export interface CustomerPayment {
   user?: { name: string | null } | null;
   createdAt: string;
 }
+
+export type StockMovementType =
+  | "SALE"
+  | "PURCHASE"
+  | "RETURN"
+  | "ADJUSTMENT"
+  | "WASTE"
+  | "AUDIT";
+
+export interface StockMovement {
+  id: string;
+  storeId: string;
+  productId: string;
+  product?: { name: string; barcode: string; unitType: string };
+  type: StockMovementType;
+  quantity: number;
+  beforeQty: number;
+  afterQty: number;
+  unitCost: number;
+  reason: string;
+  referenceId?: string | null;
+  userId?: string | null;
+  user?: { name: string | null; email: string } | null;
+  createdAt: string;
+}
+
+export interface ProductBatch {
+  id: string;
+  storeId: string;
+  productId: string;
+  product?: { name: string; barcode: string };
+  batchNumber: string;
+  expiryDate: string;
+  quantity: number;
+  costPrice: number;
+  receivedDate: string;
+  status: "ACTIVE" | "EXHAUSTED" | "EXPIRED";
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ---------------- Phase 3: Expenses types ---------------- */
+
+export type ExpenseCategoryKey =
+  | "RENT"
+  | "UTILITIES"
+  | "SALARIES"
+  | "TRANSPORT"
+  | "MAINTENANCE"
+  | "MARKETING"
+  | "PACKAGING"
+  | "OTHER";
+
+export interface Expense {
+  id: string;
+  storeId: string;
+  category: string;
+  categoryLabel: string;
+  amount: number;
+  expenseDate: string;
+  paymentMethod: string;
+  paidTo?: string | null;
+  notes: string;
+  receiptUrl?: string | null;
+  userId?: string | null;
+  user?: { name: string | null } | null;
+  cashSessionId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewExpense {
+  category: string;
+  categoryLabel?: string;
+  amount: number;
+  expenseDate?: string;
+  paymentMethod?: string;
+  paidTo?: string;
+  notes?: string;
+  receiptUrl?: string;
+}
+
+/* ---------------- Phase 3: Cash Drawer Session types ---------------- */
+
+export interface CashTransaction {
+  id: string;
+  sessionId: string;
+  storeId: string;
+  type: "DEPOSIT" | "WITHDRAWAL";
+  amount: number;
+  reason: string;
+  userId?: string | null;
+  user?: { name: string | null } | null;
+  createdAt: string;
+}
+
+export interface CashSessionFlow {
+  cashSales: number;
+  salesCount: number;
+  cashCustomerDebts: number;
+  cashDeposits: number;
+  totalIn: number;
+  cashSupplierPayments: number;
+  cashExpenses: number;
+  cashWithdrawals: number;
+  totalOut: number;
+  netCashFlow: number;
+}
+
+export interface CashSession {
+  id: string;
+  storeId: string;
+  userId: string;
+  user?: { name: string | null } | null;
+  openedAt: string;
+  closedAt?: string | null;
+  status: "OPEN" | "CLOSED";
+  openingCash: number;
+  closingCashActual?: number | null;
+  closingCashExpected?: number | null;
+  difference?: number | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  transactions?: CashTransaction[];
+  flow?: CashSessionFlow;
+  expectedCash?: number;
+}
+
+/* ---------------- Phase 3: Daily Financial Report types ---------------- */
+
+export interface DailyFinancialReport {
+  date: string;
+  currentDay: {
+    salesCount: number;
+    totalSales: number;
+    totalDiscounts: number;
+    netSales: number;
+    cogs: number;
+    grossProfit: number;
+    grossProfitMargin: number;
+    totalOperatingExpenses: number;
+    expensesByCategory: Record<string, number>;
+    netOperatingProfit: number;
+    netProfitMargin: number;
+    paymentBreakdown: Record<string, { total: number; count: number }>;
+    totalCustomerDebtCollected: number;
+    totalSupplierPaid: number;
+    cashFlow: {
+      totalCashIn: number;
+      totalCashOut: number;
+      netCashFlow: number;
+      cashFromSales: number;
+      cashDebtCollected: number;
+      cashExpenses: number;
+      cashSupplierPaid: number;
+    };
+  };
+  comparison: {
+    salesDiff: number;
+    salesPercentChange: number;
+    grossProfitDiff: number;
+    grossProfitPercentChange: number;
+    netProfitDiff: number;
+    prevDayNetSales: number;
+    prevDayNetProfit: number;
+  };
+}
+
+/* ---------------- Phase 3: Statement of Account types ---------------- */
+
+export interface StatementEntry {
+  id: string;
+  date: string;
+  type: string;
+  title: string;
+  reference: string;
+  debit: number;
+  credit: number;
+  runningBalance: number;
+  details?: string;
+  receivedBy?: string | null;
+  paidBy?: string | null;
+}
+
+export interface StatementOfAccount {
+  customer?: {
+    id: string;
+    name: string;
+    phone: string;
+    address?: string;
+  };
+  supplier?: {
+    id: string;
+    name: string;
+    phone: string;
+    leadTimeDays?: number;
+    paymentTerms?: string;
+  };
+  summary: {
+    totalDebit?: number;
+    totalCredit?: number;
+    totalInvoices?: number;
+    totalPaid?: number;
+    currentOutstanding: number;
+  };
+  ledger: StatementEntry[];
+}
+
+/* ---------------- Phase 5: Reorder & Assistant types ---------------- */
+
+export interface ReorderItemRecommendation {
+  productId: string;
+  productName: string;
+  barcode: string;
+  category: string;
+  unitType: string;
+  currentStock: number;
+  minStock: number;
+  pendingOrdersQty: number;
+  avgDailySales: number;
+  daysOfSupply: number;
+  leadTimeDays: number;
+  reorderPoint: number;
+  recommendedQty: number;
+  unitCost: number;
+  estimatedCost: number;
+  urgency: "OUT_OF_STOCK" | "CRITICAL" | "WARNING" | "NORMAL";
+  urgencyLabel: string;
+  supplier: {
+    id: string;
+    name: string;
+    phone: string;
+    leadTimeDays: number;
+  } | null;
+}
+
+export interface ReorderRecommendationsResponse {
+  summary: {
+    totalProductsScanned: number;
+    itemsNeedingReorder: number;
+    outOfStockCount: number;
+    criticalCount: number;
+    warningCount: number;
+    totalEstimatedInvestment: number;
+  };
+  recommendations: ReorderItemRecommendation[];
+}
+
+export interface AssistantResponse {
+  answer: string;
+  metrics?: {
+    todayNetSales: number;
+    todayGrossProfit: number;
+    todayOperatingExpenses: number;
+    todayNetOperatingProfit: number;
+    totalInventoryValue: number;
+    outOfStockCount: number;
+    lowStockCount: number;
+    nearExpiryBatchesCount: number;
+    totalSupplierDebt: number;
+    totalCustomerDebt: number;
+    isShiftOpen: boolean;
+    expectedDrawerCash: number;
+  };
+  topSelling?: Array<{ name: string; qty: number; rev: number }>;
+  suggestedQuestions: string[];
+}
+
+/* ---------------- Permissions & Users ---------------- */
+
+export interface PermissionItem {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export interface PermissionGroup {
+  id: string;
+  label: string;
+  description: string;
+  permissions: PermissionItem[];
+}
+
+/* ---------------- Sidebar Configuration ---------------- */
+
+export interface SidebarItemConfig {
+  id: string;
+  label: string;
+  visible: boolean;
+  order: number;
+}
+
+/* ---------------- Audit Log ---------------- */
+
+export interface AuditLogEntry {
+  id: string;
+  storeId: string;
+  userId: string | null;
+  userName: string | null;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  details: string | null;
+  ipAddress?: string | null;
+  createdAt: string;
+}
+
+/* ---------------- Commission & Rewards ---------------- */
+
+export interface CommissionRule {
+  id: string;
+  storeId: string;
+  isEnabled: boolean;
+  calculationBasis: "TOTAL_SALES" | "NET_SALES" | "GROSS_PROFIT";
+  rewardType: "PERCENTAGE" | "FIXED_AMOUNT" | "TIERED";
+  rateValue: number;
+  tiersConfig?: string | null;
+  period: "DAILY" | "WEEKLY" | "MONTHLY" | "CUSTOM";
+  minTarget: number;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SellerRewardRecord {
+  id: string;
+  storeId: string;
+  sellerId: string;
+  seller?: Pick<Seller, "id" | "name" | "username" | "email">;
+  ruleId?: string | null;
+  rule?: CommissionRule | null;
+  periodStart: string;
+  periodEnd: string;
+  totalSales: number;
+  discounts: number;
+  netSales: number;
+  grossProfit: number;
+  salesCount: number;
+  calculatedAmount: number;
+  approvedAmount: number;
+  status: "CALCULATED" | "APPROVED" | "REJECTED" | "PAID";
+  ruleSnapshot?: string | null;
+  notes: string;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  paidAt?: string | null;
+  paidBy?: string | null;
+  paymentMethod?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ---------------- Seller Performance Reports ---------------- */
+
+export interface SellerPerformanceItem {
+  sellerId: string;
+  sellerName: string;
+  username: string | null;
+  salesCount: number;
+  totalGrossSales: number;
+  totalDiscounts: number;
+  returnsCount: number;
+  returnsTotal: number;
+  netSales: number;
+  averageTicket: number;
+  grossProfit: number;
+  profitMarginPercent: number;
+}
+
+export interface SellerPerformanceReport {
+  period: "today" | "week" | "month" | "custom";
+  startDate: string;
+  endDate: string;
+  summary: {
+    totalSalesCount: number;
+    totalGrossRevenue: number;
+    totalNetRevenue: number;
+    totalDiscounts: number;
+    totalReturns: number;
+    totalProfit: number;
+  };
+  sellers: SellerPerformanceItem[];
+}
+
+

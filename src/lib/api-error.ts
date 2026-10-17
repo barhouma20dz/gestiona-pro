@@ -25,9 +25,14 @@ export function mapAuthError(
         { error: "No store associated with this account" },
         { status: 403 }
       );
+    case "ACCOUNT_DISABLED":
+      return NextResponse.json(
+        { error: "هذا الحساب معطل حالياً. يرجى مراجعة إدارة المتجر" },
+        { status: 403 }
+      );
     case "FORBIDDEN":
       return NextResponse.json(
-        { error: "Forbidden — super admin access required" },
+        { error: "ليس لديك الصلاحية الكافية لتنفيذ هذه العملية" },
         { status: 403 }
       );
     default:

@@ -82,6 +82,9 @@ export async function PUT(
     if (typeof body?.notes === "string") {
       data.notes = body.notes;
     }
+    if (body?.attachmentUrl !== undefined) {
+      data.attachmentUrl = typeof body.attachmentUrl === "string" ? body.attachmentUrl.trim() : null;
+    }
     if (typeof body?.invoiceNo === "string" && body.invoiceNo.trim()) {
       // Enforce unique [storeId, invoiceNo] if changing
       const dup = await db.supplierInvoice.findFirst({

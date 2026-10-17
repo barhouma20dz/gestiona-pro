@@ -515,14 +515,14 @@ export function AdminDashboard() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="pl-6">{t("supplierName")}</TableHead>
-                  <TableHead>{t("storeStatus")}</TableHead>
-                  <TableHead>{t("subStatus")}</TableHead>
-                  <TableHead>{t("subPlan")}</TableHead>
+                  <TableHead className="pl-6 text-start">{t("supplierName")}</TableHead>
+                  <TableHead className="text-center">{t("storeStatus")}</TableHead>
+                  <TableHead className="text-center">{t("subStatus")}</TableHead>
+                  <TableHead className="text-center">{t("subPlan")}</TableHead>
                   <TableHead className="text-center">{t("daysLeftInStore")}</TableHead>
                   <TableHead className="text-center">{t("productsCount")}</TableHead>
                   <TableHead className="text-center">{t("salesCount")}</TableHead>
-                  <TableHead className="pr-6 text-right">{t("actions")}</TableHead>
+                  <TableHead className="pr-6 text-center">{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -551,7 +551,7 @@ export function AdminDashboard() {
                         key={s.id}
                         className="group transition-colors hover:bg-emerald-500/5"
                       >
-                        <TableCell className="pl-6 py-3.5">
+                        <TableCell className="pl-6 py-3.5 text-start">
                           <div className="flex flex-col">
                             <span className="font-medium">{s.name}</span>
                             <span className="text-[11px] text-muted-foreground">
@@ -559,21 +559,29 @@ export function AdminDashboard() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell>{storeStatusBadge(s.status, t)}</TableCell>
-                        <TableCell>
-                          {s.subscription
-                            ? subStatusBadge(s.subscription.status, t)
-                            : "—"}
+                        <TableCell className="text-center">
+                          <div className="flex justify-center">
+                            {storeStatusBadge(s.status, t)}
+                          </div>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
+                        <TableCell className="text-center">
+                          <div className="flex justify-center">
                             {s.subscription
-                              ? planLabel(
-                                  s.subscription.plan as SubscriptionPlan,
-                                  t
-                                )
+                              ? subStatusBadge(s.subscription.status, t)
                               : "—"}
-                          </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex justify-center">
+                            <Badge variant="outline">
+                              {s.subscription
+                                ? planLabel(
+                                    s.subscription.plan as SubscriptionPlan,
+                                    t
+                                  )
+                                : "—"}
+                            </Badge>
+                          </div>
                         </TableCell>
                         <TableCell className="text-center">
                           {s.subscription ? (
@@ -599,8 +607,8 @@ export function AdminDashboard() {
                         <TableCell className="text-center tabular-nums">
                           {s.counts.sales}
                         </TableCell>
-                        <TableCell className="pr-6 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <TableCell className="pr-6 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
                             <Button
                               variant="outline"
                               size="sm"

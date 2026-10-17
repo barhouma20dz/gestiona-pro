@@ -36,6 +36,8 @@ export async function POST(request: Request) {
     const email = typeof body?.email === "string" ? body.email : "";
     const address = typeof body?.address === "string" ? body.address : "";
     const notes = typeof body?.notes === "string" ? body.notes : "";
+    const leadTimeDays = typeof body?.leadTimeDays === "number" ? body.leadTimeDays : 3;
+    const paymentTerms = typeof body?.paymentTerms === "string" ? body.paymentTerms : "نقد عند الاستلام";
 
     const data: Prisma.SupplierCreateInput = {
       name,
@@ -43,6 +45,8 @@ export async function POST(request: Request) {
       email,
       address,
       notes,
+      leadTimeDays,
+      paymentTerms,
       store: { connect: { id: session.storeId } },
     };
 

@@ -16,7 +16,10 @@ import {
   Banknote,
   History,
   TrendingUp,
+  FileText,
 } from "lucide-react";
+
+import { StatementDialog } from "@/components/statement-dialog";
 
 import { customersApi } from "@/lib/api";
 import { useLanguage } from "@/lib/language-context";
@@ -364,6 +367,7 @@ export function Customers() {
   const [editing, setEditing] = useState<Customer | null>(null);
   const [payTarget, setPayTarget] = useState<Customer | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const [statementTarget, setStatementTarget] = useState<Customer | null>(null);
 
   const { data: customers, isLoading } = useQuery({
     queryKey: ["customers"],
@@ -615,6 +619,16 @@ export function Customers() {
                         {t("lastPurchase")}: {formatDate(c.lastSaleAt)}
                       </span>
                     )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setStatementTarget(c)}
+                      className="gap-1 text-xs"
+                      title="كشف حساب تفصيلي"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      كشف حساب
+                    </Button>
                     {hasDebt && (
                       <Button size="sm" onClick={() => setPayTarget(c)}>
                         <Banknote className="h-4 w-4" />
@@ -661,6 +675,14 @@ export function Customers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Statement of Account Dialog */}
+      <StatementDialog
+        type="customer"
+        targetId={statementTarget?.id ?? null}
+        targetName={statementTarget?.name}
+        open={!!statementTarget}
+        onOpenChange={(op) => !op && setStatementTarget(null)}
+      />
     </div>
   );
 }

@@ -25,20 +25,35 @@ export async function GET() {
       },
     });
 
-    if (!user) {
-      // Session token points to a user that no longer exists
+    if (!user || user.isActive === false) {
+      // Session token points to a user that no longer exists or is disabled
       return NextResponse.json(
-        { error: "Not authenticated" },
+        { error: user?.isActive === false ? "هذا الحساب معطل حالياً" : "Not authenticated" },
         { status: 401 }
       );
+    }
+
+    let parsedPerms: string[] = [];
+    if (user.role === "OWNER" || user.role === "SUPER_ADMIN") {
+      parsedPerms = ["*"];
+    } else if (user.permissions) {
+      try {
+        parsedPerms = JSON.parse(user.permissions);
+      } catch {
+        parsedPerms = [];
+      }
     }
 
     return NextResponse.json({
       user: {
         id: user.id,
         email: user.email,
+        username: user.username,
         name: user.name,
         role: user.role,
+        isActive: user.isActive,
+        phone: user.phone,
+        permissions: parsedPerms,
       },
       store: user.store
         ? {
@@ -54,6 +69,9 @@ export async function GET() {
             currency: user.store.currency,
             taxRate: user.store.taxRate,
             logoUrl: user.store.logoUrl,
+            storePhotoUrl: user.store.storePhotoUrl,
+            primaryDisplayImage: user.store.primaryDisplayImage,
+            sidebarConfig: user.store.sidebarConfig,
             timezone: user.store.timezone,
             status: user.store.status,
           }

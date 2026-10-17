@@ -42,9 +42,33 @@ export async function requireStoreOwner(): Promise<StoreSessionPayload> {
   if (!session.storeId) {
     throw new Error("NO_STORE");
   }
-  // storeId is guaranteed non-null here — expose the narrowed type so callers
-  // can pass session.storeId straight into Prisma filters without casts.
+  // Store owner or staff assigned to store
   return session as StoreSessionPayload;
+}
+
+export async function requirePermission(permissionKey: string): Promise<StoreSessionPayload> {
+  const session = await requireStoreOwner();
+  if (session.role === "OWNER" || session.role === "SUPER_ADMIN") {
+    return session;
+  }
+
+  // Look up user permissions and active status dynamically from DB
+  const { db } = await import("./db");
+  const user = await db.user.findUnique({
+    where: { id: session.userId },
+    select: { isActive: true, role: true, permissions: true },
+  });
+
+  if (!user || user.isActive === false) {
+    throw new Error("ACCOUNT_DISABLED");
+  }
+
+  const { hasPermission } = await import("./permissions");
+  if (!hasPermission(user, permissionKey)) {
+    throw new Error("FORBIDDEN");
+  }
+
+  return session;
 }
 
 export async function requireSuperAdmin(): Promise<SessionPayload> {

@@ -349,11 +349,11 @@ export function SellerDashboard({
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="pl-6">{t("receiptNo")}</TableHead>
-                <TableHead>{t("dateTime")}</TableHead>
+                <TableHead className="pl-6 text-center">{t("receiptNo")}</TableHead>
+                <TableHead className="text-center">{t("dateTime")}</TableHead>
                 <TableHead className="text-center">{t("items")}</TableHead>
                 <TableHead className="text-center">{t("payment")}</TableHead>
-                <TableHead className="pr-6 text-right">{t("total")}</TableHead>
+                <TableHead className="pr-6 text-center">{t("total")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -375,21 +375,25 @@ export function SellerDashboard({
               ) : (
                 recentSales.map((s) => (
                   <TableRow key={s.id} className="hover:bg-emerald-500/5">
-                    <TableCell className="pl-6 py-3.5 font-mono text-xs">
+                    <TableCell className="pl-6 py-3.5 text-center font-mono text-xs">
                       {s.receiptNo}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="text-center text-sm text-muted-foreground">
                       {formatDateTime(s.createdAt)}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Badge variant="outline" className="tabular-nums">
-                        {s.itemCount}
-                      </Badge>
+                      <div className="flex justify-center">
+                        <Badge variant="outline" className="tabular-nums">
+                          {s.itemCount}
+                        </Badge>
+                      </div>
                     </TableCell>
                     <TableCell className="text-center">
-                      {paymentBadge(s.paymentMethod, t)}
+                      <div className="flex justify-center">
+                        {paymentBadge(s.paymentMethod, t)}
+                      </div>
                     </TableCell>
-                    <TableCell className="pr-6 text-right font-semibold tabular-nums">
+                    <TableCell className="pr-6 text-center font-semibold tabular-nums">
                       {formatMoney(s.total, currency)}
                     </TableCell>
                   </TableRow>

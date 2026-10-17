@@ -138,12 +138,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const minStock =
+      body?.minStock === undefined || body?.minStock === null
+        ? 5
+        : Math.max(0, Number(body.minStock));
+
     const data: Prisma.ProductCreateInput = {
       name,
       barcode: finalBarcode,
       price,
       costPrice,
       stock: stockValue,
+      minStock,
       unitType,
       category,
       isNoBarcode,
@@ -154,7 +160,42 @@ export async function POST(request: Request) {
     if (supplierId) data.supplier = { connect: { id: supplierId } };
     if (imageUrl) data.imageUrl = imageUrl;
 
-    const product = await db.product.create({ data });
+    const product = await db.$transaction(async (tx) => {
+      const created = await tx.product.create({ data });
+
+      if (stockValue > 0) {
+        await tx.stockMovement.create({
+          data: {
+            storeId: session.storeId,
+            productId: created.id,
+            type: "PURCHASE",
+            quantity: stockValue,
+            beforeQty: 0,
+            afterQty: stockValue,
+            unitCost: costPrice,
+            reason: "رصيد افتتاحي أولي عند إنشاء المنتج",
+            userId: session.userId,
+          },
+        });
+      }
+
+      // If batchNumber provided or expiryDate, create initial batch
+      if (expiryDate) {
+        await tx.productBatch.create({
+          data: {
+            storeId: session.storeId,
+            productId: created.id,
+            batchNumber: typeof body?.batchNumber === "string" && body.batchNumber.trim() ? body.batchNumber.trim() : `LOT-${Date.now().toString(36).toUpperCase()}`,
+            expiryDate,
+            quantity: stockValue > 0 ? stockValue : 0,
+            costPrice,
+            status: "ACTIVE",
+          },
+        });
+      }
+
+      return created;
+    });
 
     return NextResponse.json(product, { status: 201 });
   } catch (error) {
