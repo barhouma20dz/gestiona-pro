@@ -8,6 +8,15 @@ package-lock.json
 .env
 .env*.local
 .env.local
+.jwt-secret
+
+# sandbox / agent workspace (never part of the product repo)
+skills/
+tool-results/
+agent-ctx/
+download/
+upload/
+examples/
 
 # build & dev artifacts
 .next/
@@ -24,8 +33,6 @@ yarn-error.log*
 scripts/*neon*
 scripts/vercel_*.py
 scripts/seed-demo-prod.js
-upload/
-examples/
 
 # Flutter mobile app build artifacts
 gestiona_mobile_app/build/
