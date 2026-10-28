@@ -37,8 +37,13 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
     "examples",
-    "prisma/seed-demo.ts"
+    "gestiona_mobile_app",
+    "node_modules",
+    "prisma/seed-demo.ts",
+    "scripts",
+    "skills",
+    "tool-results",
+    "upload"
   ]
 }

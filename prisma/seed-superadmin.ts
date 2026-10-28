@@ -20,16 +20,16 @@ if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
   process.exit(1);
 }
 
-async function main() {
+async function main(adminEmail: string, adminPassword: string) {
   console.log("Seeding SwiftBill POS super admin...");
 
   const existing = await db.user.findUnique({
-    where: { email: ADMIN_EMAIL },
+    where: { email: adminEmail },
   });
 
   if (existing) {
     // Make sure existing record has the correct role + password
-    const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
     const updated = await db.user.update({
       where: { id: existing.id },
       data: {
@@ -45,11 +45,11 @@ async function main() {
     return;
   }
 
-  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
 
   const admin = await db.user.create({
     data: {
-      email: ADMIN_EMAIL,
+      email: adminEmail,
       password: passwordHash,
       name: "Super Admin",
       role: "SUPER_ADMIN",
@@ -61,11 +61,11 @@ async function main() {
     `✓ Created super admin (id=${admin.id}, email=${admin.email}, role=${admin.role}).`
   );
   console.log("   Login with:");
-  console.log(`     email:    ${ADMIN_EMAIL}`);
-  console.log(`     password: ${ADMIN_PASSWORD}`);
+  console.log(`     email:    ${adminEmail}`);
+  console.log(`     password: ${adminPassword}`);
 }
 
-main()
+main(ADMIN_EMAIL, ADMIN_PASSWORD)
   .then(async () => {
     console.log("Done. Disconnecting...");
     await db.$disconnect();

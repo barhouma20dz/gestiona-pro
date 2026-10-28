@@ -27,11 +27,11 @@ if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
   process.exit(1);
 }
 
-async function ensureSuperAdmin() {
-  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+async function ensureSuperAdmin(adminEmail: string, adminPassword: string) {
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
 
   const existing = await db.user.findUnique({
-    where: { email: ADMIN_EMAIL },
+    where: { email: adminEmail },
   });
 
   if (existing) {
@@ -52,7 +52,7 @@ async function ensureSuperAdmin() {
 
   const admin = await db.user.create({
     data: {
-      email: ADMIN_EMAIL,
+      email: adminEmail,
       password: passwordHash,
       name: "Super Admin",
       role: "SUPER_ADMIN",
@@ -63,20 +63,20 @@ async function ensureSuperAdmin() {
     `✓ Created super admin (id=${admin.id}, email=${admin.email}, role=${admin.role}).`
   );
   console.log("   Login with:");
-  console.log(`     email:    ${ADMIN_EMAIL}`);
-  console.log(`     password: ${ADMIN_PASSWORD}`);
+  console.log(`     email:    ${adminEmail}`);
+  console.log(`     password: ${adminPassword}`);
 }
 
-async function main() {
+async function main(seedEmail: string, seedPassword: string) {
   console.log("Seeding SwiftBill POS (multi-tenant)...");
   console.log(
     "Note: stores, users, products and sales are created per-tenant at registration time."
   );
-  await ensureSuperAdmin();
+  await ensureSuperAdmin(seedEmail, seedPassword);
   console.log("Seeding complete.");
 }
 
-main()
+main(ADMIN_EMAIL, ADMIN_PASSWORD)
   .then(() => {
     console.log("Done. Disconnecting...");
     return db.$disconnect();

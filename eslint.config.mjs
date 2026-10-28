@@ -44,7 +44,25 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
+  ignores: [
+    "node_modules/**",
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+    "examples/**",
+    "skills/**",
+    // local ops scripts — Node CommonJS, require() is intentional
+    "scripts/**",
+    // sandbox artifacts, never part of the repo
+    "upload/**",
+    "tool-results/**",
+    "download/**",
+    "agent-ctx/**",
+    // standalone prisma seed utilities (checked by tsc, not part of the Next build)
+    "prisma/seed*.ts",
+    "gestiona_mobile_app/**",
+  ]
 }];
 
 export default eslintConfig;

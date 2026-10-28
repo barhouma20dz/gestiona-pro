@@ -996,10 +996,13 @@ function CartItemRow({
   const [inputValue, setInputValue] = useState(
     isKg ? item.quantity.toFixed(3) : String(item.quantity)
   );
-
-  useEffect(() => {
+  const [sync, setSync] = useState({ qty: item.quantity, kg: isKg });
+  if (sync.qty !== item.quantity || sync.kg !== isKg) {
+    // Adjust state during render (React-approved) — mirrors external cart
+    // quantity changes into the local input without an effect cascade.
+    setSync({ qty: item.quantity, kg: isKg });
     setInputValue(isKg ? item.quantity.toFixed(3) : String(item.quantity));
-  }, [item.quantity, isKg]);
+  }
 
   const commitQty = (valStr: string) => {
     const clean = valStr.trim().replace(",", ".");
