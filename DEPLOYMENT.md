@@ -74,11 +74,13 @@ npx prisma generate
 npx prisma db push
 ```
 
-## بيانات الدخول الافتراضية
+## بيانات الدخول
 
-بعد زرع بيانات المدير العام:
-- البريد: admin@swiftbill.pos
-- كلمة المرور: admin123
+بعد زرع بيانات المدير العام (م-0: بلا قيم افتراضية مضمّنة):
+```bash
+SEED_ADMIN_EMAIL="you@example.com" SEED_ADMIN_PASSWORD="strong-password" bun prisma/seed-superadmin.ts
+```
+- البريد وكلمة المرور يحددهما أنت عبر متغيرات البيئة — لا تنشرهما في المستودع
 
 ## ملاحظات مهمة
 

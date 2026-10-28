@@ -21,10 +21,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
   final TextEditingController _serverController =
       TextEditingController(text: 'http://192.168.100.64:3001');
-  final TextEditingController _roomController =
-      TextEditingController(text: 'DZ-CLOSED-7788');
-  final TextEditingController _pinController =
-      TextEditingController(text: '7788');
+  // م-0: no hard-coded room/PIN defaults — the user enters the room the
+  // cashier created (credentials are shown on the POS room screen).
+  final TextEditingController _roomController = TextEditingController();
+  final TextEditingController _pinController = TextEditingController();
   final TextEditingController _nameController =
       TextEditingController(text: 'هاتف البائع 1');
 

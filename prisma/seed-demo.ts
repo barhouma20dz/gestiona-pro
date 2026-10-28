@@ -5,10 +5,10 @@ import { db } from "@/lib/db";
 // Run via: bun prisma/seed-demo.ts
 //
 // Creates:
-//   - SUPER_ADMIN:      admin@swiftbill.pos / admin123   (kept from seed.ts)
+//   - SUPER_ADMIN:      via SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD env (م-0)
 //   - Demo store:       سوق الأمانة — سلسلة مواد غذائية (DZD)
-//   - Owner:            owner@gestiona.dz / owner123
-//   - Staff (seller):   caissier@gestiona.dz / caissier123
+//   - Owner:            owner@gestiona.dz / owner123 (demo-only credentials)
+//   - Staff (seller):   caissier@gestiona.dz / caissier123 (demo-only credentials)
 //   - 18 realistic products (Algerian brands, DZD prices, kg/count units,
 //     some expiring soon, some low stock)
 //   - Suppliers + one invoice with payments
@@ -58,8 +58,16 @@ const PRODUCTS: SeedProduct[] = [
 ];
 
 async function ensureSuperAdmin() {
-  const email = "admin@swiftbill.pos";
-  const hash = await bcrypt.hash("admin123", 10);
+  // م-0: admin credentials come from the environment — no compiled defaults.
+  const email = process.env.SEED_ADMIN_EMAIL?.trim();
+  const plain = process.env.SEED_ADMIN_PASSWORD?.trim();
+  if (!email || !plain) {
+    console.warn(
+      "⚠ Skipping SUPER_ADMIN (set SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD to create one)."
+    );
+    return null;
+  }
+  const hash = await bcrypt.hash(plain, 10);
   const existing = await db.user.findUnique({ where: { email } });
   if (existing) {
     await db.user.update({
@@ -75,7 +83,7 @@ async function ensureSuperAdmin() {
 }
 
 async function main() {
-  const adminId = await ensureSuperAdmin();
+  await ensureSuperAdmin();
 
   const already = await db.user.findUnique({ where: { email: DEMO_EMAIL } });
   if (already) {
@@ -365,7 +373,7 @@ async function main() {
   console.log("  Owner:    owner@gestiona.dz / owner123");
   console.log("  Staff:    caissier@gestiona.dz / caissier123");
   console.log(`  Products: ${PRODUCTS.length}, Sales: ~7 days history`);
-  console.log(`  Admin:    admin@swiftbill.pos / admin123 (SUPER_ADMIN)`);
+  console.log(`  Admin:    from SEED_ADMIN_EMAIL (SUPER_ADMIN)`);
 }
 
 main()

@@ -37,6 +37,7 @@ import { toast } from "sonner";
 
 import { productsApi, shopApi, subscriptionApi, uploadApi } from "@/lib/api";
 import type { Product, Shop, SubscriptionInfo } from "@/lib/types";
+import { ReceiptCustomizer } from "@/components/receipt-customizer";
 import { initialsOf } from "@/lib/format";
 import { formatDate } from "@/lib/format";
 import { useLanguage } from "@/lib/language-context";
@@ -1386,6 +1387,14 @@ export function SettingsView() {
             </div>
           </CardContent>
         </Card>
+      </motion.div>
+
+      {/* 2.5 Receipt Customization (إعدادات الإيصال المخصص) */}
+      <motion.div
+        {...cardMotion}
+        transition={{ duration: 0.25, delay: 0.08 }}
+      >
+        <ReceiptCustomizer shop={shop} />
       </motion.div>
 
       {/* 3. Printer & Receipts */}

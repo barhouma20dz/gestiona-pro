@@ -1,9 +1,7 @@
 // License key utilities — server-side only
 // Generates HMAC-signed license keys for Gestiona Pro subscriptions.
 import crypto from "node:crypto";
-
-const JWT_SECRET =
-  process.env.JWT_SECRET || "swiftbill-dev-secret-change-in-production";
+import { getSigningSecret } from "./auth";
 
 // Subscription plan definitions (price in INR + duration in days)
 export const LICENSE_PLANS = {
@@ -37,7 +35,10 @@ function randomBlock(len = 4): string {
  * Used both at generation time (to persist) and at validation time (to verify).
  */
 function signKey(key: string): string {
-  return crypto.createHmac("sha256", JWT_SECRET).update(key).digest("hex");
+  return crypto
+    .createHmac("sha256", Buffer.from(getSigningSecret()))
+    .update(key)
+    .digest("hex");
 }
 
 export interface GeneratedLicense {

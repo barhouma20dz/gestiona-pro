@@ -92,6 +92,7 @@ model Store {
   auditLogs      AuditLog[]
   commissionRules CommissionRule[]
   sellerRewards  SellerRewardRecord[]
+  counters       Counter[]
 }
 
 // ─── Subscription & Licensing ────────────────────────────────────────────────
@@ -222,6 +223,7 @@ model Sale {
   customerId    String?
   customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   receiptNo     String
+  idempotencyKey String? @unique // م-0: replaying the same key never duplicates a sale
   subtotal      Float
   taxAmount     Float     @default(0)
   discount      Float     @default(0)
@@ -654,5 +656,16 @@ model SellerRewardRecord {
   @@index([storeId])
   @@index([sellerId])
   @@index([storeId, status])
+}
+
+// ─── Atomic Counters (م-0: أرقام فواتير ذرية بلا سباق) ──────────────────────
+
+model Counter {
+  storeId String
+  name    String
+  value   Int     @default(0)
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, name])
 }
 

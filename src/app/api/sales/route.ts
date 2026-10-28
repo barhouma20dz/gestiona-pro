@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, withSqliteWriteLock } from "@/lib/db";
 import { requireAuth, requireStoreOwner } from "@/lib/session";
 import { handleRouteError } from "@/lib/api-error";
 import type { Prisma } from "@prisma/client";
@@ -36,10 +36,63 @@ interface CreateSaleBody {
   sellerId?: string | null;
   customerId?: string | null; // required when paymentMethod === "CREDIT"
   redeemPoints?: number; // loyalty points to redeem as discount
+  idempotencyKey?: string | null; // م-0: safe retry — same key never duplicates a sale
 }
 
 function pad(n: number, width = 4): string {
   return n.toString().padStart(width, "0");
+}
+
+/**
+ * م-0: atomically increments the (store, name) counter and returns the value.
+ * Bootstrapped ABOVE every historical receipt sequence so a new number can
+ * never collide with an old one (the old per-day count() raced under
+ * concurrency and produced duplicate receipt numbers on Postgres).
+ */
+async function bumpCounter(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  name: string
+): Promise<number> {
+  const bumped = await tx.counter.updateMany({
+    where: { storeId, name },
+    data: { value: { increment: 1 } },
+  });
+  if (bumped.count > 0) {
+    const row = await tx.counter.findUnique({
+      where: { storeId_name: { storeId, name } },
+      select: { value: true },
+    });
+    return row!.value;
+  }
+
+  // Bootstrap: start above every historical number for this store.
+  const historicalCount = await tx.sale.count({ where: { storeId } });
+  try {
+    const created = await tx.counter.create({
+      data: { storeId, name, value: historicalCount + 1 },
+    });
+    return created.value;
+  } catch (err) {
+    const code =
+      typeof err === "object" && err !== null && "code" in err
+        ? String((err as { code: unknown }).code)
+        : "";
+    if (code !== "P2002") throw err;
+    // Lost the bootstrap race — another transaction created the row first.
+    const bumpedAgain = await tx.counter.updateMany({
+      where: { storeId, name },
+      data: { value: { increment: 1 } },
+    });
+    if (bumpedAgain.count > 0) {
+      const row = await tx.counter.findUnique({
+        where: { storeId_name: { storeId, name } },
+        select: { value: true },
+      });
+      return row!.value;
+    }
+    throw err;
+  }
 }
 
 function dateStamp(d: Date): string {
@@ -96,9 +149,15 @@ export async function GET(request: Request) {
  * - OWNER: sellerId can be passed in body or null
  */
 export async function POST(request: Request) {
+  // م-0: mirrored outside try so the idempotency-race handler in `catch`
+  // can replay the winning sale.
+  let capturedStoreId: string | null = null;
+  let capturedIdempotencyKey: string | null = null;
   try {
     const session = await requireStoreOwner();
     const body = (await request.json()) as CreateSaleBody;
+    capturedStoreId = session.storeId;
+    capturedIdempotencyKey = body.idempotencyKey?.trim() || null;
 
     if (!body || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json(
@@ -145,6 +204,22 @@ export async function POST(request: Request) {
 
     const storeId = session.storeId!;
 
+    // م-0: idempotency — a retried request with the same key replays the
+    // original sale instead of creating a duplicate (double-charge guard).
+    const idempotencyKey = body.idempotencyKey?.trim() || null;
+    if (idempotencyKey) {
+      const existing = await db.sale.findFirst({
+        where: { storeId, idempotencyKey },
+        include: { items: true },
+      });
+      if (existing) {
+        return NextResponse.json(existing, {
+          status: 200,
+          headers: { "Idempotent-Replay": "true" },
+        });
+      }
+    }
+
     // Determine sellerId:
     // - STAFF: forced to their own userId
     // - OWNER: optional from body, validated to belong to the same store
@@ -178,7 +253,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const created = await db.$transaction(async (tx) => {
+    const created = await withSqliteWriteLock(() =>
+      db.$transaction(async (tx) => {
       const productIds = body.items.map((i) => i.productId);
       const products = await tx.product.findMany({
         where: { id: { in: productIds }, storeId },
@@ -267,31 +343,16 @@ export async function POST(request: Request) {
           ? Math.floor(total / earnRate)
           : 0;
 
-      // Generate receipt number unique per store: INV-YYYYMMDD-XXXX
+      // Generate receipt number unique per store via the atomic counter (م-0)
       const today = new Date();
       const datePrefix = dateStamp(today);
-      const startOfDay = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate()
-      );
-      const endOfDay = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate() + 1
-      );
-
-      const todayCount = await tx.sale.count({
-        where: {
-          storeId,
-          createdAt: { gte: startOfDay, lt: endOfDay },
-        },
-      });
-      const receiptNo = `INV-${datePrefix}-${pad(todayCount + 1, 4)}`;
+      const seq = await bumpCounter(tx, storeId, `receipt:${datePrefix}`);
+      const receiptNo = `INV-${datePrefix}-${pad(seq, 4)}`;
 
       const sale = await tx.sale.create({
         data: {
           receiptNo,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
           subtotal,
           taxAmount,
           discount: effectiveDiscount,
@@ -353,7 +414,8 @@ export async function POST(request: Request) {
       }
 
       return sale;
-    });
+    })
+    );
 
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
@@ -361,6 +423,24 @@ export async function POST(request: Request) {
       error instanceof Error ? error.message : "Failed to create sale";
     if (/not found/i.test(message)) {
       return NextResponse.json({ error: message }, { status: 400 });
+    }
+    // م-0: two racing requests with the same idempotency key — the loser
+    // hits the unique constraint; replay the winner instead of erroring.
+    const prismaCode =
+      typeof error === "object" && error !== null && "code" in error
+        ? String((error as { code: unknown }).code)
+        : "";
+    if (prismaCode === "P2002" && capturedIdempotencyKey && capturedStoreId) {
+      const replay = await db.sale.findFirst({
+        where: { storeId: capturedStoreId, idempotencyKey: capturedIdempotencyKey },
+        include: { items: true },
+      });
+      if (replay) {
+        return NextResponse.json(replay, {
+          status: 200,
+          headers: { "Idempotent-Replay": "true" },
+        });
+      }
     }
     return handleRouteError(error, "POST /api/sales");
   }

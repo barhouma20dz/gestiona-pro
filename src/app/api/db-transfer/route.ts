@@ -4,7 +4,11 @@ import { verifyToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// Helper to get authenticated store
+/**
+ * م-0: a valid session bound to a store is MANDATORY. The old version fell
+ * back to "first active store" for anonymous callers, which let anyone
+ * export the entire tenant database (products, customers, sales).
+ */
 async function getSessionStore(req: NextRequest) {
   const header = req.headers.get("authorization") || "";
   const cookieToken =
@@ -12,19 +16,9 @@ async function getSessionStore(req: NextRequest) {
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : cookieToken;
 
   const session = token ? await verifyToken(token) : null;
-  const storeId = session?.storeId;
+  if (!session?.storeId) return null;
 
-  if (storeId) {
-    const store = await db.store.findUnique({ where: { id: storeId } });
-    if (store) return store;
-  }
-
-  // Fallback to first active store in local/LAN environment
-  const firstStore = await db.store.findFirst({
-    where: { status: "ACTIVE" },
-    orderBy: { createdAt: "asc" },
-  });
-  return firstStore;
+  return db.store.findUnique({ where: { id: session.storeId } });
 }
 
 /**
@@ -36,8 +30,8 @@ export async function GET(req: NextRequest) {
     const store = await getSessionStore(req);
     if (!store) {
       return NextResponse.json(
-        { success: false, error: "لم يتم العثور على متجر لتصدير البيانات" },
-        { status: 404 }
+        { success: false, error: "مصادقة مطلوبة — سجّل الدخول لتصدير البيانات" },
+        { status: 401 }
       );
     }
 
@@ -113,8 +107,8 @@ export async function POST(req: NextRequest) {
     const store = await getSessionStore(req);
     if (!store) {
       return NextResponse.json(
-        { success: false, error: "لم يتم العثور على متجر لحفظ البيانات" },
-        { status: 404 }
+        { success: false, error: "مصادقة مطلوبة — سجّل الدخول لاستيراد البيانات" },
+        { status: 401 }
       );
     }
 

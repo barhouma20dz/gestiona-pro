@@ -13,9 +13,19 @@ import { db } from "@/lib/db";
 // see `prisma/seed-superadmin.ts`.
 //
 // Run via `bun prisma/seed.ts` (alias: `bun run db:seed`).
+//
+// م-0: credentials come from the environment — no compiled-in defaults.
+//   SEED_ADMIN_EMAIL=... SEED_ADMIN_PASSWORD=... bun prisma/seed.ts
 
-const ADMIN_EMAIL = "admin@swiftbill.pos";
-const ADMIN_PASSWORD = "admin123";
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL?.trim();
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD?.trim();
+
+if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+  console.error(
+    "✗ Refusing to seed: set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD explicitly (م-0)."
+  );
+  process.exit(1);
+}
 
 async function ensureSuperAdmin() {
   const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);

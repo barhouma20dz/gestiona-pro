@@ -33,6 +33,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { useRoomSyncStore, type DeviceRole } from "@/lib/room-sync-store";
+import { getStoredToken } from "@/lib/auth-context";
 import { useCartStore } from "@/lib/cart-store";
 import { formatMoney } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -76,8 +77,8 @@ export function RoomSyncView() {
   const [isLoadingNetwork, setIsLoadingNetwork] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedPin, setCopiedPin] = useState(false);
-  const [inputRoomId, setInputRoomId] = useState(currentRoomId || "DZ-STORE-1");
-  const [inputPin, setInputPin] = useState(roomPin || "7788");
+  const [inputRoomId, setInputRoomId] = useState(currentRoomId || "");
+  const [inputPin, setInputPin] = useState(roomPin || "");
   const [editingDeviceName, setEditingDeviceName] = useState(deviceName);
   const [activeTab, setActiveTab] = useState<"local" | "cloud" | "db_transfer" | "apk" | "orders">("local");
 
@@ -96,7 +97,11 @@ export function RoomSyncView() {
   useEffect(() => {
     async function loadNetwork() {
       try {
-        const res = await fetch("/api/network-info");
+        // م-0: network-info now requires JWT
+        const token = getStoredToken();
+        const res = await fetch("/api/network-info", {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         const data = await res.json();
         if (data.success) {
           setNetworkInfo(data);
@@ -121,9 +126,9 @@ export function RoomSyncView() {
 
   // Derived join URL
   const baseUrl = typeof window !== "undefined" ? window.location.origin : (networkInfo?.localUrl || "");
-  const joinUrl = `${networkInfo?.localUrl || baseUrl}/?room=${encodeURIComponent(
-    currentRoomId || "DZ-STORE-1"
-  )}&pin=${encodeURIComponent(roomPin || "7788")}`;
+  const joinUrl = currentRoomId
+    ? `${networkInfo?.localUrl || baseUrl}/?room=${encodeURIComponent(currentRoomId)}&pin=${encodeURIComponent(roomPin)}`
+    : "";
 
   const copyToClipboard = (text: string, type: "link" | "pin") => {
     navigator.clipboard.writeText(text);

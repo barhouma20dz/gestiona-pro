@@ -3,6 +3,19 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { CartItem } from "./types";
+import { getStoredToken } from "./auth-context";
+
+/**
+ * م-0: every room-sync request must carry the JWT — the server now rejects
+ * anonymous callers with 401.
+ */
+function roomAuthHeaders(): Record<string, string> {
+  const token = getStoredToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
 
 export type DeviceRole = "cashier" | "order_taker" | "customer_display" | "monitor";
 
@@ -129,9 +142,9 @@ export const useRoomSyncStore = create<RoomSyncState>()(
       setDeviceName: (name) => set({ deviceName: name }),
       setRole: (role) => set({ role }),
 
-      currentRoomId: "DZ-STORE-1",
-      currentRoomName: "متجر رِواق — القاعة الرئيسية",
-      roomPin: "7788",
+      currentRoomId: null,
+      currentRoomName: null,
+      roomPin: "",
       isConnected: false,
       isPolling: false,
       connectedDevices: [],
@@ -145,10 +158,11 @@ export const useRoomSyncStore = create<RoomSyncState>()(
         try {
           await fetch("/api/room-sync", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: roomAuthHeaders(),
             body: JSON.stringify({
               action: "send_event",
               roomId: currentRoomId,
+              pin: get().roomPin,
               device: { id: deviceId, name: deviceName, role },
               event: {
                 type: "DATABASE_TRANSFER_PUSH",
@@ -166,7 +180,7 @@ export const useRoomSyncStore = create<RoomSyncState>()(
         try {
           const res = await fetch("/api/room-sync", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: roomAuthHeaders(),
             body: JSON.stringify({
               action: "join",
               roomId,
@@ -198,7 +212,7 @@ export const useRoomSyncStore = create<RoomSyncState>()(
           try {
             await fetch("/api/room-sync", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: roomAuthHeaders(),
               body: JSON.stringify({
                 action: "leave",
                 roomId: currentRoomId,
@@ -216,10 +230,11 @@ export const useRoomSyncStore = create<RoomSyncState>()(
         try {
           const res = await fetch("/api/room-sync", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: roomAuthHeaders(),
             body: JSON.stringify({
               action: "send_event",
               roomId: currentRoomId,
+              pin: get().roomPin,
               device: { id: deviceId, name: deviceName, role: get().role },
               event: {
                 type: "ORDER_SUBMITTED",
@@ -246,10 +261,11 @@ export const useRoomSyncStore = create<RoomSyncState>()(
         try {
           await fetch("/api/room-sync", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: roomAuthHeaders(),
             body: JSON.stringify({
               action: "send_event",
               roomId: currentRoomId,
+              pin: get().roomPin,
               device: { id: deviceId, name: deviceName, role },
               event: {
                 type: "CART_UPDATE",
@@ -277,10 +293,11 @@ export const useRoomSyncStore = create<RoomSyncState>()(
           if (isConnected) {
             await fetch("/api/room-sync", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: roomAuthHeaders(),
               body: JSON.stringify({
                 action: "heartbeat",
                 roomId: currentRoomId,
+                pin: get().roomPin,
                 device: { id: deviceId, name: deviceName, role },
               }),
             });
@@ -288,7 +305,8 @@ export const useRoomSyncStore = create<RoomSyncState>()(
 
           // Fetch active devices and new events
           const res = await fetch(
-            `/api/room-sync?roomId=${encodeURIComponent(currentRoomId)}&since=${lastEventTimestamp}`
+            `/api/room-sync?roomId=${encodeURIComponent(currentRoomId)}&since=${lastEventTimestamp}`,
+            { headers: roomAuthHeaders() }
           );
           const data = await res.json();
           if (data.success && data.room) {
@@ -352,6 +370,20 @@ export const useRoomSyncStore = create<RoomSyncState>()(
     }),
     {
       name: "gestiona-room-sync-storage",
+      // v2 (م-0): wipe stale room credentials — old versions persisted the
+      // hard-coded DZ-STORE-1 / 7788 defaults, which no longer exist.
+      version: 2,
+      migrate: (persisted: unknown) => {
+        const p = (persisted ?? {}) as Partial<RoomSyncState>;
+        return {
+          deviceId: typeof p.deviceId === "string" ? p.deviceId : "",
+          deviceName: typeof p.deviceName === "string" ? p.deviceName : "",
+          role: p.role ?? "cashier",
+          currentRoomId: null as string | null,
+          currentRoomName: null as string | null,
+          roomPin: "",
+        };
+      },
       partialize: (state) => ({
         deviceId: state.deviceId,
         deviceName: state.deviceName,

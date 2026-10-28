@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useRoomSyncStore } from "@/lib/room-sync-store";
 import {
   Plus,
   Pencil,
@@ -307,7 +308,13 @@ export function SellerManagement() {
       origin = origin.replace("localhost", "192.168.100.64").replace("127.0.0.1", "192.168.100.64");
     }
     const viewParam = role === "owner" ? "dashboard" : "pos";
-    return `${origin}/?view=${viewParam}&room=DZ-CLOSED-7788&pin=7788&role=${role}&devName=${encodeURIComponent(seller.name || "بائع")}&email=${encodeURIComponent(seller.email)}`;
+    // م-0: no hard-coded room/PIN — the seller scans while the host room is
+    // active, and the current room credentials are injected below.
+    const { currentRoomId, roomPin } = useRoomSyncStore.getState();
+    const roomParam = currentRoomId
+      ? `&room=${encodeURIComponent(currentRoomId)}&pin=${encodeURIComponent(roomPin)}`
+      : "";
+    return `${origin}/?view=${viewParam}${roomParam}&role=${role}&devName=${encodeURIComponent(seller.name || "بائع")}&email=${encodeURIComponent(seller.email)}`;
   };
 
   /* Filtered sellers */

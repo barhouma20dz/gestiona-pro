@@ -7,12 +7,17 @@ import {
   getSessionCookieName,
   sessionCookieOptions,
 } from "@/lib/auth";
+import { consumeRateLimit, resetRateLimit, clientIp } from "@/lib/rate-limit";
 
 interface LoginBody {
   email?: string;
   username?: string;
   password?: string;
 }
+
+// Brute-force brake (م-0): 10 attempts per identifier+IP per 10 minutes.
+const LOGIN_LIMIT = 10;
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 
 export async function POST(request: Request) {
   try {
@@ -25,6 +30,19 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "يرجى إدخال اسم المستخدم أو البريد الإلكتروني وكلمة المرور" },
         { status: 400 }
+      );
+    }
+
+    // م-0: rate limit BEFORE any DB query (works for username or email).
+    const rateKey = `login:${identifier.toLowerCase()}:${clientIp(request)}`;
+    const rate = consumeRateLimit(rateKey, LOGIN_LIMIT, LOGIN_WINDOW_MS);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        {
+          error: `محاولات كثيرة جداً. أعد المحاولة بعد ${rate.retryAfterSec} ثانية`,
+          code: "TOO_MANY_ATTEMPTS",
+        },
+        { status: 429, headers: { "Retry-After": String(rate.retryAfterSec) } }
       );
     }
 
@@ -62,6 +80,8 @@ export async function POST(request: Request) {
         { status: 401 }
       );
     }
+
+    resetRateLimit(rateKey); // successful login clears the brake
 
     // Check store status (skip for SUPER_ADMIN who has no store)
     if (user.store && user.store.status === "SUSPENDED") {

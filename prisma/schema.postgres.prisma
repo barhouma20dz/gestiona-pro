@@ -15,9 +15,13 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
+  username  String?
   password  String   // bcrypt hashed
   name      String?
   role      String   @default("OWNER") // OWNER | STAFF | SUPER_ADMIN
+  isActive  Boolean  @default(true)
+  permissions String? // JSON encoded string array of permissions
+  phone     String?
   storeId   String?
   store     Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
@@ -27,7 +31,14 @@ model User {
   sales       Sale[]       // sales made by this seller
   payments    SupplierPayment[]
   auditApprovals InventoryAudit[]
-  customerPayments CustomerPayment[] // debt repayments recorded by this user
+  customerPayments CustomerPayment[]
+  stockMovements StockMovement[]
+  purchaseOrders PurchaseOrder[]
+  expenses       Expense[]
+  cashSessions   CashSession[]
+  cashTransactions CashTransaction[]
+  auditLogs      AuditLog[]
+  sellerRewards  SellerRewardRecord[]
 }
 
 // ─── Store (Tenant) ──────────────────────────────────────────────────────────
@@ -45,6 +56,9 @@ model Store {
   currency      String   @default("دج")
   taxRate       Float    @default(0.0)
   logoUrl       String?
+  storePhotoUrl String?
+  primaryDisplayImage String @default("LOGO") // "LOGO" | "STORE_PHOTO"
+  sidebarConfig String? // JSON encoded items order & visibility
   timezone      String   @default("Africa/Algiers")
   status        String   @default("ACTIVE") // ACTIVE | SUSPENDED
   // Loyalty program settings (نقاط الولاء)
@@ -69,6 +83,16 @@ model Store {
   zakatSettings  ZakatSettings?
   customers     Customer[]
   customerPayments CustomerPayment[]
+  stockMovements StockMovement[]
+  productBatches ProductBatch[]
+  purchaseOrders PurchaseOrder[]
+  expenses       Expense[]
+  cashSessions   CashSession[]
+  cashTransactions CashTransaction[]
+  auditLogs      AuditLog[]
+  commissionRules CommissionRule[]
+  sellerRewards  SellerRewardRecord[]
+  counters       Counter[]
 }
 
 // ─── Subscription & Licensing ────────────────────────────────────────────────
@@ -116,11 +140,13 @@ model Product {
   price       Float
   costPrice   Float     @default(0)
   stock       Float     @default(0) // Float to support kg products (e.g., 50.5 kg)
+  minStock    Float     @default(5) // الحد الأدنى للمخزون لتنبيهات النقص
   unitType    String    @default("count") // "count" | "kg"
   category    String    @default("General")
   expiryDate  DateTime?
   expiryDate2 DateTime?
   imageUrl    String?
+  isNoBarcode Boolean   @default(false) // مواد بدون باركود (خبز، بيض، فواكه، خضار للبيع السريع بالكاشير)
   supplierId  String?
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
   createdAt   DateTime  @default(now())
@@ -129,10 +155,60 @@ model Product {
   saleItems      SaleItem[]
   invoiceItems   SupplierInvoiceItem[]
   auditItems     InventoryAuditItem[]
+  stockMovements      StockMovement[]
+  batches             ProductBatch[]
+  purchaseOrderItems  PurchaseOrderItem[]
 
   @@unique([storeId, barcode])
   @@index([storeId])
   @@index([storeId, name])
+  @@index([storeId, expiryDate])
+}
+
+// ─── Stock Movement Ledger (سجل حركة المخزون) ──────────────────────────────────
+
+model StockMovement {
+  id          String   @id @default(cuid())
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type        String   // "SALE" | "PURCHASE" | "RETURN" | "ADJUSTMENT" | "WASTE" | "AUDIT"
+  quantity    Float    // التغير في الكمية
+  beforeQty   Float    // الرصيد قبل الحركة
+  afterQty    Float    // الرصيد بعد الحركة
+  unitCost    Float    @default(0)
+  reason      String   @default("")
+  referenceId String?  // رقم الوصل أو الفاتورة أو الجرد
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([storeId])
+  @@index([productId])
+  @@index([storeId, type])
+  @@index([storeId, createdAt])
+}
+
+// ─── Product Batch / Lot Tracking (تتبع الصلاحية بالدفعات) ─────────────────────
+
+model ProductBatch {
+  id           String    @id @default(cuid())
+  storeId      String
+  store        Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batchNumber  String
+  expiryDate   DateTime
+  quantity     Float
+  costPrice    Float     @default(0)
+  receivedDate DateTime  @default(now())
+  status       String    @default("ACTIVE") // ACTIVE | EXHAUSTED | EXPIRED
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([storeId])
+  @@index([productId])
   @@index([storeId, expiryDate])
 }
 
@@ -147,6 +223,7 @@ model Sale {
   customerId    String?
   customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   receiptNo     String
+  idempotencyKey String? @unique // م-0: replaying the same key never duplicates a sale
   subtotal      Float
   taxAmount     Float     @default(0)
   discount      Float     @default(0)
@@ -224,45 +301,52 @@ model SaleItem {
   @@index([saleId])
 }
 
-// ─── Suppliers & Purchase Invoices ───────────────────────────────────────────
+// ─── Suppliers & Purchase Invoices & Purchase Orders ─────────────────────────
 
 model Supplier {
-  id        String   @id @default(cuid())
-  storeId   String
-  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  name      String
-  phone     String   @default("")
-  email     String   @default("")
-  address   String   @default("")
-  notes     String   @default("")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  storeId      String
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name         String
+  phone        String   @default("")
+  email        String   @default("")
+  address      String   @default("")
+  leadTimeDays Int      @default(3) // مدة التوريد التقديرية بالأيام
+  paymentTerms String   @default("نقد عند الاستلام") // شروط الدفع (آجل 30 يوم، نقد، الخ)
+  notes        String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  invoices SupplierInvoice[]
-  products Product[]
+  invoices       SupplierInvoice[]
+  products       Product[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model SupplierInvoice {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   storeId       String
-  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store         Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   supplierId    String
-  supplier      Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplier      Supplier  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   invoiceNo     String
-  invoiceDate   DateTime @default(now())
+  invoiceDate   DateTime  @default(now())
+  dueDate       DateTime? // تاريخ الاستحقاق لتتبع الفواتير المتأخرة
   totalAmount   Float
-  paidAmount    Float    @default(0)
-  status        String   @default("UNPAID") // PAID | PARTIAL | UNPAID
+  paidAmount    Float     @default(0)
+  status        String    @default("UNPAID") // PAID | PARTIAL | UNPAID
   attachmentUrl String?
-  notes         String   @default("")
-  createdAt     DateTime @default(now())
+  notes         String    @default("")
+  createdAt     DateTime  @default(now())
 
-  items    SupplierInvoiceItem[]
-  payments SupplierPayment[]
+  items          SupplierInvoiceItem[]
+  payments       SupplierPayment[]
+  purchaseOrders PurchaseOrder[]
 
   @@unique([storeId, invoiceNo])
   @@index([storeId])
   @@index([supplierId])
+  @@index([storeId, status])
+  @@index([storeId, dueDate])
 }
 
 model SupplierInvoiceItem {
@@ -277,6 +361,51 @@ model SupplierInvoiceItem {
   total       Float
 
   @@index([invoiceId])
+}
+
+// ─── Purchase Orders (طلبيات الشراء والتوريد) ──────────────────────────────────
+
+model PurchaseOrder {
+  id           String    @id @default(cuid())
+  storeId      String
+  store        Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplierId   String
+  supplier     Supplier  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  orderNo      String    // رقم الطلبية: PO-2026-001
+  status       String    @default("DRAFT") // "DRAFT" | "SENT" | "PARTIAL" | "RECEIVED" | "CANCELLED"
+  orderDate    DateTime  @default(now())
+  expectedDate DateTime? // التاريخ المتوقع للاستلام
+  totalAmount  Float     @default(0)
+  notes        String    @default("")
+  invoiceId    String?   // الفاتورة المرتبطة عند الاستلام
+  invoice      SupplierInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  createdById  String?
+  createdBy    User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  items        PurchaseOrderItem[]
+
+  @@unique([storeId, orderNo])
+  @@index([storeId])
+  @@index([supplierId])
+  @@index([storeId, status])
+}
+
+model PurchaseOrderItem {
+  id          String        @id @default(cuid())
+  orderId     String
+  order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName String
+  orderedQty  Float
+  receivedQty Float         @default(0) // الكمية المستلمة فعلياً
+  unitCost    Float         @default(0)
+  total       Float         @default(0)
+
+  @@index([orderId])
+  @@index([productId])
 }
 
 // ─── Supplier Payments ─────────────────────────────────────────────────────
@@ -382,3 +511,161 @@ model ZakatRecord {
   @@index([storeId])
   @@index([storeId, year])
 }
+
+// ─── Operating Expenses (المصاريف التشغيلية) ──────────────────────────────────
+
+model Expense {
+  id            String       @id @default(cuid())
+  storeId       String
+  store         Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category      String       // "RENT" | "UTILITIES" | "SALARIES" | "TRANSPORT" | "MAINTENANCE" | "MARKETING" | "OTHER"
+  categoryLabel String       @default("أخرى") // اسم الفئة بالعربية
+  amount        Float
+  expenseDate   DateTime     @default(now())
+  paymentMethod String       @default("Cash") // Cash | Bank | Baridimob | Cheque
+  paidTo        String?      // اسم المستلم أو الجهة
+  notes         String       @default("")
+  receiptUrl    String?      // رابط صورة الوصل أو الفاتورة
+  userId        String?
+  user          User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  cashSessionId String?      // جلسة الصندوق المرتبطة إن كان الصرف نقداً
+  cashSession   CashSession? @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([storeId])
+  @@index([storeId, expenseDate])
+  @@index([storeId, category])
+}
+
+// ─── Cash Drawer Sessions & Movements (جلسات الصندوق وحركات النقد) ───────────────
+
+model CashSession {
+  id                   String            @id @default(cuid())
+  storeId              String
+  store                Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  openedAt             DateTime          @default(now())
+  closedAt             DateTime?
+  status               String            @default("OPEN") // "OPEN" | "CLOSED"
+  openingCash          Float             @default(0) // الرصيد الافتتاحي في الدرج
+  closingCashActual    Float?            // المبلغ الفعلي المعدود عند الإغلاق
+  closingCashExpected  Float?            // المبلغ المتوقع رياضياً
+  difference           Float?            // الفارق = actual - expected (+ فائض، - عجز)
+  notes                String            @default("")
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  expenses             Expense[]
+  transactions         CashTransaction[]
+
+  @@index([storeId])
+  @@index([storeId, status])
+  @@index([storeId, openedAt])
+}
+
+model CashTransaction {
+  id            String      @id @default(cuid())
+  sessionId     String
+  session       CashSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  storeId       String
+  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  type          String      // "DEPOSIT" (إيداع) | "WITHDRAWAL" (سحب شخصي / تغذية)
+  amount        Float
+  reason        String      @default("")
+  userId        String?
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+
+  @@index([sessionId])
+  @@index([storeId])
+}
+
+// ─── Audit Log (سجل العمليات الحساسة) ──────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName  String?
+  action    String   // USER_CREATE | USER_UPDATE | USER_STATUS | INVOICE_PHOTO | SETTINGS_UPDATE | REWARD_APPROVE | REWARD_PAY
+  entity    String   // USER | INVOICE | SETTINGS | REWARD
+  entityId  String?
+  details   String?  // JSON or text details
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([storeId])
+  @@index([storeId, action])
+  @@index([storeId, createdAt])
+}
+
+// ─── Commission & Rewards System (نظام المكافآت والحوافز) ────────────────────────
+
+model CommissionRule {
+  id               String   @id @default(cuid())
+  storeId          String
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  isEnabled        Boolean  @default(false) // معطل افتراضياً كما في الشرط الصريح
+  calculationBasis String   @default("NET_SALES") // "TOTAL_SALES" | "NET_SALES" | "GROSS_PROFIT"
+  rewardType       String   @default("PERCENTAGE") // "PERCENTAGE" | "FIXED_AMOUNT" | "TIERED"
+  rateValue        Float    @default(0) // e.g. 5% or 500 DZD
+  tiersConfig      String?  // JSON for tiered brackets
+  period           String   @default("MONTHLY") // "DAILY" | "WEEKLY" | "MONTHLY" | "CUSTOM"
+  minTarget        Float    @default(0) // الحد الأدنى للأداء قبل استحقاق المكافأة
+  notes            String   @default("")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  rewards          SellerRewardRecord[]
+
+  @@index([storeId])
+}
+
+model SellerRewardRecord {
+  id               String          @id @default(cuid())
+  storeId          String
+  store            Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sellerId         String
+  seller           User            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  ruleId           String?
+  rule             CommissionRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  periodStart      DateTime
+  periodEnd        DateTime
+  totalSales       Float           @default(0)
+  discounts        Float           @default(0)
+  netSales         Float           @default(0)
+  grossProfit      Float           @default(0)
+  salesCount       Int             @default(0)
+  calculatedAmount Float           @default(0) // المكافأة المقدرة
+  approvedAmount   Float           @default(0) // المكافأة المعتمدة
+  status           String          @default("CALCULATED") // "CALCULATED" | "APPROVED" | "REJECTED" | "PAID"
+  ruleSnapshot     String?         // نسخة غير قابلة للتعديل من قواعد الحساب المستخدمة
+  notes            String          @default("")
+  approvedAt       DateTime?
+  approvedBy       String?
+  paidAt           DateTime?
+  paidBy           String?
+  paymentMethod    String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([storeId])
+  @@index([sellerId])
+  @@index([storeId, status])
+}
+
+// ─── Atomic Counters (م-0: أرقام فواتير ذرية بلا سباق) ──────────────────────
+
+model Counter {
+  storeId String
+  name    String
+  value   Int     @default(0)
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, name])
+}
+

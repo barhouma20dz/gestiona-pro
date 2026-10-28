@@ -518,7 +518,7 @@ export const translations = {
     authBusinessHardware: "أدوات",
     authBusinessOther: "أخرى",
     authTrialFeatures: "كل المزايا · بدون بطاقة ائتمان · ألغِ في أي وقت",
-    authDemoHint: "حساب المسؤول: admin@swiftbill.pos / admin123",
+    authDemoHint: "أدخل بيانات حسابك للدخول إلى النظام",
     // ─── SaaS — Suppliers ──────────────────────────────────────────────────
     suppliers: "الموردون",
     suppliersTitle: "إدارة الموردين",
@@ -1377,7 +1377,7 @@ export const translations = {
     authBusinessHardware: "Hardware",
     authBusinessOther: "Other",
     authTrialFeatures: "All features · No credit card · Cancel anytime",
-    authDemoHint: "Admin account: admin@swiftbill.pos / admin123",
+    authDemoHint: "Enter your account credentials to sign in",
     // ─── SaaS — Suppliers ──────────────────────────────────────────────────
     suppliers: "Suppliers",
     suppliersTitle: "Supplier Management",

@@ -1,8 +1,54 @@
 // JWT session utilities — server-side only
 import { SignJWT, jwtVerify } from "jose";
+import { randomBytes } from "crypto";
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { join } from "path";
 
-const JWT_SECRET = process.env.JWT_SECRET || "swiftbill-dev-secret-change-in-production";
-const secret = new TextEncoder().encode(JWT_SECRET);
+/**
+ * م-0: the signing secret is MANDATORY in production — no static fallback.
+ * - Production (Vercel): JWT_SECRET env var must exist or auth fails loudly
+ *   (a silent default would let anyone forge sessions).
+ * - Local dev: a random secret is generated once and persisted to .jwt-secret
+ *   (gitignored) so sessions survive server restarts.
+ * Lazy (not module-scope) because Next.js evaluates modules at build time.
+ */
+let cachedSecret: Uint8Array | null = null;
+
+export function getSigningSecret(): Uint8Array {
+  if (cachedSecret) return cachedSecret;
+
+  const envSecret = process.env.JWT_SECRET?.trim();
+  if (envSecret) {
+    cachedSecret = new TextEncoder().encode(envSecret);
+    return cachedSecret;
+  }
+
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1") {
+    throw new Error(
+      "JWT_SECRET is not set. Add it in Vercel → Settings → Environment Variables (م-0)."
+    );
+  }
+
+  // Development only: generate + persist a random secret.
+  const secretFile = join(process.cwd(), ".jwt-secret");
+  try {
+    if (existsSync(secretFile)) {
+      const saved = readFileSync(secretFile, "utf8").trim();
+      if (saved) {
+        cachedSecret = new TextEncoder().encode(saved);
+        return cachedSecret;
+      }
+    }
+    const generated = randomBytes(48).toString("hex");
+    writeFileSync(secretFile, generated, { mode: 0o600 });
+    cachedSecret = new TextEncoder().encode(generated);
+    return cachedSecret;
+  } catch {
+    // Filesystem unavailable — fall back to an ephemeral random secret.
+    cachedSecret = new TextEncoder().encode(randomBytes(48).toString("hex"));
+    return cachedSecret;
+  }
+}
 
 export interface SessionPayload {
   userId: string;
@@ -24,12 +70,12 @@ export async function signToken(payload: SessionPayload): Promise<string> {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_DURATION}s`)
-    .sign(secret);
+    .sign(getSigningSecret());
 }
 
 export async function verifyToken(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, getSigningSecret());
     return payload as unknown as SessionPayload;
   } catch {
     return null;
